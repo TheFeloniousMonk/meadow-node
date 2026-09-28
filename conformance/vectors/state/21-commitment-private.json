@@ -1,0 +1,130 @@
+{
+  "name": "commitment-private",
+  "description": "In a private room, msg.post must carry a franking commitment so it can always be reported.",
+  "spec_sections": [
+    "6.5",
+    "9.1"
+  ],
+  "agents": {
+    "alice": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o"
+  },
+  "steps": [
+    {
+      "label": "create",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.create",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000001000,
+          "parents": [],
+          "auth": [],
+          "data": {
+            "room_version": 1,
+            "type": "private"
+          }
+        },
+        "id": "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+        "sig": "Jw2d3qdPNB5GPXy7aQKWt4eTHD_qv1jCrXzgYE7TNlrMMsyposErJfWJxNs--mZYtOkvAw2-5052AZgoMrfyCw"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "alice-join",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000002000,
+          "room": "r_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+          "parents": [
+            "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ"
+          ],
+          "data": {
+            "target": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+            "membership": "join"
+          },
+          "auth": [
+            "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ"
+          ]
+        },
+        "id": "e_Q4kPKNdG8tMF0e1-jtXOvV12zyWcvLTh9cht6njtIYA",
+        "sig": "x2ekOGh7LxIXqdXmipf2Fff07w169AOU7pr4w1CqajKPYK349oO_Wx17jywvoY4qbqjR3xV8tvf1E42KI_iYCw"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "post-without-commitment",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "msg.post",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000003000,
+          "room": "r_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+          "parents": [
+            "e_Q4kPKNdG8tMF0e1-jtXOvV12zyWcvLTh9cht6njtIYA"
+          ],
+          "content_hash": "fwi1fmQ5ZH_sf7N0EEJEUmTpYhuQzKTI0cJNeMQDibI",
+          "content_len": 23,
+          "auth": [
+            "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+            "e_Q4kPKNdG8tMF0e1-jtXOvV12zyWcvLTh9cht6njtIYA"
+          ]
+        },
+        "id": "e_3x77hHr8NCt1kLbHqD2R5woC7qviozLrbYiTdnhfJEU",
+        "sig": "OEtDhi8Wh1WbX5CGkTjPI1agViLdmydYc1iJC0oGMCgyF-Hul4CjhIj2tKbjrghOZxrY6ESFrMca3ljw5yKOBw",
+        "content": "{\"text\":\"unreportable\"}"
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "commitment_rules"
+      }
+    },
+    {
+      "label": "post-sealed",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "msg.post",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000004000,
+          "room": "r_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+          "parents": [
+            "e_Q4kPKNdG8tMF0e1-jtXOvV12zyWcvLTh9cht6njtIYA"
+          ],
+          "content_hash": "4cJcIMNKL7gjqHOslTCPOx_nFUnR7bRFYf-HAeTPXS8",
+          "content_len": 54,
+          "auth": [
+            "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+            "e_Q4kPKNdG8tMF0e1-jtXOvV12zyWcvLTh9cht6njtIYA"
+          ],
+          "commitment": "6D1eP6FpXqfMYtm-kWCi0H5wwaElWjdkDs9efYK9YwU"
+        },
+        "id": "e_97sirrJJG-E2TXo3pdIBil0bA_adziJa53N3ZDg9dqA",
+        "sig": "f3RiIsJazdc28cmy7mtDE7qKVOhGEC_Uz9ubm2Zp2sXm5sdL8nFUCg3HA8_GlN2BBaiDCWG6TOrRgu5vTdJxCg",
+        "content": "ciphertext:NvbWG7Df6tBxkRd4v-e205iupqDWaleAX-mOjzX4tKo"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    }
+  ],
+  "final": {
+    "heads": [
+      "post-sealed"
+    ],
+    "state": {
+      "room.create|": "create",
+      "room.member|a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o": "alice-join"
+    }
+  }
+}

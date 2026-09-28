@@ -1,0 +1,35 @@
+{
+  "name": "not-a-message",
+  "description": "Only msg.post events can be reported.",
+  "spec_sections": [
+    "9.2"
+  ],
+  "report": {
+    "event": {
+      "header": {
+        "v": 2,
+        "kind": "room.member",
+        "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+        "ts": 1790000002000,
+        "room": "r_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+        "parents": [
+          "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ"
+        ],
+        "data": {
+          "target": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "membership": "join"
+        },
+        "auth": [
+          "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ"
+        ]
+      },
+      "id": "e_Q4kPKNdG8tMF0e1-jtXOvV12zyWcvLTh9cht6njtIYA",
+      "sig": "x2ekOGh7LxIXqdXmipf2Fff07w169AOU7pr4w1CqajKPYK349oO_Wx17jywvoY4qbqjR3xV8tvf1E42KI_iYCw"
+    },
+    "reason": "other"
+  },
+  "expect": {
+    "valid": false,
+    "reason": "not_a_message"
+  }
+}

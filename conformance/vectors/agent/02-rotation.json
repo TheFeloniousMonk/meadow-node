@@ -1,0 +1,155 @@
+{
+  "name": "rotation",
+  "description": "After agent.rotate, only the new key signs; rotating to the current key is refused.",
+  "spec_sections": [
+    "5.4"
+  ],
+  "agents": {
+    "alice": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o"
+  },
+  "steps": [
+    {
+      "label": "register",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "agent.register",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "parents": [],
+          "auth": [],
+          "ts": 1790000001000,
+          "data": {
+            "name": "alice",
+            "keys": {
+              "curve25519": "tbkaMMpBIzRi5XWtnfhJ-e1uvtDdCTTiJFr7vkv8GxY",
+              "fallback": "4kE_-1gSAbFRTSxMjJWtQtc28Rlwv76bu51qRm3vkF8"
+            }
+          }
+        },
+        "id": "e_PUudNqJxUinTjrpeKJW0WoNxi_z__JbSnZuuMj3nVyg",
+        "sig": "hppPplUblVyx0Pvb1thZiKIxRxvCEwgHSv4tPF5cAYKrqGFk8KsogaPbbQQYTgRu_iIJtEoINvG9c-raQ4WuDA"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "rotate",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "agent.rotate",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "parents": [
+            "e_PUudNqJxUinTjrpeKJW0WoNxi_z__JbSnZuuMj3nVyg"
+          ],
+          "auth": [],
+          "ts": 1790000002000,
+          "data": {
+            "key": "o00ChpJ-AJq7Gu9DQf3J2D2WWStmnUDytHdPF9nssZM"
+          }
+        },
+        "id": "e_ubIMZN3SDM9e8usLZsVj_JdEoaMdYw1hREnbN8FBjxE",
+        "sig": "l8adw7xaeNEvPjkDK37i4B3Hs97xY7CANIwK19zSbWQTHAwDVvHDI9jJbz_aKMtYIJ6oX04Wi-t_d1I504zEAQ"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "old-key",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "agent.profile",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "parents": [
+            "e_ubIMZN3SDM9e8usLZsVj_JdEoaMdYw1hREnbN8FBjxE"
+          ],
+          "auth": [],
+          "ts": 1790000003000,
+          "data": {
+            "description": "old key"
+          }
+        },
+        "id": "e_OSsY52gYw9Bwgr_fyKP20ganupxuTSGO4OBGkvyckFU",
+        "sig": "jrWUUrfQfCU4dqY2Fq0HiKRuGG0AuuOAqxt9-574PmHREdGTidn93dxhDTCcPhKbCS6_nIWW9d4oBBk6RvEjAg"
+      },
+      "expect": {
+        "outcome": "discarded",
+        "reason": "wrong_signer"
+      }
+    },
+    {
+      "label": "new-key",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "agent.profile",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "parents": [
+            "e_ubIMZN3SDM9e8usLZsVj_JdEoaMdYw1hREnbN8FBjxE"
+          ],
+          "auth": [],
+          "ts": 1790000004000,
+          "data": {
+            "description": "new key"
+          },
+          "signer": "o00ChpJ-AJq7Gu9DQf3J2D2WWStmnUDytHdPF9nssZM"
+        },
+        "id": "e_RcFgVS8_cZ-uktsQ9CjxuNxakRrRfZe35K5CVbspGDQ",
+        "sig": "V7-pcm-gk29t9pURNXLiEufZ-ajMOg1JJr_OzXmdBgbE3MDP7ZPkfDpK300YnjLCI_OvYIP_l_0vF4fZHUaJDA"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "same-key",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "agent.rotate",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "parents": [
+            "e_RcFgVS8_cZ-uktsQ9CjxuNxakRrRfZe35K5CVbspGDQ"
+          ],
+          "auth": [],
+          "ts": 1790000005000,
+          "data": {
+            "key": "o00ChpJ-AJq7Gu9DQf3J2D2WWStmnUDytHdPF9nssZM"
+          },
+          "signer": "o00ChpJ-AJq7Gu9DQf3J2D2WWStmnUDytHdPF9nssZM"
+        },
+        "id": "e_PG_wOXMzlsf4ey-Lxaln6FOxgTUyrd1-bDY-TX0tg2M",
+        "sig": "As5uwmqOSpAayZEdIBUBdZiitdZ0ZH0pVeQ5DriISNU2vEe3MlxFxQbC5Sxyki24BVs6WPIDRLdh6GX8roBdBA"
+      },
+      "expect": {
+        "outcome": "discarded",
+        "reason": "same_key"
+      }
+    }
+  ],
+  "final": {
+    "heads": {
+      "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o": {
+        "head": "new-key",
+        "state": {
+          "key": "o00ChpJ-AJq7Gu9DQf3J2D2WWStmnUDytHdPF9nssZM",
+          "name": "alice",
+          "description": "new key",
+          "capabilities": [],
+          "invites": "open",
+          "keys": {
+            "curve25519": "tbkaMMpBIzRi5XWtnfhJ-e1uvtDdCTTiJFr7vkv8GxY",
+            "fallback": "4kE_-1gSAbFRTSxMjJWtQtc28Rlwv76bu51qRm3vkF8"
+          },
+          "blocked": []
+        }
+      }
+    }
+  }
+}

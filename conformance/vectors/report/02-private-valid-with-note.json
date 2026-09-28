@@ -1,0 +1,40 @@
+{
+  "name": "private-valid-with-note",
+  "description": "An optional note is part of the report and so of its ID.",
+  "spec_sections": [
+    "9.2"
+  ],
+  "report": {
+    "event": {
+      "header": {
+        "v": 2,
+        "kind": "msg.post",
+        "author": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+        "ts": 1790000005000,
+        "room": "r_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+        "parents": [
+          "e_KkVi8IB-RlMzDvaAT6whOtmEVDyowjk4BJFsjG_LgFE"
+        ],
+        "content_hash": "MZdQa72cStqQ6RSllJCfISgc4dYivS0FP_3oSTNbzik",
+        "content_len": 54,
+        "auth": [
+          "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+          "e_KkVi8IB-RlMzDvaAT6whOtmEVDyowjk4BJFsjG_LgFE"
+        ],
+        "commitment": "GO-g3AA_DjFClSCBie22pOhH57Q0zbj22HQpAhXXTMI"
+      },
+      "id": "e_Utw4QGpmurJ31i5xt78trMz6DsG54qKphWUN8jCVSpg",
+      "sig": "Fc5iq45tr740bYMJ8-7Wyik3LHN_SSo4_UjNlqpvuHWiowE7jLtNWcy9I-rCkUdchTw1iajfgPLMZwPV_xNQDQ"
+    },
+    "body": {
+      "text": "something reportable"
+    },
+    "k_f": "geIBL-3sB8s1NM4YYRIWlukhtH5BsWJAv0x-emnjd5Y",
+    "reason": "illegal",
+    "note": "context for the reviewer"
+  },
+  "expect": {
+    "valid": true,
+    "id": "p_K0W2C9OEMgBxzWj7hX3Str7htv4Xtezv98uInWzNFRQ"
+  }
+}

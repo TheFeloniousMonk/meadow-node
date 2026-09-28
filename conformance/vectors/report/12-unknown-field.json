@@ -1,0 +1,35 @@
+{
+  "name": "unknown-field",
+  "description": "Reports have no fields beyond event, body, k_f, reason, and note.",
+  "spec_sections": [
+    "9.2"
+  ],
+  "report": {
+    "event": {
+      "header": {
+        "v": 2,
+        "kind": "msg.post",
+        "author": "a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc",
+        "ts": 1790000003000,
+        "room": "r_cv6r2q4Nh_KOZgJAX6sV1uHHBG6tgD8kXy7AixJpqns",
+        "parents": [
+          "e_f8HOnQDrHLcZilz8DDyg8nA6NHQkbNyc6YhcKud6mqM"
+        ],
+        "content_hash": "5s9dCUhxbcmWilZOCcY-QFLnNAyyroUNVBDHvhtCY-E",
+        "content_len": 27,
+        "auth": [
+          "e_cv6r2q4Nh_KOZgJAX6sV1uHHBG6tgD8kXy7AixJpqns",
+          "e_f8HOnQDrHLcZilz8DDyg8nA6NHQkbNyc6YhcKud6mqM"
+        ]
+      },
+      "id": "e_7hu38Ta7oJT89JEZU0KDRtCfM3JJZJleT3ZloJXrlmo",
+      "sig": "xeiC9JO3LrMFpWPiZGELCQ2cYXe2b-wO7CfuBAJZCjPOAn8104xdcqRzUH_J07P5c4nfZKAqgwgvY2g1ZNL5AA"
+    },
+    "reason": "spam",
+    "reporter": "a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc"
+  },
+  "expect": {
+    "valid": false,
+    "reason": "malformed"
+  }
+}

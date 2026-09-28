@@ -1,0 +1,7 @@
+{
+  "backend_port": {
+    "main": 8080,
+    "beta": 8081
+  },
+  "purpose": "Each network's relayer calls its own node, so Beta traffic can never reach MainNet state."
+}

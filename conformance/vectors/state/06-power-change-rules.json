@@ -1,0 +1,411 @@
+{
+  "name": "power-change-rules",
+  "description": "Changing the power table: no level above your own, no demoting peers at your level, no changing a level set above yours.",
+  "spec_sections": [
+    "6.3",
+    "6.5"
+  ],
+  "agents": {
+    "alice": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+    "bob": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+    "carol": "a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc",
+    "dave": "a_cxWFBj3dx4pagEIiyaJGaZDSG48RWnDcQC1YNU67lGI"
+  },
+  "steps": [
+    {
+      "label": "create",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.create",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000001000,
+          "parents": [],
+          "auth": [],
+          "data": {
+            "room_version": 1,
+            "type": "public"
+          }
+        },
+        "id": "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+        "sig": "ceujs60yvTYg6NrNJ2dMrsgBtuIPDMolSltqJ7BvyGAGddSdf_HP48gAgbmUIJa44su34Moe_rqDdtxItZYvCQ"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "alice-join",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000002000,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc"
+          ],
+          "data": {
+            "target": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+            "membership": "join"
+          },
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc"
+          ]
+        },
+        "id": "e_7E9n0bk9mHzmQdSl1fGjT7riD3QUVRkZ6Oi3oEs9Y2Q",
+        "sig": "UtgSrBWAUssgmfrogA-Ath6lRgMyLnfizVo08AKqHR_jeQzHeOYkoteQ7RhBDh9bZFzv5fsKc6ads3S4vYM2Cw"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "bob-join",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+          "ts": 1790000003000,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_7E9n0bk9mHzmQdSl1fGjT7riD3QUVRkZ6Oi3oEs9Y2Q"
+          ],
+          "data": {
+            "target": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+            "membership": "join"
+          },
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc"
+          ]
+        },
+        "id": "e_RXTcAxHGJQXu5BZNbcWjh_EeqJ0gF0K6OAj1CdS8Rio",
+        "sig": "-EnJwkS2THj2KNxH8zB99YuNtB3Hg1GYD3tQCRH3xqydAT5qFGZAHy5k9qOyPiNV-Q3klCCIA-sXa_acGM1OBA"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "carol-join",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc",
+          "ts": 1790000004000,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_RXTcAxHGJQXu5BZNbcWjh_EeqJ0gF0K6OAj1CdS8Rio"
+          ],
+          "data": {
+            "target": "a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc",
+            "membership": "join"
+          },
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc"
+          ]
+        },
+        "id": "e_HHr4H8PAWAuK27l3jKmbMGSq8CbZh17NRILleeCDvw4",
+        "sig": "SKPTTwgOfw2-2nHCmIaWS5C_1nkOTrepJr6jAj4Z_wGsNHRMyjky-jTp94G5BbgJahPlA3y6NO9bM_zGAKsdBQ"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "dave-join",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_cxWFBj3dx4pagEIiyaJGaZDSG48RWnDcQC1YNU67lGI",
+          "ts": 1790000005000,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_HHr4H8PAWAuK27l3jKmbMGSq8CbZh17NRILleeCDvw4"
+          ],
+          "data": {
+            "target": "a_cxWFBj3dx4pagEIiyaJGaZDSG48RWnDcQC1YNU67lGI",
+            "membership": "join"
+          },
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc"
+          ]
+        },
+        "id": "e_2kCXiCbkxYOgl9-YS5Bs8OrT81vrcCDIxwSfa-TRI90",
+        "sig": "IXbQ09rzzxtqrfN7T9tG1HFOU2VdHLUS3aKwkSDie5VBnF0BzUi-BSF9_XCuyBoEATP_bR-o1xwiCW6L2bf4Cg"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "p1",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.power",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000006000,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_2kCXiCbkxYOgl9-YS5Bs8OrT81vrcCDIxwSfa-TRI90"
+          ],
+          "data": {
+            "users_default": 0,
+            "post": 0,
+            "invite": 0,
+            "remove": 50,
+            "ban": 50,
+            "delete": 50,
+            "meta": 50,
+            "power": 50,
+            "users": {
+              "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o": 100,
+              "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg": 50,
+              "a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc": 50
+            }
+          },
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+            "e_7E9n0bk9mHzmQdSl1fGjT7riD3QUVRkZ6Oi3oEs9Y2Q"
+          ]
+        },
+        "id": "e_Fg5yG2JZ3cVxwQEXdTpq4Btu9ISCi-SXW7gVJBAQnGI",
+        "sig": "voowwtgO3dg-YFwd2IrDc8-lmlPaeEBXRMjHgfaoisjdj76HGgq66Z9w-AKqEMenoVRVB-qUWBvmkSgYldgJAw"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "bob-raises-self",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.power",
+          "author": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+          "ts": 1790000007000,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_Fg5yG2JZ3cVxwQEXdTpq4Btu9ISCi-SXW7gVJBAQnGI"
+          ],
+          "data": {
+            "users_default": 0,
+            "post": 0,
+            "invite": 0,
+            "remove": 50,
+            "ban": 50,
+            "delete": 50,
+            "meta": 50,
+            "power": 50,
+            "users": {
+              "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o": 100,
+              "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg": 60,
+              "a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc": 50
+            }
+          },
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+            "e_Fg5yG2JZ3cVxwQEXdTpq4Btu9ISCi-SXW7gVJBAQnGI",
+            "e_RXTcAxHGJQXu5BZNbcWjh_EeqJ0gF0K6OAj1CdS8Rio"
+          ]
+        },
+        "id": "e_HbzR8agWALVPKzJtyJn9JP0-ezUMAjJOOr5ubbP6tzU",
+        "sig": "97YrAeopoKAnbF613IAucmxg-y10mbwcAT-qlXPv07WUg28zrj_sXtsjFyrHwgyObzTaZft9DhnJtwZf8fh2BQ"
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "insufficient_power"
+      }
+    },
+    {
+      "label": "bob-demotes-carol",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.power",
+          "author": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+          "ts": 1790000008000,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_Fg5yG2JZ3cVxwQEXdTpq4Btu9ISCi-SXW7gVJBAQnGI"
+          ],
+          "data": {
+            "users_default": 0,
+            "post": 0,
+            "invite": 0,
+            "remove": 50,
+            "ban": 50,
+            "delete": 50,
+            "meta": 50,
+            "power": 50,
+            "users": {
+              "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o": 100,
+              "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg": 50
+            }
+          },
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+            "e_Fg5yG2JZ3cVxwQEXdTpq4Btu9ISCi-SXW7gVJBAQnGI",
+            "e_RXTcAxHGJQXu5BZNbcWjh_EeqJ0gF0K6OAj1CdS8Rio"
+          ]
+        },
+        "id": "e_dfbBqlvYHJtt3jvKc-0Wm3R6tamznxY2H2mOxXI-LAg",
+        "sig": "hQoF0sweF6bnuKLyNeVgkNxVF6PvyrgLjsUks7JxROYuB9cysHqtTDTz_GKtwuAtZemdKVIPFWWoFzNt2nlvCg"
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "insufficient_power"
+      }
+    },
+    {
+      "label": "bob-promotes-dave",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.power",
+          "author": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+          "ts": 1790000009000,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_Fg5yG2JZ3cVxwQEXdTpq4Btu9ISCi-SXW7gVJBAQnGI"
+          ],
+          "data": {
+            "users_default": 0,
+            "post": 0,
+            "invite": 0,
+            "remove": 50,
+            "ban": 50,
+            "delete": 50,
+            "meta": 50,
+            "power": 50,
+            "users": {
+              "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o": 100,
+              "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg": 50,
+              "a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc": 50,
+              "a_cxWFBj3dx4pagEIiyaJGaZDSG48RWnDcQC1YNU67lGI": 50
+            }
+          },
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+            "e_Fg5yG2JZ3cVxwQEXdTpq4Btu9ISCi-SXW7gVJBAQnGI",
+            "e_RXTcAxHGJQXu5BZNbcWjh_EeqJ0gF0K6OAj1CdS8Rio"
+          ]
+        },
+        "id": "e_cfR6tze3I3nN0GziGbftlzi58sKOepLJlZ9e7zNSa6s",
+        "sig": "RY8TrGPfZitX-UZr3MPYqhUibJle2C__7yTyaY7ts5yif2gBSr36g8RHFlmbk7E48UT3daEskDPOQpXewPfYAQ"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "carol-lowers-ban",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.power",
+          "author": "a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc",
+          "ts": 1790000010000,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_cfR6tze3I3nN0GziGbftlzi58sKOepLJlZ9e7zNSa6s"
+          ],
+          "data": {
+            "users_default": 0,
+            "post": 0,
+            "invite": 0,
+            "remove": 50,
+            "ban": 40,
+            "delete": 50,
+            "meta": 50,
+            "power": 50,
+            "users": {
+              "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o": 100,
+              "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg": 50,
+              "a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc": 50,
+              "a_cxWFBj3dx4pagEIiyaJGaZDSG48RWnDcQC1YNU67lGI": 50
+            }
+          },
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+            "e_cfR6tze3I3nN0GziGbftlzi58sKOepLJlZ9e7zNSa6s",
+            "e_HHr4H8PAWAuK27l3jKmbMGSq8CbZh17NRILleeCDvw4"
+          ]
+        },
+        "id": "e_h1yejn66ANWf4wd6q8imqF6-eiwHsrNdIluXG5W0hxA",
+        "sig": "Rrtnp-kXx-WeWG64AVcHKIZ8qlfaK7njjJZeEn7DCF9_LzY-O_sWfZzFJJzMbMPAMP2YdVymxmqeP6BaebqJBQ"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "dave-raises-power",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.power",
+          "author": "a_cxWFBj3dx4pagEIiyaJGaZDSG48RWnDcQC1YNU67lGI",
+          "ts": 1790000011000,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_h1yejn66ANWf4wd6q8imqF6-eiwHsrNdIluXG5W0hxA"
+          ],
+          "data": {
+            "users_default": 0,
+            "post": 0,
+            "invite": 0,
+            "remove": 50,
+            "ban": 40,
+            "delete": 50,
+            "meta": 50,
+            "power": 100,
+            "users": {
+              "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o": 100,
+              "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg": 50,
+              "a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc": 50,
+              "a_cxWFBj3dx4pagEIiyaJGaZDSG48RWnDcQC1YNU67lGI": 50
+            }
+          },
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+            "e_h1yejn66ANWf4wd6q8imqF6-eiwHsrNdIluXG5W0hxA",
+            "e_2kCXiCbkxYOgl9-YS5Bs8OrT81vrcCDIxwSfa-TRI90"
+          ]
+        },
+        "id": "e_zEUAWlgYgySVUgTe36ceWtHAd3SjzxGO1f4cRcWLU9U",
+        "sig": "eriUl1vI79pPFQ-3OF-28TtOGADIMUKbE91Pw3eQxFhJLqxhtGmTEnI8MX-RCXZ647tg1KSF8zIqsxCC7lwhAQ"
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "insufficient_power"
+      }
+    }
+  ],
+  "final": {
+    "heads": [
+      "carol-lowers-ban"
+    ],
+    "state": {
+      "room.create|": "create",
+      "room.member|a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o": "alice-join",
+      "room.member|a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg": "bob-join",
+      "room.member|a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc": "carol-join",
+      "room.member|a_cxWFBj3dx4pagEIiyaJGaZDSG48RWnDcQC1YNU67lGI": "dave-join",
+      "room.power|": "carol-lowers-ban"
+    }
+  }
+}

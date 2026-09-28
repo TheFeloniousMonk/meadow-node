@@ -1,0 +1,163 @@
+{
+  "name": "register-and-update",
+  "description": "Profile, key bundle, and block list updates each change only their own fields.",
+  "spec_sections": [
+    "5.4"
+  ],
+  "agents": {
+    "alice": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+    "bob": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg"
+  },
+  "steps": [
+    {
+      "label": "register",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "agent.register",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "parents": [],
+          "auth": [],
+          "ts": 1790000001000,
+          "data": {
+            "name": "alice",
+            "keys": {
+              "curve25519": "tbkaMMpBIzRi5XWtnfhJ-e1uvtDdCTTiJFr7vkv8GxY",
+              "fallback": "4kE_-1gSAbFRTSxMjJWtQtc28Rlwv76bu51qRm3vkF8"
+            }
+          }
+        },
+        "id": "e_PUudNqJxUinTjrpeKJW0WoNxi_z__JbSnZuuMj3nVyg",
+        "sig": "hppPplUblVyx0Pvb1thZiKIxRxvCEwgHSv4tPF5cAYKrqGFk8KsogaPbbQQYTgRu_iIJtEoINvG9c-raQ4WuDA"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "profile",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "agent.profile",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "parents": [
+            "e_PUudNqJxUinTjrpeKJW0WoNxi_z__JbSnZuuMj3nVyg"
+          ],
+          "auth": [],
+          "ts": 1790000002000,
+          "data": {
+            "description": "charts",
+            "capabilities": [
+              "render.chart"
+            ]
+          }
+        },
+        "id": "e_7IZYXSq6ovolsii_AFx3LaT0kB_UkjY6xCnPzBb_xX8",
+        "sig": "lbveeS9FOAjcLuuJ411VkhpjJ6QijbYdtnOhe-DBPhKMyBDwZBlID9ZHwXaSBk28Y5B3IcZcoYepNdHAQ1mmBw"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "invites",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "agent.profile",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "parents": [
+            "e_7IZYXSq6ovolsii_AFx3LaT0kB_UkjY6xCnPzBb_xX8"
+          ],
+          "auth": [],
+          "ts": 1790000003000,
+          "data": {
+            "invites": "shared_rooms"
+          }
+        },
+        "id": "e_aJr2ltVBCKfpXRw0HbaaNX107l2sFZ1DRWV4FeaqGzo",
+        "sig": "c-bC--CFHfSjBt4_DBgugjH3FSsZbjzjSfJ92TSjDiX5PZpY5fEIRT5_2x3R0cZWfxhx0egc-hymrXJAT7pdBA"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "keys",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "agent.keys",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "parents": [
+            "e_aJr2ltVBCKfpXRw0HbaaNX107l2sFZ1DRWV4FeaqGzo"
+          ],
+          "auth": [],
+          "ts": 1790000004000,
+          "data": {
+            "fallback": "Tjtw9DJ0soFI35BvUsPu-V0gUoDkq2ROHfPH4qOYXxE"
+          }
+        },
+        "id": "e_BPwHPax2hStoedqp6a9_SFbDcm7h-N1MytwrBI5FJjg",
+        "sig": "eWyS8Ly5ieoEw32BqDV7C8nRLOQD77CGVqthhbKa-g80mUB_Jl7p4wtlFqGtLaIbSKg378kaL4dFiqYs8DuaDw"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "block",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "agent.block",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "parents": [
+            "e_BPwHPax2hStoedqp6a9_SFbDcm7h-N1MytwrBI5FJjg"
+          ],
+          "auth": [],
+          "ts": 1790000005000,
+          "data": {
+            "blocked": [
+              "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg"
+            ]
+          }
+        },
+        "id": "e_sasqEk5IUHMgul4orAJBHpQ941gfm7DZ3TTAlcMSaas",
+        "sig": "Iv2eNpRYvBH0UH0wzO-Z_Uwyj_TWt89H4FDid4zmFl7yHVtBcjcwY3dVkNLNzsOMhaT2bGw7fJy15JGxRAL0Cw"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    }
+  ],
+  "final": {
+    "heads": {
+      "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o": {
+        "head": "block",
+        "state": {
+          "key": "GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "name": "alice",
+          "description": "charts",
+          "capabilities": [
+            "render.chart"
+          ],
+          "invites": "shared_rooms",
+          "keys": {
+            "curve25519": "tbkaMMpBIzRi5XWtnfhJ-e1uvtDdCTTiJFr7vkv8GxY",
+            "fallback": "Tjtw9DJ0soFI35BvUsPu-V0gUoDkq2ROHfPH4qOYXxE"
+          },
+          "blocked": [
+            "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg"
+          ]
+        }
+      }
+    }
+  }
+}

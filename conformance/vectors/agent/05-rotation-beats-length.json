@@ -1,0 +1,153 @@
+{
+  "name": "rotation-beats-length",
+  "description": "A branch with more rotations is the head even when shorter, so a retired key cannot win by writing more.",
+  "spec_sections": [
+    "5.4"
+  ],
+  "agents": {
+    "alice": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o"
+  },
+  "steps": [
+    {
+      "label": "register",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "agent.register",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "parents": [],
+          "auth": [],
+          "ts": 1790000001000,
+          "data": {
+            "name": "alice",
+            "keys": {
+              "curve25519": "tbkaMMpBIzRi5XWtnfhJ-e1uvtDdCTTiJFr7vkv8GxY",
+              "fallback": "4kE_-1gSAbFRTSxMjJWtQtc28Rlwv76bu51qRm3vkF8"
+            }
+          }
+        },
+        "id": "e_PUudNqJxUinTjrpeKJW0WoNxi_z__JbSnZuuMj3nVyg",
+        "sig": "hppPplUblVyx0Pvb1thZiKIxRxvCEwgHSv4tPF5cAYKrqGFk8KsogaPbbQQYTgRu_iIJtEoINvG9c-raQ4WuDA"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "a1",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "agent.profile",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "parents": [
+            "e_PUudNqJxUinTjrpeKJW0WoNxi_z__JbSnZuuMj3nVyg"
+          ],
+          "auth": [],
+          "ts": 1790000002000,
+          "data": {
+            "description": "a1"
+          }
+        },
+        "id": "e_OU9MPh3MS4PoqpndJs_LVcw_mk-S3s_LTsMQda-8Mmg",
+        "sig": "Zj8sMNUc-dtKf4vMey5BO_wRZLUUmTR1gWvnxSHR7XZ_NjbX1-CsduIvYPldBuuzNFlSrAu8vKFBRyc30EoZCg"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "a2",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "agent.profile",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "parents": [
+            "e_OU9MPh3MS4PoqpndJs_LVcw_mk-S3s_LTsMQda-8Mmg"
+          ],
+          "auth": [],
+          "ts": 1790000003000,
+          "data": {
+            "description": "a2"
+          }
+        },
+        "id": "e_6IICiYin74XL47MgK4vsnFZfl_UTth9NksWpZkYhn5E",
+        "sig": "nmablFECihysr4VJORsvTYh_KFIE9qxuzaeYdgkY_woQhBwysv1-sknWcHUHvl84hwHcyg6ouNp_HYSpgixzDw"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "a3",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "agent.profile",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "parents": [
+            "e_6IICiYin74XL47MgK4vsnFZfl_UTth9NksWpZkYhn5E"
+          ],
+          "auth": [],
+          "ts": 1790000004000,
+          "data": {
+            "description": "a3"
+          }
+        },
+        "id": "e_nEWT0wrxxr3HnDCrqAZWPw2X3kKffFOFjVXgT7FQLyY",
+        "sig": "yvcDsXFHqHlAeOoKiNKHSGmJ048T1wEj-V_BD0DmBhhymsX57FBb0JFyUTZ9PD32xePxAdsE3kh_BteD_a7nBw"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "rotate",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "agent.rotate",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "parents": [
+            "e_PUudNqJxUinTjrpeKJW0WoNxi_z__JbSnZuuMj3nVyg"
+          ],
+          "auth": [],
+          "ts": 1790000005000,
+          "data": {
+            "key": "o00ChpJ-AJq7Gu9DQf3J2D2WWStmnUDytHdPF9nssZM"
+          }
+        },
+        "id": "e_lahvcMVF2oLihZXkWW48PBKa6AinvJU2xcg10dVQuSs",
+        "sig": "IxQl4gFOF-CXj74MMGFZbgjqMuO6lRrQxsFa3ProKp9oHcXZK-_hmLoOeyrfkJiQRPoMfg7evsBdTNc-UhiRCw"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    }
+  ],
+  "final": {
+    "heads": {
+      "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o": {
+        "head": "rotate",
+        "state": {
+          "key": "o00ChpJ-AJq7Gu9DQf3J2D2WWStmnUDytHdPF9nssZM",
+          "name": "alice",
+          "description": "",
+          "capabilities": [],
+          "invites": "open",
+          "keys": {
+            "curve25519": "tbkaMMpBIzRi5XWtnfhJ-e1uvtDdCTTiJFr7vkv8GxY",
+            "fallback": "4kE_-1gSAbFRTSxMjJWtQtc28Rlwv76bu51qRm3vkF8"
+          },
+          "blocked": []
+        }
+      }
+    }
+  }
+}

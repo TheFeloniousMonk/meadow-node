@@ -1,0 +1,159 @@
+{
+  "name": "integrity",
+  "description": "Events whose ID does not match the header, whose signature is wrong, or with unknown header fields are discarded.",
+  "spec_sections": [
+    "5.1",
+    "6.6"
+  ],
+  "agents": {
+    "alice": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+    "bob": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg"
+  },
+  "steps": [
+    {
+      "label": "create",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.create",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000001000,
+          "parents": [],
+          "auth": [],
+          "data": {
+            "room_version": 1,
+            "type": "public"
+          }
+        },
+        "id": "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+        "sig": "ceujs60yvTYg6NrNJ2dMrsgBtuIPDMolSltqJ7BvyGAGddSdf_HP48gAgbmUIJa44su34Moe_rqDdtxItZYvCQ"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "alice-join",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000002000,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc"
+          ],
+          "data": {
+            "target": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+            "membership": "join"
+          },
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc"
+          ]
+        },
+        "id": "e_7E9n0bk9mHzmQdSl1fGjT7riD3QUVRkZ6Oi3oEs9Y2Q",
+        "sig": "UtgSrBWAUssgmfrogA-Ath6lRgMyLnfizVo08AKqHR_jeQzHeOYkoteQ7RhBDh9bZFzv5fsKc6ads3S4vYM2Cw"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "tampered",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "msg.post",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000003001,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_7E9n0bk9mHzmQdSl1fGjT7riD3QUVRkZ6Oi3oEs9Y2Q"
+          ],
+          "content_hash": "_NHM7Ajbb3ioH-5sJtqea40NO6WLRANxP__rz6ps8Rk",
+          "content_len": 12,
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+            "e_7E9n0bk9mHzmQdSl1fGjT7riD3QUVRkZ6Oi3oEs9Y2Q"
+          ]
+        },
+        "id": "e_ZNT0Q5FLdu3JI-6b8HJwHOfCo4N0AJVLWqlxBIzjP7w",
+        "sig": "5D8KR7F7Z38ONuzUkE15lXn9C14JK2-qkwrQB5K9QD8-FOuH-kEfDjR5HChGNYf_lq4b8emID59q2y9kGbsMDQ",
+        "content": "{\"text\":\"x\"}"
+      },
+      "expect": {
+        "outcome": "discarded",
+        "reason": "bad_id"
+      }
+    },
+    {
+      "label": "forged",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "msg.post",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000004000,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_7E9n0bk9mHzmQdSl1fGjT7riD3QUVRkZ6Oi3oEs9Y2Q"
+          ],
+          "content_hash": "-1O3dBrekNw2sPZBLW_QFmSVJbXPxgQodui5FSva0_Y",
+          "content_len": 12,
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+            "e_7E9n0bk9mHzmQdSl1fGjT7riD3QUVRkZ6Oi3oEs9Y2Q"
+          ]
+        },
+        "id": "e_kFXxdz8_H73GaAPOeIB9tcFERdfZxMSdm0Xur638A0s",
+        "sig": "bPI1VmLoRDtDRlEIziEho1quA7LNzm8rFxt_Z6ZSq7Kgk4MXgTaqP5jGFTvbTTtlnVzRioRSgL8M0eTL9pr2Cg",
+        "content": "{\"text\":\"y\"}"
+      },
+      "expect": {
+        "outcome": "discarded",
+        "reason": "bad_signature"
+      }
+    },
+    {
+      "label": "unknown-field",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "msg.post",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000005000,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_7E9n0bk9mHzmQdSl1fGjT7riD3QUVRkZ6Oi3oEs9Y2Q"
+          ],
+          "content_hash": "vKONM7nbTxYg16Va5HBkMFM64CwYAQskCns00wV-iaA",
+          "content_len": 12,
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+            "e_7E9n0bk9mHzmQdSl1fGjT7riD3QUVRkZ6Oi3oEs9Y2Q"
+          ],
+          "extra": {}
+        },
+        "id": "e_1EATiC6WCXI2o6qGudXCQlVwkibxiUsTjxuYKcHlqZw",
+        "sig": "I2owAQ75UGzjvYLDUhqUiTLxtuxf99RjhZ8TKlAfLFukn27o8FOHxnHr8Yg9yRYCpoDy3x3vPg8jx2VdOg6OBw",
+        "content": "{\"text\":\"z\"}"
+      },
+      "expect": {
+        "outcome": "discarded",
+        "reason": "malformed"
+      }
+    }
+  ],
+  "final": {
+    "heads": [
+      "alice-join"
+    ],
+    "state": {
+      "room.create|": "create",
+      "room.member|a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o": "alice-join"
+    }
+  }
+}

@@ -1,0 +1,56 @@
+# Meadow node backend, on the supplier's shared Docker network.
+#
+# The Pocket Service Manager deploys this with the project name "meadow"
+# (docker compose -p meadow up -d --build), so the data volume is
+# meadow_meadow-data. Deploy the same way by hand to keep the same volume.
+#
+# One process runs a separate node per network, sharing nothing but the
+# process (SPEC §11.1):
+#   MainNet: relay port 8080 (relayer.json), peer port 8090 (/meadow-peer)
+#   Beta:    relay port 8081 (relayer.json), peer port 8091 (/meadow-peer-beta)
+# Nothing is published; the relayers and the supplier's Caddy reach the ports
+# over the pocket-supplier network.
+services:
+  backend:
+    build: ../backend
+    image: meadow-backend:0.1.0
+    container_name: meadow-backend
+    restart: unless-stopped
+    expose:
+      - "8080"
+      - "8081"
+      - "8090"
+      - "8091"
+    environment:
+      MEADOW_DATA_DIR: /data
+      MEADOW_NETWORKS: ${MEADOW_NETWORKS:-main,beta}
+      # Each network's supplier stack has its own operator address.
+      MEADOW_MAIN_OPERATOR: ${MEADOW_MAIN_OPERATOR:-}
+      MEADOW_BETA_OPERATOR: ${MEADOW_BETA_OPERATOR:-}
+      # AGPL-3.0: if you run a modified node, point this at your source.
+      MEADOW_SOURCE_URL: ${MEADOW_SOURCE_URL:-https://github.com/TheFeloniousMonk/meadow-node}
+      MEADOW_SUPPORT_URL: ${MEADOW_SUPPORT_URL:-https://meadowprotocol.com}
+    volumes:
+      - meadow-data:/data
+    mem_limit: 512m
+    # Hardening (security review, 2026-09-28): the backend needs to write only
+    # /data (its DB volume). Everything else is immutable and unprivileged, so a
+    # compromised backend cannot rewrite its own code, gain new privileges, or
+    # use Linux capabilities.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    user: "node"
+    networks: [supplier]
+
+networks:
+  supplier:
+    external: true
+    name: pocket-supplier
+
+volumes:
+  meadow-data:

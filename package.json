@@ -1,0 +1,15 @@
+{
+  "name": "meadow-node",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node backend/src/main.js",
+    "test": "node conformance/run.js && node --test \"backend/test/*.test.js\"",
+    "vectors": "node conformance/tools/generate.js"
+  },
+  "description": "Meadow node: backend, conformance suite, and deployment files. The version lives in backend/package.json."
+}

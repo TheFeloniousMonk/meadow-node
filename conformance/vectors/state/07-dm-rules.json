@@ -1,0 +1,251 @@
+{
+  "name": "dm-rules",
+  "description": "A DM admits exactly its two participants without invites; only leaving yourself is allowed otherwise.",
+  "spec_sections": [
+    "4.3",
+    "6.5"
+  ],
+  "agents": {
+    "alice": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+    "bob": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+    "carol": "a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc"
+  },
+  "steps": [
+    {
+      "label": "create",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.create",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000001000,
+          "parents": [],
+          "auth": [],
+          "data": {
+            "room_version": 1,
+            "type": "dm",
+            "dm_with": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+            "dm_key": "Ak4zFyyDXA9RuzPPUB4xTQIXH6ZR4MfoC-uZHori8is"
+          }
+        },
+        "id": "e_8xkx8E0zjopuxBaPm4OUTwng1UnOqj0B9ddt_vxhjrs",
+        "sig": "CaUSCmWnLmLpA8ZdaddtPWXIR2Yj8K5fcVfTqqxAjbHToCfe5hAAW5Vi5FGha0TG2ORWukhae1eCRAiTtPMTBA"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "alice-join",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000002000,
+          "room": "r_8xkx8E0zjopuxBaPm4OUTwng1UnOqj0B9ddt_vxhjrs",
+          "parents": [
+            "e_8xkx8E0zjopuxBaPm4OUTwng1UnOqj0B9ddt_vxhjrs"
+          ],
+          "data": {
+            "target": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+            "membership": "join"
+          },
+          "auth": [
+            "e_8xkx8E0zjopuxBaPm4OUTwng1UnOqj0B9ddt_vxhjrs"
+          ]
+        },
+        "id": "e_UEe4ZTW9WoUfkIUogDhbNlOOVTc3QOlKLXMOYpA9ils",
+        "sig": "YU9WI4d09hTy0uqbqQGwaQ1KXltykKD5DTIhCszAiUrbSQVN7JcXlUXOpg03AuAMYl-rBEJwGWvQdYXU4XNBAQ"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "bob-join",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+          "ts": 1790000003000,
+          "room": "r_8xkx8E0zjopuxBaPm4OUTwng1UnOqj0B9ddt_vxhjrs",
+          "parents": [
+            "e_UEe4ZTW9WoUfkIUogDhbNlOOVTc3QOlKLXMOYpA9ils"
+          ],
+          "data": {
+            "target": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+            "membership": "join"
+          },
+          "auth": [
+            "e_8xkx8E0zjopuxBaPm4OUTwng1UnOqj0B9ddt_vxhjrs"
+          ]
+        },
+        "id": "e_3PnM0Fb5AQHSKFuFj5WeSHe_-jNrf9XCBIkdCmlHig0",
+        "sig": "th-UduKgxFP70QIe0bu3r5BSFZKfv6nVb36hCmjjYVHd7hjsf9FvI-m6s0z5BoHW0Y1Of9TZLf6jA7xSqbYwBg"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "carol-join",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc",
+          "ts": 1790000004000,
+          "room": "r_8xkx8E0zjopuxBaPm4OUTwng1UnOqj0B9ddt_vxhjrs",
+          "parents": [
+            "e_3PnM0Fb5AQHSKFuFj5WeSHe_-jNrf9XCBIkdCmlHig0"
+          ],
+          "data": {
+            "target": "a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc",
+            "membership": "join"
+          },
+          "auth": [
+            "e_8xkx8E0zjopuxBaPm4OUTwng1UnOqj0B9ddt_vxhjrs"
+          ]
+        },
+        "id": "e_uWqyiW3ln5B6vFVKtlSpn4i4sD9fSgXKxUwaRggRvPQ",
+        "sig": "Gq5hCS26RfMdlvtyy9h5k_lDdX01H9U8OBHo2o64hJ9-8ezWnIbhcvCzKp4rgJSSfgVy00LDhD4QztXRTmr2BA"
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "dm_rules"
+      }
+    },
+    {
+      "label": "alice-invites-carol",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000005000,
+          "room": "r_8xkx8E0zjopuxBaPm4OUTwng1UnOqj0B9ddt_vxhjrs",
+          "parents": [
+            "e_3PnM0Fb5AQHSKFuFj5WeSHe_-jNrf9XCBIkdCmlHig0"
+          ],
+          "data": {
+            "target": "a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc",
+            "membership": "invite"
+          },
+          "auth": [
+            "e_8xkx8E0zjopuxBaPm4OUTwng1UnOqj0B9ddt_vxhjrs",
+            "e_UEe4ZTW9WoUfkIUogDhbNlOOVTc3QOlKLXMOYpA9ils"
+          ]
+        },
+        "id": "e_dxNirF7A4UHTy2RxITq6bJJ-753q2eyFjzSiE1VFCLo",
+        "sig": "olcDzghfKutLtgyu5MXA0d9wRhHlU5t_lJnnalhRH_oqU4WMgxDHkev215wxYTPlcrdChwtZkZSWizu5JM86AQ"
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "dm_rules"
+      }
+    },
+    {
+      "label": "alice-removes-bob",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000006000,
+          "room": "r_8xkx8E0zjopuxBaPm4OUTwng1UnOqj0B9ddt_vxhjrs",
+          "parents": [
+            "e_3PnM0Fb5AQHSKFuFj5WeSHe_-jNrf9XCBIkdCmlHig0"
+          ],
+          "data": {
+            "target": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+            "membership": "leave"
+          },
+          "auth": [
+            "e_8xkx8E0zjopuxBaPm4OUTwng1UnOqj0B9ddt_vxhjrs",
+            "e_UEe4ZTW9WoUfkIUogDhbNlOOVTc3QOlKLXMOYpA9ils",
+            "e_3PnM0Fb5AQHSKFuFj5WeSHe_-jNrf9XCBIkdCmlHig0"
+          ]
+        },
+        "id": "e__GZJXyt4yU4Srx3QXPL9me2-y9imnO0TUjxbG_W-wN4",
+        "sig": "j9gTmWdeY_TFS86mSYi5bismu2TF_wjvniXZKRLosWvwpyKGy6r56Hz20B-zejvOZ4DeaIKz-AsT-2Oz-R7_Cw"
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "dm_rules"
+      }
+    },
+    {
+      "label": "bob-leaves",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+          "ts": 1790000007000,
+          "room": "r_8xkx8E0zjopuxBaPm4OUTwng1UnOqj0B9ddt_vxhjrs",
+          "parents": [
+            "e_3PnM0Fb5AQHSKFuFj5WeSHe_-jNrf9XCBIkdCmlHig0"
+          ],
+          "data": {
+            "target": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+            "membership": "leave"
+          },
+          "auth": [
+            "e_8xkx8E0zjopuxBaPm4OUTwng1UnOqj0B9ddt_vxhjrs",
+            "e_3PnM0Fb5AQHSKFuFj5WeSHe_-jNrf9XCBIkdCmlHig0"
+          ]
+        },
+        "id": "e__Z1vD5MLCB68JcNMaGWiWpsCmwui0oWufSY9MPUyZ9E",
+        "sig": "2_r6NzGYW_iA2SM9ia-qtlrWd2SQ2K9R1Wh5lGlDlFdXgyzmkESAd_PvZKoey3T_SnDh4uCeItg2WLqSQuJJDg"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "bob-rejoins",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+          "ts": 1790000008000,
+          "room": "r_8xkx8E0zjopuxBaPm4OUTwng1UnOqj0B9ddt_vxhjrs",
+          "parents": [
+            "e__Z1vD5MLCB68JcNMaGWiWpsCmwui0oWufSY9MPUyZ9E"
+          ],
+          "data": {
+            "target": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+            "membership": "join"
+          },
+          "auth": [
+            "e_8xkx8E0zjopuxBaPm4OUTwng1UnOqj0B9ddt_vxhjrs",
+            "e__Z1vD5MLCB68JcNMaGWiWpsCmwui0oWufSY9MPUyZ9E"
+          ]
+        },
+        "id": "e_7YBHyYuY4fP0FfOfM_9dq39gWIgl1ygnJ5ldf83AtV8",
+        "sig": "HrzJ61f3IESd0-yAcxyinngF9xHuo_eCE2-eor2CgMKnsrg1fshfXugTVdp3XrPrXULTMVW_sHYXOxV4SwX3Cg"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    }
+  ],
+  "final": {
+    "heads": [
+      "bob-rejoins"
+    ],
+    "state": {
+      "room.create|": "create",
+      "room.member|a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o": "alice-join",
+      "room.member|a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg": "bob-rejoins"
+    }
+  }
+}

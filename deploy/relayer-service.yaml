@@ -1,0 +1,30 @@
+# The Meadow entry under `services:` in each network's HA RelayMiner relayer
+# config. The Pocket Service Manager writes this itself when it deploys, using
+# the per-network port in relayer.json; it is here for reference and for
+# operators without the app. Each network's relayer calls its own node.
+
+# MainNet relayer config (e.g. /opt/pocket/supplier-main/relayer-config.yaml):
+meadow:
+  timeout_profile: fast
+  max_body_size_bytes: 20971520
+  default_backend: rest
+  backends:
+    rest:
+      url: "http://meadow-backend:8080"
+      health_check:
+        endpoint: "/healthz"
+        interval_seconds: 10
+        timeout_seconds: 5
+
+# Beta relayer config (e.g. /opt/pocket/supplier-beta/relayer-config.yaml):
+# meadow:
+#   timeout_profile: fast
+#   max_body_size_bytes: 20971520
+#   default_backend: rest
+#   backends:
+#     rest:
+#       url: "http://meadow-backend:8081"
+#       health_check:
+#         endpoint: "/healthz"
+#         interval_seconds: 10
+#         timeout_seconds: 5

@@ -1,0 +1,94 @@
+{
+  "name": "create-validation",
+  "description": "A room.create with a wrong dm_key or an unknown room version is discarded.",
+  "spec_sections": [
+    "6.1",
+    "6.6"
+  ],
+  "agents": {
+    "alice": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+    "bob": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+    "carol": "a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc"
+  },
+  "steps": [
+    {
+      "label": "dm-wrong-key",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.create",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000001000,
+          "parents": [],
+          "auth": [],
+          "data": {
+            "room_version": 1,
+            "type": "dm",
+            "dm_with": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+            "dm_key": "4ZCPPayip6_h5O2UPDX0urXINQcX0HrPItYMwZYY3qc"
+          }
+        },
+        "id": "e_69MsEMifhr0AYdtoRz76qxe7XKv_AaKyeFrUq-f5wJw",
+        "sig": "xXV55GXscGI7UJG8VsvnhdkPUOU7NdePUP5fHcdFusC5gd9nhSyi38ocQKoPwrxcoYRQYANK14osbHDy5scLAw"
+      },
+      "expect": {
+        "outcome": "discarded",
+        "reason": "malformed"
+      }
+    },
+    {
+      "label": "future-version",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.create",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000002000,
+          "parents": [],
+          "auth": [],
+          "data": {
+            "type": "public",
+            "room_version": 2
+          }
+        },
+        "id": "e_HRoIcae3jF1ffPc0nb5SoVakVk_F4rRmcaIJ4oeQ9Hw",
+        "sig": "XzgpUBhmlSiDIKv0vq-I4ycdLWimmC4_uo_0l0NJyXY0eJc8WF7yYGj-tFVEXH7Bqwmz0P5006Mt2oOpoYXqDw"
+      },
+      "expect": {
+        "outcome": "discarded",
+        "reason": "unsupported_room_version"
+      }
+    },
+    {
+      "label": "create",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.create",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000003000,
+          "parents": [],
+          "auth": [],
+          "data": {
+            "room_version": 1,
+            "type": "public"
+          }
+        },
+        "id": "e_jBy688wsgxDrype42gQ831OEcm5TROTAADVtNSgiVKE",
+        "sig": "z-U30WX55-A0h4z-IfILKBm-wjaVXN7jDnob67kNGidCu4D0di5a6qCAK6ihRzDbNoXOxK_Yu0qORH4hYDTVBA"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    }
+  ],
+  "final": {
+    "heads": [
+      "create"
+    ],
+    "state": {
+      "room.create|": "create"
+    }
+  }
+}

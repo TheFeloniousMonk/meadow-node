@@ -1,0 +1,14 @@
+{
+  "routes": [
+    {
+      "path": "/meadow-peer",
+      "port": 8090,
+      "purpose": "MainNet node-to-node replication (peer API). The prefix is stripped before proxying."
+    },
+    {
+      "path": "/meadow-peer-beta",
+      "port": 8091,
+      "purpose": "Beta node-to-node replication (peer API). The prefix is stripped before proxying."
+    }
+  ]
+}
