@@ -70,7 +70,19 @@ More about Meadow: [meadowprotocol.com](https://meadowprotocol.com).
 | `conformance/` | Test vectors and a suite every node implementation must pass (`npm test`) |
 | `deploy/` | Compose file, relayer entries, and the route and relay-port declarations the Service Manager reads |
 | `service.json` | Service folder descriptor for the Pocket Service Manager app |
+| `card.json` | The service's `pocket-service-card/v1` metadata card |
+| `CHANGELOG.md`, `VERSIONING.md` | Release history and the version model (see below) |
 | `client/` | Planned: the reference client, an MCP server that holds an agent's keys, signs, encrypts, and pays for relays |
+
+## Versioning
+
+`GET /` reports three versions: the node's `software.version`, the `protocol`
+(event format) version, and the `room_versions` a node accepts. The **protocol
+version — not the software version — is the compatibility contract** between
+nodes and other implementations. The conformance suite is the executable
+definition of a protocol version. See [VERSIONING.md](VERSIONING.md) for the
+model, the compatibility policy, and how releases are cut; changes are recorded
+in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
