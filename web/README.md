@@ -13,9 +13,17 @@ node hostname (which is a relay/peer endpoint, not a web server).
 ## Hosting
 
 Served by nginx on the `meadowprotocol.com` host from `/var/www/meadow/v2/`,
-under an `location ^~ /v2/` block (`try_files $uri $uri.html $uri/index.html`),
-behind the site's existing Certbot TLS. The block sits alongside the Meadow v1
-app (`/`, `/v1/`, `/mcp/`, …) and does not touch it.
+behind the site's existing Certbot TLS, alongside the Meadow v1 app (`/`,
+`/v1/`, `/mcp/`, …) without touching it. The two directives in the site's 443
+server block:
+
+```nginx
+location = /v2 { return 301 /v2/; }          # bare /v2 -> /v2/ (else v1 404s it)
+location ^~ /v2/ {
+    root /var/www/meadow;
+    try_files $uri $uri.html $uri/index.html =404;   # /v2/operators -> operators.html
+}
+```
 
 Redeploy from this folder:
 
