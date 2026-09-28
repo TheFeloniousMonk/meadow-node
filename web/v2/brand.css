@@ -1,0 +1,142 @@
+/* Meadow brand — tokens mirrored from meadowprotocol.com's design system
+   (Fraunces / Outfit / JetBrains Mono; amber + cream/ink palette; a data-theme
+   dark mode). Redeclared here because the site's compiled bundle is hashed and
+   app-specific; these standalone /v2 pages carry their own copy in sync. */
+
+:root {
+  --amber-300: hsl(38, 75%, 65%);
+  --amber-400: hsl(38, 78%, 55%);
+  --amber-500: hsl(38, 80%, 48%);
+  --amber-600: hsl(38, 82%, 38%);
+  --sage-400: hsl(152, 22%, 48%);
+  --sage-500: hsl(152, 25%, 38%);
+
+  --font-display: "Fraunces", Georgia, serif;
+  --font-body: "Outfit", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+
+  --bg-page: hsl(38, 30%, 97%);
+  --bg-surface: #ffffff;
+  --bg-surface-alt: hsl(38, 20%, 95%);
+  --text-primary: hsl(38, 20%, 12%);
+  --text-secondary: hsl(38, 10%, 40%);
+  --text-tertiary: hsl(38, 8%, 55%);
+  --border-subtle: hsl(38, 15%, 88%);
+  --border-default: hsl(38, 12%, 80%);
+  --accent-text: var(--amber-600);
+  --accent-bg: hsla(38, 78%, 55%, .08);
+  --accent-hover: hsla(38, 78%, 55%, .14);
+  --code-bg: hsl(38, 20%, 95%);
+  --code-text: hsl(38, 22%, 22%);
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+}
+[data-theme="dark"] {
+  --bg-page: hsl(30, 12%, 8%);
+  --bg-surface: hsl(30, 10%, 11%);
+  --bg-surface-alt: hsl(30, 8%, 16%);
+  --text-primary: hsl(35, 18%, 88%);
+  --text-secondary: hsl(30, 12%, 62%);
+  --text-tertiary: hsl(30, 8%, 45%);
+  --border-subtle: hsl(30, 6%, 16%);
+  --border-default: hsl(30, 8%, 20%);
+  --accent-text: var(--amber-300);
+  --accent-bg: hsla(38, 75%, 55%, .1);
+  --accent-hover: hsla(38, 75%, 55%, .16);
+  --code-bg: hsl(30, 10%, 14%);
+  --code-text: hsl(35, 15%, 78%);
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg-page);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 1.0625rem;
+  line-height: 1.72;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+.container { max-width: 62rem; margin: 0 auto; padding: 0 1.5rem; }
+
+a { color: var(--accent-text); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+
+h1, h2, h3 { font-family: var(--font-display); font-weight: 400; letter-spacing: -.01em; line-height: 1.12; color: var(--text-primary); }
+h1 { font-size: clamp(2.6rem, 6vw, 3.4rem); margin: 0 0 .5rem; }
+h2 { font-size: clamp(1.7rem, 3.5vw, 2rem); margin: 3rem 0 1rem; }
+h3 { font-size: 1.3rem; margin: 2rem 0 .5rem; }
+p { margin: 0 0 1.1rem; }
+.lede { font-size: clamp(1.15rem, 2.4vw, 1.35rem); line-height: 1.55; color: var(--text-secondary); margin: 0 0 1.75rem; max-width: 44rem; }
+
+ul, ol { padding-left: 1.35rem; margin: 1rem 0; }
+li { margin: .5rem 0; }
+li strong { color: var(--text-primary); }
+
+code {
+  font-family: var(--font-mono); font-size: .85em;
+  background: var(--code-bg); color: var(--code-text);
+  padding: .12em .4em; border-radius: 5px;
+}
+pre {
+  font-family: var(--font-mono); font-size: .82rem; line-height: 1.55;
+  background: var(--code-bg); color: var(--code-text);
+  padding: 1rem 1.1rem; border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle); overflow-x: auto;
+}
+pre code { background: none; padding: 0; color: inherit; }
+
+table { border-collapse: collapse; width: 100%; margin: 1.25rem 0; font-size: .95rem; }
+th, td { text-align: left; padding: .6rem .7rem; border-bottom: 1px solid var(--border-subtle); vertical-align: top; }
+th { color: var(--text-secondary); font-weight: 600; }
+
+.callout {
+  background: var(--accent-bg); border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--amber-500); border-radius: var(--radius-md);
+  padding: 1rem 1.2rem; margin: 1.75rem 0; color: var(--text-secondary); font-size: .98rem;
+}
+.callout strong { color: var(--text-primary); }
+
+.cards { display: grid; gap: .9rem; grid-template-columns: 1fr 1fr; margin: 1.75rem 0; }
+@media (max-width: 36rem) { .cards { grid-template-columns: 1fr; } }
+.cards a {
+  display: block; background: var(--bg-surface); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); padding: 1.1rem 1.2rem; color: var(--text-primary);
+  transition: border-color .15s ease, transform .15s ease;
+}
+.cards a:hover { border-color: var(--amber-400); text-decoration: none; transform: translateY(-1px); }
+.cards strong { display: block; font-family: var(--font-display); font-size: 1.15rem; color: var(--accent-text); margin-bottom: .25rem; }
+.cards span { color: var(--text-secondary); font-size: .92rem; }
+
+/* header / nav */
+header.site {
+  position: sticky; top: 0; z-index: 10;
+  background: color-mix(in srgb, var(--bg-page) 88%, transparent);
+  backdrop-filter: saturate(1.2) blur(8px);
+  border-bottom: 1px solid var(--border-subtle);
+}
+header.site .bar { display: flex; align-items: center; gap: 1.5rem; height: 4rem; }
+.brand { display: inline-flex; align-items: center; gap: .55rem; color: var(--text-primary); font-family: var(--font-display); font-size: 1.35rem; margin-right: auto; }
+.brand:hover { text-decoration: none; }
+.brand img { width: 1.6rem; height: 1.6rem; display: block; }
+.nav-links { display: flex; gap: 1.35rem; font-size: .95rem; }
+.nav-links a { color: var(--text-secondary); }
+.nav-links a:hover { color: var(--accent-text); text-decoration: none; }
+@media (max-width: 34rem) { .nav-links a[data-opt] { display: none; } }
+.theme-toggle {
+  appearance: none; border: 1px solid var(--border-default); background: var(--bg-surface);
+  color: var(--text-secondary); width: 2.1rem; height: 2.1rem; border-radius: var(--radius-md);
+  cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 1rem;
+}
+.theme-toggle:hover { border-color: var(--amber-400); color: var(--accent-text); }
+.theme-toggle .moon { display: none; }
+[data-theme="dark"] .theme-toggle .sun { display: none; }
+[data-theme="dark"] .theme-toggle .moon { display: inline; }
+
+main { padding: 3.5rem 0 2rem; }
+footer.site { border-top: 1px solid var(--border-subtle); margin-top: 3rem; padding: 2rem 0 3rem; color: var(--text-tertiary); font-size: .9rem; }
+footer.site a { color: var(--text-secondary); }
