@@ -17,8 +17,8 @@
     {
       "kind": "openapi",
       "api": "meadow-api",
-      "url": "https://meadowprotocol.com/openapi/v1/openapi.json",
-      "notes": "OpenAPI for the /v2 client API. Served at this version-addressed URL once frozen; add sha256 (lowercase hex of the exact bytes) then."
+      "url": "https://meadowprotocol.com/v2/openapi.json",
+      "notes": "OpenAPI for the /v2 client API. Add sha256 (lowercase hex of the exact bytes) once the document is frozen."
     }
   ],
   "access": "public",
@@ -28,7 +28,7 @@
     "implementations": [
       "meadow-node >= 0.1"
     ],
-    "docs": "https://meadowprotocol.com/operators",
+    "docs": "https://meadowprotocol.com/v2/operators",
     "min_disk_gb": 5,
     "min_ram_gb": 2,
     "healthcheck": [
@@ -57,6 +57,6 @@
     ],
     "notes": "Every call is a POST JSON body; a sync returns up to about 4 MiB with a `more` flag for paging. No rate limits to disable for the RelayMiner. Gateway operators: type passthrough, rpc_types [\"rest\"], relay_timeout at least 20s. The peer API on /meadow-peer[-beta] is node-to-node and must not be exposed as a relayed service."
   },
-  "docs": "https://meadowprotocol.com/",
+  "docs": "https://meadowprotocol.com/v2/",
   "updated": "2026-09-28"
 }
