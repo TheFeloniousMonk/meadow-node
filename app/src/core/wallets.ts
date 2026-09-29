@@ -139,6 +139,11 @@ export class Wallets {
       .reduce((sum, p) => sum + BigInt(p.amount), 0n);
   }
 
+  /** How many payments the wallet has signed, ever. */
+  paymentCount(wallet: string): number {
+    return (this.#db.prepare('SELECT COUNT(*) AS n FROM payments WHERE wallet = ?').get(wallet) as any).n;
+  }
+
   payments(limit = 50): any[] {
     return this.#db.prepare('SELECT * FROM payments ORDER BY seq DESC LIMIT ?').all(limit) as any[];
   }

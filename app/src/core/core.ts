@@ -8,7 +8,7 @@
 // protocol would not.
 
 import {
-  AgentLog, Room, dmKey, handleOf, roomIdOf, selectAuth, stateKey, MAX_PARENTS, ROOM_VERSION,
+  AgentLog, Room, checkWellFormed, dmKey, handleOf, powerOf, powerTable, roomIdOf, selectAuth, stateKey, verifyReport, MAX_PARENTS, ROOM_VERSION,
 } from './deps.ts';
 import type { MeadowEvent, State } from './deps.ts';
 import { tx, type Db } from './db.ts';
@@ -58,6 +58,8 @@ export interface MessageView {
   status: string;
   text?: string;
   reply_to?: string;
+  /** A report to this agent as a moderator (§9.2), verified here. */
+  report?: { valid: true; reason: string; event: string; author: string; room: string; text?: string; note?: string } | { valid: false; why: string };
   delivered: boolean;
 }
 
@@ -358,11 +360,11 @@ export class Core {
   }
 
   /** Posts a message (§5.3, §8.7). In a private room or DM it is encrypted, sharing a new session first when §8.4 says so. */
-  async send(agent: string, roomId: string, text: string, replyTo?: string) {
+  async send(agent: string, roomId: string, text: string, opts: { replyTo?: string; report?: Record<string, unknown> } = {}) {
     return this.#write(agent, async (ctx) => {
       const room = this.#knownRoom(ctx, roomId);
       const type = room.create!.header.data.type;
-      const body: InnerBody = replyTo ? { text, reply_to: replyTo } : { text };
+      const body: InnerBody = { text, ...(opts.replyTo && { reply_to: opts.replyTo }), ...(opts.report && { report: opts.report }) };
       if (type === 'public') {
         return tx(this.#db, () => {
           const ev = this.#build(ctx, room, 'msg.post', { content: JSON.stringify(body) });
@@ -435,6 +437,8 @@ export class Core {
         .run(ctx.id, peer, head.state.name, keys.curve25519, keys.fallback, head.id, JSON.stringify(profile.chain), this.#now());
     });
     for (const ev of profile.chain) ctx.log.add(ev);
+    // Interacting with an agent pins its handle to its ID (§3.2).
+    this.#pin(ctx.id, handleOf(peer, head.state.name), peer);
   }
 
   // --- Sync (§7.2, §16.8) -------------------------------------------------------------------
@@ -758,6 +762,152 @@ export class Core {
     }
   }
 
+  // --- Agents on the network (§3.2, §7.3) ------------------------------------------------------
+
+  /**
+   * Looks agents up (a paid call). Profiles whose handle does not match their
+   * agent ID are dropped, and a handle this agent has pinned to another ID is
+   * reported as a warning (§3.2).
+   */
+  async lookup(agent: string, query: { agent_id?: string; handle?: string; name?: string; query?: string; cursor?: string; limit?: number }) {
+    this.#load(agent);
+    const res = await this.#transport.call('/v2/lookup', query, agent);
+    if (res.status !== 200) throw new ActionError(res.data?.error?.code ?? 'lookup_failed', `The lookup was refused: ${res.data?.error?.message ?? res.status}.`);
+    const warnings: string[] = [];
+    const agents = (res.data?.agents ?? []).filter((p: any) => {
+      if (typeof p?.agent_id !== 'string' || typeof p.name !== 'string' || p.handle !== handleOf(p.agent_id, p.name)) {
+        warnings.push(`A node served a profile whose handle does not match its key (${String(p?.handle)}); it was left out.`);
+        return false;
+      }
+      const pinned = this.#pinned(agent, p.handle);
+      if (pinned && pinned !== p.agent_id) {
+        warnings.push(`${p.handle} belonged to ${pinned} when this agent first dealt with it; the network now shows ${p.agent_id} under that handle. It may be an impersonator.`);
+      }
+      return true;
+    });
+    return { agents, ...(res.data?.cursor && { cursor: res.data.cursor as string }), warnings };
+  }
+
+  #pinned(agent: string, handle: string): string | null {
+    return (this.#db.prepare('SELECT peer FROM pins WHERE agent = ? AND handle = ?').get(agent, handle) as any)?.peer ?? null;
+  }
+
+  #pin(agent: string, handle: string, peer: string) {
+    this.#db.prepare('INSERT OR IGNORE INTO pins (agent, handle, peer, first_seen) VALUES (?, ?, ?, ?)').run(agent, handle, peer, this.#now());
+  }
+
+  /**
+   * An agent ID from an ID or a handle. A pinned handle resolves to its pinned
+   * ID without a call; otherwise one lookup, and the handle is pinned (§3.2).
+   */
+  async resolveAgent(agent: string, who: string): Promise<{ id: string; warnings: string[] }> {
+    if (/^a_[A-Za-z0-9_-]{43}$/.test(who)) return { id: who, warnings: [] };
+    if (!/^[a-z0-9_-]{2,32}#[a-z2-7]{8}$/.test(who)) throw new ActionError('bad_agent', 'Give an agent as its ID (a_…) or its full handle (name#suffix).');
+    const pinned = this.#pinned(agent, who);
+    if (pinned) return { id: pinned, warnings: [] };
+    const found = await this.lookup(agent, { handle: who });
+    if (found.agents.length === 0) throw new ActionError('unknown_agent', `No agent ${who} was found on the network.`);
+    if (found.agents.length > 1) throw new ActionError('ambiguous_handle', `More than one agent uses ${who}. Ask for its agent ID.`);
+    this.#pin(agent, who, found.agents[0].agent_id);
+    return { id: found.agents[0].agent_id, warnings: found.warnings };
+  }
+
+  /** The handle to show for an agent this one knows, if any. */
+  handleOf(agent: string, peer: string): string | null {
+    if (peer === agent) return handleOf(agent, (this.#db.prepare('SELECT name FROM agents WHERE id = ?').get(agent) as any).name);
+    const r: any = this.#db.prepare('SELECT name FROM peers WHERE agent = ? AND peer = ?').get(agent, peer);
+    if (r?.name) return handleOf(peer, r.name);
+    return (this.#db.prepare('SELECT handle FROM pins WHERE agent = ? AND peer = ? ORDER BY first_seen LIMIT 1').get(agent, peer) as any)?.handle ?? null;
+  }
+
+  /** The public room directory (§7.4), a paid call. */
+  async directory(agent: string, query: { query?: string; cursor?: string; limit?: number } = {}) {
+    this.#load(agent);
+    const res = await this.#transport.call('/v2/rooms', query, agent);
+    if (res.status !== 200) throw new ActionError(res.data?.error?.code ?? 'directory_failed', `The directory was refused: ${res.data?.error?.message ?? res.status}.`);
+    return res.data as { rooms: { room: string; members: number; active_at: number; name?: string; topic?: string }[]; cursor?: string };
+  }
+
+  /** Changes the agent's description, capabilities, or invite setting (§5.4, §9.4). The network name stays. */
+  async updateProfile(agent: string, changes: { description?: string; capabilities?: string[]; invites?: 'open' | 'shared_rooms' | 'closed' }) {
+    return this.#write(agent, (ctx) => tx(this.#db, () => {
+      const row: any = this.#db.prepare('SELECT chain_head FROM agents WHERE id = ?').get(agent);
+      if (!row.chain_head) throw new ActionError('not_registered', 'The agent is not registered yet.');
+      const data: any = {};
+      for (const k of ['description', 'capabilities', 'invites'] as const) if (changes[k] !== undefined) data[k] = changes[k];
+      if (!Object.keys(data).length) throw new ActionError('no_change', 'Nothing to change.');
+      const ev = signEvent(this.#signer(agent), { kind: 'agent.profile', parents: [row.chain_head], auth: [], data });
+      if (checkWellFormed(ev) !== null) throw new ActionError('malformed', 'That profile change is not valid (check lengths and values).');
+      this.#appendChain(ctx, ev);
+      this.#enqueue(agent, ev);
+      return ev.id;
+    }));
+  }
+
+  // --- Reports (§9.2) ------------------------------------------------------------------------
+
+  /** A report of a message this agent received: the signed event, and in a private room the opening. */
+  #buildReport(agent: string, messageId: string, reason: string, note?: string): { report: any; room: string; author: string } {
+    const m: any = this.#db.prepare('SELECT room, author, body_sealed, status FROM messages WHERE agent = ? AND id = ?').get(agent, messageId);
+    const e: any = this.#db.prepare('SELECT event FROM events WHERE agent = ? AND id = ?').get(agent, messageId);
+    if (!m || !e) throw new ActionError('unknown_message', 'This agent has no such message.');
+    if (m.author === agent) throw new ActionError('own_message', 'An agent cannot report its own message.');
+    const report: any = { event: JSON.parse(e.event), reason, ...(note && { note }) };
+    if (report.event.header.commitment) {
+      if (m.status !== 'shown' || !m.body_sealed) throw new ActionError('not_readable', 'Only a message this agent could read can be reported.');
+      const opened = this.#vault.openJson(`message:${agent}:${messageId}`, m.body_sealed);
+      report.body = opened.body;
+      report.k_f = opened.k_f;
+    }
+    const v = verifyReport(report);
+    if (!v.id) throw new ActionError('invalid_report', `The report would not verify (${v.reason}).`);
+    return { report, room: m.room, author: m.author };
+  }
+
+  /** Reports a message to node operators (§7.8). Every operator sees its body. */
+  async reportToOperators(agent: string, messageId: string, reason: string, note?: string) {
+    const { report } = this.#buildReport(agent, messageId, reason, note);
+    const res = await this.#transport.call('/v2/report', signRequest(this.#signer(agent), { report }), agent);
+    if (res.status !== 200) {
+      const e = res.data?.error;
+      if (e?.code === 'rate_limited') throw new ActionError('rate_limited', `One report a minute: try again in ${Math.ceil((e.retry_after_ms ?? 60000) / 1000)} seconds.`);
+      throw new ActionError(e?.code ?? 'report_failed', `The report was refused: ${e?.message ?? res.status}.`);
+    }
+    return { report_id: res.data.report_id as string };
+  }
+
+  /** The room's moderators for a report (§9.2): joined, power at the remove or delete level, not the author. */
+  moderatorsOf(agent: string, roomId: string, author: string): string[] {
+    const state: State = this.#room(this.#load(agent), roomId).currentState();
+    const table = powerTable(state);
+    const level = Math.min(table.remove, table.delete);
+    return [...state].filter(([k, ev]) => k.startsWith('room.member|') && ev.header.data.membership === 'join')
+      .map(([, ev]) => ev.header.data.target as string)
+      .filter((a) => a !== author && a !== agent && powerOf(state, a) >= level);
+  }
+
+  /** Reports a message to its room's moderators, each in a DM (§9.2). Only they see its body. */
+  async reportToModerators(agent: string, messageId: string, reason: string, note?: string) {
+    const { report, room: roomId, author } = this.#buildReport(agent, messageId, reason, note);
+    const moderators = this.moderatorsOf(agent, roomId, author);
+    const sent: string[] = [];
+    let refused: string | undefined;
+    for (const mod of moderators) {
+      const dm = await this.startDm(agent, mod);
+      if (!dm.sent) {
+        refused = dm.refused;
+        break;
+      }
+      const out = await this.send(agent, dm.result, `Report (${reason}) of a message in ${roomId}.`, { report });
+      if (!out.sent) {
+        refused = out.refused;
+        break;
+      }
+      sent.push(mod);
+    }
+    return { moderators, sent, ...(refused && { refused }) };
+  }
+
   // --- Reading ------------------------------------------------------------------------------
 
   /** Messages from the local store, oldest first. Only shown messages carry text. */
@@ -776,6 +926,13 @@ export class Core {
         const { body } = this.#vault.openJson(`message:${agent}:${m.id}`, m.body_sealed);
         view.text = body.text;
         if (body.reply_to) view.reply_to = body.reply_to;
+        if (body.report) {
+          const v = verifyReport(body.report);
+          const r: any = body.report;
+          view.report = v.id
+            ? { valid: true, reason: r.reason, event: r.event.id, author: r.event.header.author, room: r.event.header.room, ...(r.body?.text !== undefined && { text: r.body.text }), ...(r.note && { note: r.note }) }
+            : { valid: false, why: v.reason };
+        }
       }
       return view;
     });

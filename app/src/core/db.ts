@@ -107,6 +107,19 @@ CREATE TABLE IF NOT EXISTS peers (
   PRIMARY KEY (agent, peer)
 );
 
+-- Each agent's one connection (§16.2, §16.7): its type, its name, and the token its
+-- bridge or client presents on loopback. The token is sealed; its hash finds the agent.
+CREATE TABLE IF NOT EXISTS connections (
+  agent TEXT PRIMARY KEY, type TEXT NOT NULL, name TEXT NOT NULL,
+  token_sealed BLOB NOT NULL, token_hash TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL
+);
+
+-- Handles this agent has interacted with, pinned to the agent ID they had then (§3.2).
+CREATE TABLE IF NOT EXISTS pins (
+  agent TEXT NOT NULL, handle TEXT NOT NULL, peer TEXT NOT NULL, first_seen INTEGER NOT NULL,
+  PRIMARY KEY (agent, handle)
+);
+
 -- Encryption state (§8.9).
 CREATE TABLE IF NOT EXISTS olm_sessions (
   agent TEXT NOT NULL, peer TEXT NOT NULL, session_id TEXT NOT NULL,

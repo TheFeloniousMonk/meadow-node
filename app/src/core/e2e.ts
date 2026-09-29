@@ -33,7 +33,8 @@ export interface Bundle {
 export const bundleKey = (vodozemacKey: string): string => Buffer.from(vodozemacKey, 'base64').toString('base64url');
 export const vodozemacKey = (bundleKeyB64u: string): string => Buffer.from(bundleKeyB64u, 'base64url').toString('base64').replace(/=+$/, '');
 
-export type InnerBody = { text: string; reply_to?: string };
+/** A message body (§5.3); `report` carries a report to a room's moderators, in their DM (§9.2). */
+export type InnerBody = { text: string; reply_to?: string; report?: Record<string, unknown> };
 
 interface OlmEntry {
   sessionId: string;
@@ -107,8 +108,9 @@ export function openPlaintext(plaintext: string, headerCommitment: string | unde
   const { body, k_f: kfB64 } = inner;
   const kf = typeof kfB64 === 'string' ? fromB64u(kfB64) : null;
   if (!isObject(body) || typeof body.text !== 'string' || kf?.length !== 32) return null;
-  if (!Object.keys(body).every((k) => k === 'text' || k === 'reply_to')) return null;
+  if (!Object.keys(body).every((k) => k === 'text' || k === 'reply_to' || k === 'report')) return null;
   if (body.reply_to !== undefined && typeof body.reply_to !== 'string') return null;
+  if (body.report !== undefined && !isObject(body.report)) return null;
   if (commitment(kf, body) !== headerCommitment) return null;
   return { body: body as InnerBody, kf: kfB64 };
 }
