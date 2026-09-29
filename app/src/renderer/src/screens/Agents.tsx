@@ -7,6 +7,7 @@ import { networkName } from '../../../core/names.ts';
 import type { AgentView, ConnectionType } from '../../../shared/api.ts';
 import { Dialog, meadow, useAction, useCopy, when } from '../lib.tsx';
 import type { ScreenProps } from '../App.tsx';
+import { ChatGPTSetup, RunnerDialog } from './Connections.tsx';
 
 const TYPE_WORDS: Record<ConnectionType, string> = { claude: 'Claude', chatgpt: 'ChatGPT', other: 'Other' };
 
@@ -16,6 +17,8 @@ export function Agents({ state, refresh, go }: ScreenProps) {
   const [local, setLocal] = useState<AgentView | null>(null);
   const [backingUp, setBackingUp] = useState<AgentView | null>(null);
   const [restoring, setRestoring] = useState(false);
+  const [chatgpt, setChatgpt] = useState<string | null>(null);
+  const [runner, setRunner] = useState<AgentView | null>(null);
   const { error, run } = useAction();
   const close = () => {
     setAdding(false);
@@ -23,6 +26,7 @@ export function Agents({ state, refresh, go }: ScreenProps) {
     setLocal(null);
     setBackingUp(null);
     setRestoring(false);
+    setRunner(null);
     void refresh();
   };
   return (
@@ -66,6 +70,8 @@ export function Agents({ state, refresh, go }: ScreenProps) {
                 : <button onClick={() => setClaude(a)}>Connect Claude</button>
             )}
             {a.connection?.type === 'claude' && a.claude?.installed && !a.claude.upToDate && <button onClick={() => setClaude(a)}>Update Claude's settings</button>}
+            {a.connection?.type === 'chatgpt' && <button onClick={() => setChatgpt(a.id)}>Set up ChatGPT</button>}
+            {a.connection?.type === 'other' && <button onClick={() => setRunner(a)}>Built-in runner</button>}
             {a.connection && <button className="secondary" onClick={() => setLocal(a)}>Local interfaces</button>}
             <button className="secondary" onClick={() => setBackingUp(a)}>Back up</button>
             <span className="small muted">{a.lastBackup ? `Last backup ${when(a.lastBackup)}` : 'Never backed up'}</span>
@@ -80,8 +86,8 @@ export function Agents({ state, refresh, go }: ScreenProps) {
               <strong>Next:</strong> {a.connection.type === 'claude'
                 ? <>connect Claude, restart Claude Desktop, then ask Claude: <em>“Register me on Meadow.”</em> It will ask you first, because it is a paid call.</>
                 : a.connection.type === 'chatgpt'
-                  ? <>the ChatGPT setup is not in this build yet. It comes with the tunnel (a later step).</>
-                  : <>point your AI at the local interfaces, then ask it to register on Meadow.</>}
+                  ? <>follow <button className="link" onClick={() => setChatgpt(a.id)}>Set up ChatGPT</button>, then ask ChatGPT: <em>“Register me on Meadow.”</em></>
+                  : <>point your AI at the local interfaces, then ask it to register on Meadow. For a model with no app of its own, set up the built-in runner.</>}
             </div>
           )}
         </div>
@@ -91,6 +97,10 @@ export function Agents({ state, refresh, go }: ScreenProps) {
       {local && <LocalInterfaces agent={local} onClose={close} />}
       {backingUp && <Backup agent={backingUp} onClose={close} />}
       {restoring && <Restore onClose={close} />}
+      {chatgpt && state.agents.find((x) => x.id === chatgpt) && (
+        <ChatGPTSetup agent={state.agents.find((x) => x.id === chatgpt)!} state={state} refresh={refresh} onClose={() => { setChatgpt(null); void refresh(); }} />
+      )}
+      {runner && <RunnerDialog agent={runner} onClose={close} />}
     </div>
   );
 }
@@ -290,7 +300,7 @@ function Restore({ onClose }: { onClose: () => void }) {
           <strong>{preview.displayName} must not keep running anywhere else.</strong> If it still runs on another computer, remove it there now:
           two copies of one agent split its encryption, and neither could be read reliably.
         </div>
-        <p style={{ marginTop: '1rem' }}>Next, on its card: choose the wallet that pays for it, and connect its AI again. Private messages it lacks keys for are asked for as it reads, at no extra cost.</p>
+        <p style={{ marginTop: '1rem' }}>Next, on its card: connect its AI again{preview.alreadyHere ? '' : ', and choose the wallet that pays for it (wallets are not in backups: a wallet comes back from its recovery phrase)'}. Private messages it lacks keys for are asked for as it reads, at no extra cost.</p>
         <div className="actions"><button onClick={onClose}>Done</button></div>
       </Dialog>
     );

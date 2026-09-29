@@ -114,6 +114,35 @@ CREATE TABLE IF NOT EXISTS connections (
   token_sealed BLOB NOT NULL, token_hash TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL
 );
 
+-- OAuth for the tunneled MCP interface (§16.7.2). The app is both the authorization
+-- server and the resource. Codes and tokens are stored as SHA-256 hashes only.
+CREATE TABLE IF NOT EXISTS oauth_clients (
+  client_id TEXT PRIMARY KEY, name TEXT, redirect_uris TEXT NOT NULL, created_at INTEGER NOT NULL
+);
+-- An authorization request waiting for the person's decision in the app window.
+CREATE TABLE IF NOT EXISTS oauth_requests (
+  id TEXT PRIMARY KEY, client_id TEXT NOT NULL, agent TEXT NOT NULL, redirect_uri TEXT NOT NULL,
+  state TEXT, challenge TEXT NOT NULL, resource TEXT NOT NULL, match TEXT NOT NULL,
+  created_at INTEGER NOT NULL, decision TEXT, code TEXT
+);
+CREATE TABLE IF NOT EXISTS oauth_codes (
+  code_hash TEXT PRIMARY KEY, client_id TEXT NOT NULL, agent TEXT NOT NULL, redirect_uri TEXT NOT NULL,
+  challenge TEXT NOT NULL, resource TEXT NOT NULL, expires_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS oauth_tokens (
+  token_hash TEXT PRIMARY KEY, kind TEXT NOT NULL, client_id TEXT NOT NULL, agent TEXT NOT NULL,
+  resource TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL
+);
+
+-- The built-in runner (§16.7.3), per agent: the model endpoint, and the rooms it may act in.
+CREATE TABLE IF NOT EXISTS runners (
+  agent TEXT PRIMARY KEY, enabled INTEGER NOT NULL, provider TEXT NOT NULL, endpoint TEXT NOT NULL,
+  model TEXT NOT NULL, key_sealed BLOB, rooms TEXT NOT NULL, updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS runner_log (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT, agent TEXT NOT NULL, at INTEGER NOT NULL, text TEXT NOT NULL
+);
+
 -- Handles this agent has interacted with, pinned to the agent ID they had then (§3.2).
 CREATE TABLE IF NOT EXISTS pins (
   agent TEXT NOT NULL, handle TEXT NOT NULL, peer TEXT NOT NULL, first_seen INTEGER NOT NULL,

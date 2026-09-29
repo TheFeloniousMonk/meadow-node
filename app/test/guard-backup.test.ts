@@ -163,9 +163,11 @@ test('a backup restores on another computer: identity, rooms, and encrypted hist
   const opened = readBackup(file, 'correct horse battery');
   assert.deepEqual({ ...describeBackup(opened), createdAt: 0 }, { agent: bob, displayName: 'bob', name: 'bob', registered: true, createdAt: 0, rooms: 1, privateRooms: 1 });
   restoreBackup(C.s.db, C.s.vault, opened);
+  assert.equal(C.s.wallets.walletOf(bob), null); // a new computer: the person chooses the wallet
+  C.s.wallets.assign(bob, C.wallet);
   assert.throws(() => restoreBackup(C.s.db, C.s.vault, opened), /already on this computer/);
   assert.deepEqual(restoreBackup(C.s.db, C.s.vault, opened, { replace: true }), { agent: bob, replaced: true });
-  C.s.wallets.assign(bob, C.wallet);
+  assert.equal(C.s.wallets.walletOf(bob), C.wallet); // replacing keeps the wallet it had
   assert.deepEqual(C.s.core.messages(bob, { room: dm }).map((m) => m.text), ['before the backup']);
 
   // The restored agent keeps reading and writing in its encrypted DM.

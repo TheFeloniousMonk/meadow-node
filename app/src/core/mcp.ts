@@ -38,7 +38,7 @@ export async function handleMcp(msg: any, host: ToolHost, agent: string, { audie
     case 'ping':
       return { jsonrpc: '2.0', id, result: {} };
     case 'tools/list':
-      return { jsonrpc: '2.0', id, result: { tools: host.list().map(({ name, description, inputSchema }) => ({ name, description, inputSchema })) } };
+      return { jsonrpc: '2.0', id, result: { tools: host.list().map(({ name, description, inputSchema, annotations }) => ({ name, description, inputSchema, annotations })) } };
     case 'tools/call': {
       const name = msg.params?.name;
       const args = msg.params?.arguments ?? {};

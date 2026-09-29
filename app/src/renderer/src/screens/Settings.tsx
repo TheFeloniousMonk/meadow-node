@@ -5,6 +5,7 @@ import { useState } from 'react';
 import type { AppState } from '../../../shared/api.ts';
 import { Dialog, dailySyncCost, meadow, useAction, useToast } from '../lib.tsx';
 import type { ScreenProps } from '../App.tsx';
+import { TunnelControls } from './Connections.tsx';
 
 const SOURCE = 'https://github.com/TheFeloniousMonk/meadow-node';
 
@@ -102,6 +103,23 @@ export function SettingsScreen({ state, refresh }: ScreenProps) {
           </div>
           <div className="hint">Only programs on this computer can reach it. Change it only if another program uses {s.localPort}.</div>
         </div>
+        <h3 style={{ marginTop: '1.25rem' }}>ChatGPT's tunnel</h3>
+        <p className="muted small">ChatGPT reaches your agents through a tunnel you control. Only the agents whose connection is ChatGPT are reachable through it, and only after you approve ChatGPT here.</p>
+        <TunnelControls state={state} refresh={refresh} />
+        <h3 style={{ marginTop: '1.25rem' }}>Approved ChatGPT connections</h3>
+        {state.authorized.length === 0 ? <p className="muted small">None.</p> : (
+          <table>
+            <tbody>
+              {state.authorized.map((c) => (
+                <tr key={c.client + c.agent}>
+                  <td><strong>{c.name}</strong> as {c.agentName}</td>
+                  <td className="small muted">since {new Date(c.since).toLocaleDateString()}</td>
+                  <td><button className="danger" onClick={() => run(async () => { await meadow.revokeClient({ client: c.client, agent: c.agent }); await refresh(); toast('Revoked'); })}>Revoke</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </section>
 
       <section className="card">

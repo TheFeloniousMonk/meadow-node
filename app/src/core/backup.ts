@@ -141,7 +141,10 @@ export function describeBackup(c: Contents) {
  */
 export function restoreBackup(db: Db, vault: Vault, c: Contents, { replace = false } = {}): { agent: string; replaced: boolean } {
   const agent = c.agent.id as string;
-  const exists = !!db.prepare('SELECT 1 FROM agents WHERE id = ?').get(agent);
+  const here: any = db.prepare('SELECT wallet FROM agents WHERE id = ?').get(agent);
+  const exists = !!here;
+  // Replacing an agent already here keeps the wallet it had; a wallet is never in the file.
+  const wallet = here?.wallet && db.prepare('SELECT 1 FROM wallets WHERE id = ?').get(here.wallet) ? here.wallet : null;
   if (exists && !replace) throw new BackupError('This agent is already on this computer.');
   const local = vault.pickleKey(agent);
   const key = Buffer.from(c.pickle_key, 'base64');
@@ -149,7 +152,7 @@ export function restoreBackup(db: Db, vault: Vault, c: Contents, { replace = fal
 
   tx(db, () => {
     for (const t of [...TABLES, 'connections', 'agents'] as const) db.prepare(`DELETE FROM ${t} WHERE ${t === 'agents' ? 'id' : 'agent'} = ?`).run(agent);
-    const row = { ...c.agent, secret_sealed: vault.sealJson(`agent:${agent}:secret`, { seed: c.seed }), account: repickle(wasm.Account, c.account), wallet: null };
+    const row = { ...c.agent, secret_sealed: vault.sealJson(`agent:${agent}:secret`, { seed: c.seed }), account: repickle(wasm.Account, c.account), wallet };
     insert(db, 'agents', row);
     for (const t of TABLES) {
       const rows = [...(c.tables[t] ?? [])].sort((x, y) => (x._order ?? 0) - (y._order ?? 0));

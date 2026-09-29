@@ -70,6 +70,9 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
             held: s.core.messages(a.id).filter((m) => m.guard?.held === 1).length,
             lastBackup: (s.db.prepare('SELECT last_backup_at FROM agents WHERE id = ?').get(a.id) as any)?.last_backup_at ?? null,
             backupDue: backupDue(s.db, a.id),
+            mcpUrl: conn?.type === 'chatgpt' && s.tunnel.url ? `${s.tunnel.url}/${a.name}/mcp` : null,
+            runner: s.runner.config(a.id),
+            runnerLog: s.runner.log(a.id, 5),
             queued: s.core.outbox(a.id).filter((e) => e.kind === 'msg.post').length,
             lastSync: s.lastSync.get(a.id) ?? null,
           };
@@ -79,6 +82,9 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
         problems: s.core.problems().slice(-20).reverse(),
         pricePerCallUsd: price ? formatUsd(price.atomic, price.decimals) : null,
         guardPriceUsd: guardPrice ? formatUsd(guardPrice.atomic, guardPrice.decimals) : null,
+        tunnel: { ...s.tunnel.status, error: s.publicError ?? s.tunnel.status.error, hasNgrokToken: s.ngrokToken() !== null, port: s.settings().publicPort },
+        approvals: s.oauth.pending().map((p) => ({ id: p.id, client: p.client, match: p.match, agentName: s.core.agents().find((a) => a.id === p.agent)?.display_name ?? 'an agent' })),
+        authorized: s.oauth.authorized().map((c) => ({ ...c, agentName: s.core.agents().find((a) => a.id === c.agent)?.display_name ?? c.agent })),
         catalogError: s.catalog.fetchedAt ? null : 'The app has not read the portal\'s price list yet.',
       };
     },
@@ -179,6 +185,22 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     },
 
     guardCheck: undefined as any, // async, below
+    setTunnel: undefined as any,
+
+    approve({ id, approve }) {
+      s.oauth.decide(id, approve);
+      return { ok: true };
+    },
+
+    revokeClient({ client, agent }) {
+      s.oauth.revoke(client, agent);
+      return { ok: true };
+    },
+
+    setRunner({ agent, ...c }) {
+      s.runner.configure(agent, c);
+      return { ok: true };
+    },
 
     guardDecide({ agent, message, release }) {
       s.guard.decide(agent, message, release);
@@ -219,6 +241,10 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
 
   const asyncHandlers: Partial<Record<keyof Api, (a: any) => Promise<unknown>>> = {
     syncNow: ({ agent }) => s.syncOne(agent),
+    setTunnel: async (t) => {
+      await s.setTunnel(t);
+      return { ok: true };
+    },
     guardCheck: async ({ agent, message }) => {
       const r = await s.guard.checkOne(agent, message);
       return { verdict: r?.verdict ?? null, matches: r?.matches.map((m) => m.label) ?? [] };

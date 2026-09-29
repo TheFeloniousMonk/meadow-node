@@ -102,6 +102,16 @@ function notify(_agent: string, name: string, count: number, held: number) {
   n.show();
 }
 
+/** A ChatGPT connection request waits for the person (§16.7.2): bring the window forward, and say so. */
+function askApproval() {
+  showWindow();
+  if (Notification.isSupported()) {
+    const n = new Notification({ title: 'ChatGPT wants to connect to Meadow', body: 'Check the code and approve or refuse in the Meadow window.', icon: join(resources, 'icon.png') });
+    n.on('click', showWindow);
+    n.show();
+  }
+}
+
 const gotLock = screenshot ? true : app.requestSingleInstanceLock();
 if (!gotLock) app.quit();
 else {
@@ -110,7 +120,7 @@ else {
   app.whenReady().then(async () => {
     try {
       const dir = app.getPath('userData');
-      services = new Services({ dbPath: join(dir, 'meadow.db'), masterKey: masterKey(dir), version: app.getVersion(), changed, notify });
+      services = new Services({ dbPath: join(dir, 'meadow.db'), masterKey: masterKey(dir), version: app.getVersion(), changed, notify, askApproval });
     } catch (err) {
       dialog.showErrorBox('Meadow could not start', err instanceof Error ? err.message : String(err));
       app.exit(1);
@@ -143,6 +153,7 @@ else {
     for (const c of CHANNELS) ipcMain.handle(`meadow:${c}`, (_e, arg) => handle(c, arg));
     await services.catalog.refresh().catch(() => {});
     await services.listen();
+    if (!screenshot) await services.listenPublic();
     services.schedule();
     if (!screenshot) createTray();
     win = await createWindow();

@@ -20,6 +20,10 @@ export interface Settings {
   /** A system notification when new messages arrive (free, so on by default). */
   notifications: boolean;
   startAtLogin: boolean;
+  /** The tunneled interface's local port, and the tunnel that reaches it (§16.7.2). The ngrok token is kept sealed, apart. */
+  publicPort: number;
+  tunnelProvider: 'none' | 'ngrok' | 'custom';
+  tunnelUrl: string;
 }
 
 export interface AgentView {
@@ -37,6 +41,11 @@ export interface AgentView {
   lastBackup: number | null;
   /** Why a fresh backup is due, in plain words, or null (§8.9). */
   backupDue: string | null;
+  /** For a ChatGPT connection: the address to give ChatGPT, while the tunnel is up. */
+  mcpUrl: string | null;
+  /** For an Other connection: the built-in runner, and what it did lately. */
+  runner: { enabled: boolean; provider: 'anthropic' | 'openai'; endpoint: string; model: string; rooms: string[]; hasKey: boolean } | null;
+  runnerLog: { at: number; text: string }[];
   queued: number;
   lastSync: number | null;
 }
@@ -99,6 +108,11 @@ export interface AppState {
   pricePerCallUsd: string | null;
   /** The screening service's price, for MessageGuard (§16.11). */
   guardPriceUsd: string | null;
+  tunnel: { provider: 'none' | 'ngrok' | 'custom'; state: 'off' | 'starting' | 'on' | 'error'; url: string | null; error: string | null; hasNgrokToken: boolean; port: number };
+  /** ChatGPT connection requests waiting for the person (§16.7.2). */
+  approvals: { id: string; client: string; agentName: string; match: string }[];
+  /** Clients the person approved, per agent, with Revoke in Settings. */
+  authorized: { client: string; name: string; agent: string; agentName: string; since: number }[];
   catalogError: string | null;
 }
 
@@ -127,6 +141,10 @@ export interface Api {
   restoreOpen(): { file: string } | null;
   restorePreview(a: { password: string }): { agent: string; displayName: string; name: string; registered: boolean; createdAt: number; rooms: number; privateRooms: number; alreadyHere: boolean };
   restoreApply(a: { password: string; replace: boolean }): { agent: string };
+  setTunnel(a: { provider: 'none' | 'ngrok' | 'custom'; ngrokToken?: string; url?: string }): { ok: true };
+  approve(a: { id: string; approve: boolean }): { ok: true };
+  revokeClient(a: { client: string; agent: string }): { ok: true };
+  setRunner(a: { agent: string; enabled: boolean; provider: 'anthropic' | 'openai'; endpoint?: string; model: string; rooms: string[]; apiKey?: string }): { ok: true };
   copy(a: { text: string }): { ok: true };
   openExternal(a: { url: string }): { ok: boolean };
 }
@@ -135,11 +153,16 @@ export type Channel = keyof Api;
 export const CHANNELS: Channel[] = [
   'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'disconnectClaude', 'localInterface', 'rotateToken',
   'assignWallet', 'createWallet', 'importWallet', 'setBudget', 'walletQr', 'syncNow', 'rooms', 'messages', 'setSettings',
-  'guardCheck', 'guardDecide', 'backup', 'restoreOpen', 'restorePreview', 'restoreApply', 'copy', 'openExternal',
+  'guardCheck', 'guardDecide', 'backup', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'approve', 'revokeClient', 'setRunner',
+  'copy', 'openExternal',
 ];
 
 /** Links the window may open in the browser. */
-export const EXTERNAL_LINKS = ['https://github.com/TheFeloniousMonk/meadow-node', 'https://meadowprotocol.com', 'https://basescan.org/'];
+export const EXTERNAL_LINKS = [
+  'https://github.com/TheFeloniousMonk/meadow-node', 'https://meadowprotocol.com', 'https://basescan.org/',
+  // The ChatGPT walkthrough (§16.7.2).
+  'https://dashboard.ngrok.com/', 'https://ngrok.com/', 'https://chatgpt.com/',
+];
 
 /** An answer the core refused, in plain words, carried across the bridge as a value. */
 export interface Failure {

@@ -20,6 +20,7 @@ import { createHandlers } from '../src/app/handlers.ts';
 import { startMockPortal } from '../test/mock-portal.ts';
 import type { Channel } from '../src/shared/api.ts';
 import { seed } from './seed.ts';
+import { createPublicServer } from '../src/server/public.ts';
 
 const PORT = 5199;
 const root = join(import.meta.dirname, '..', 'out', 'renderer');
@@ -53,6 +54,23 @@ const handle = createHandlers(services, {
 });
 
 if (process.argv.includes('--seed')) console.log('seeded', await seed(services));
+
+// --chatgpt: a ChatGPT agent, and the tunneled interface on plain local HTTP (no tunnel), to act ChatGPT's part by hand.
+if (process.argv.includes('--chatgpt')) {
+  const w = services.wallets.list()[0]?.id ?? services.wallets.create('Everyday', '1.00').id;
+  const { id } = services.core.createAgent('Chappy GPT');
+  services.connections.set(id, 'chatgpt', 'Chappy GPT');
+  services.wallets.assign(id, w);
+  await services.core.register(id);
+  let publicBase = '';
+  const pub = createPublicServer({
+    host: services.tools, oauth: services.oauth, version: 'harness', base: () => publicBase,
+    agents: () => services.chatgptAgents(), onRequest: () => version++,
+  });
+  await new Promise<void>((r) => pub.listen(5198, '127.0.0.1', () => r()));
+  publicBase = 'http://127.0.0.1:5198';
+  console.log(`tunneled interface on ${publicBase}/chappy-gpt/mcp`);
+}
 
 const TYPES: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2', '.svg': 'image/svg+xml' };
 const SHIM = `

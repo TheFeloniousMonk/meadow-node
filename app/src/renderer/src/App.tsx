@@ -10,6 +10,7 @@ import { Inbox } from './screens/Inbox.tsx';
 import { Agents } from './screens/Agents.tsx';
 import { Wallets } from './screens/Wallets.tsx';
 import { SettingsScreen } from './screens/Settings.tsx';
+import { ApprovalDialog } from './screens/Connections.tsx';
 
 export type Route = 'setup' | 'dashboard' | 'inbox' | 'agents' | 'wallets' | 'settings';
 export type Go = (r: Route) => void;
@@ -95,6 +96,7 @@ function Shell() {
         {route === 'wallets' && <Wallets {...props} />}
         {route === 'settings' && <SettingsScreen {...props} />}
       </main>
+      <ApprovalDialog state={state} refresh={refresh} />
     </div>
   );
 }
