@@ -7,7 +7,7 @@ import { formatUsd } from '../core/catalog.ts';
 import { GUARD_SERVICE } from '../core/guard.ts';
 import { backupDue, describeBackup, makeBackup, readBackup, restoreBackup } from '../core/backup.ts';
 import { tokenBalance } from '../core/balance.ts';
-import { add, bridgeEntry, claudeDesktopConfigPath, entryName, remove, status } from '../server/claude-desktop.ts';
+import { add, bridgeEntry, claudeDesktopConfigPath, claudeDesktopRunning, entryName, remove, status } from '../server/claude-desktop.ts';
 import { CHANNELS, linkAllowed, type Api, type AppState, type Channel, type MessageView } from '../shared/api.ts';
 import type { Services } from './services.ts';
 
@@ -19,6 +19,8 @@ export interface HandlerEnv {
   openExternal(url: string): void;
   /** Claude Desktop's settings file; by default where Claude Desktop keeps it on this computer. */
   claudeConfigPath?: string;
+  /** Whether Claude Desktop is running (true, false, or null for cannot tell); by default asks the system. */
+  claudeRunning?(): Promise<boolean | null>;
   /** Asks where to save a file (a system dialog); resolves to the path written, or null if cancelled. */
   saveFile(defaultName: string, data: Buffer): Promise<string | null>;
   /** Asks for a file to open; resolves to its name and bytes, or null. */
@@ -107,10 +109,6 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       return { path, name: entryName(nameOf(agent)), entry: { ...entry, env: { ...entry.env, MEADOW_TOKEN: '(this agent\'s token)' } }, unreadable: st.unreadable };
     },
 
-    connectClaude({ agent }) {
-      const r = add(claudePath(), entryName(nameOf(agent)), claudeEntry(agent));
-      return r.ok ? { ok: true } : { ok: false, error: r.error };
-    },
 
     disconnectClaude({ agent }) {
       const r = remove(claudePath(), entryName(nameOf(agent)));
@@ -185,6 +183,8 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     },
 
     guardCheck: undefined as any, // async, below
+    connectClaude: undefined as any,
+    claudeRunning: undefined as any,
     setTunnel: undefined as any,
 
     enterChatgptCode({ agent, code }) {
@@ -239,8 +239,17 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     },
   };
 
+  const claudeRunning = () => (env.claudeRunning ?? claudeDesktopRunning)();
+
   const asyncHandlers: Partial<Record<keyof Api, (a: any) => Promise<unknown>>> = {
     syncNow: ({ agent }) => s.syncOne(agent),
+    claudeRunning: async () => ({ running: await claudeRunning() }),
+    // Only while Claude Desktop is closed: open, it writes back its own copy of the file and drops the entry.
+    connectClaude: async ({ agent }) => {
+      if ((await claudeRunning()) === true) return { ok: false, error: 'Claude is still open. Quit it from its icon near the clock first, then add the entry.' };
+      const r = add(claudePath(), entryName(nameOf(agent)), claudeEntry(agent));
+      return r.ok ? { ok: true } : { ok: false, error: r.error };
+    },
     setTunnel: async (t) => {
       await s.setTunnel(t);
       return { ok: true };

@@ -44,6 +44,8 @@ const handle = createHandlers(services, {
   openExternal: (url) => console.log('open:', url),
   // Never the real Claude Desktop settings.
   claudeConfigPath: join(mkdtempSync(join(tmpdir(), 'meadow-ui-claude-')), 'claude_desktop_config.json'),
+  // The harness writes a temp file, not Claude's own, so a Claude open on this computer does not matter here.
+  claudeRunning: async () => process.argv.includes('--claude-open'),
   // Files go to a temporary folder; opening picks the last backup saved there.
   saveFile: async (name, data) => {
     lastSaved = join(files, name);

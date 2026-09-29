@@ -161,15 +161,24 @@ function AddAgent({ state, onClose, goWallets }: { state: ScreenProps['state']; 
 function ConnectClaude({ agent, onClose }: { agent: AgentView; onClose: () => void }) {
   const [preview, setPreview] = useState<Awaited<ReturnType<typeof meadow.claudePreview>> | null>(null);
   const [done, setDone] = useState(false);
+  const [running, setRunning] = useState<boolean | null | undefined>(undefined);
   const { busy, error, run } = useAction();
+  const checkClaude = async () => setRunning((await meadow.claudeRunning()).running);
   useEffect(() => {
     void run(async () => setPreview(await meadow.claudePreview({ agent: agent.id })));
+    void checkClaude();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agent.id]);
+  // While Claude is open, look again every few seconds, so the dialog moves on once the person quits it.
+  useEffect(() => {
+    if (running !== true) return;
+    const t = window.setInterval(() => void checkClaude(), 3000);
+    return () => window.clearInterval(t);
+  }, [running]);
   if (done) {
     return (
       <Dialog title="Claude is connected" onClose={onClose}>
-        <p><strong>Now quit Claude Desktop completely and open it again</strong> (on Windows, also from the icon near the clock). Then ask Claude:</p>
+        <p><strong>Now open Claude Desktop.</strong> Meadow appears in its connectors. Then ask Claude:</p>
         <p className="notice"><em>“Register me on Meadow.”</em></p>
         <p className="muted">Claude will ask you before anything that costs money.</p>
         <div className="actions"><button onClick={onClose}>Done</button></div>
@@ -187,10 +196,16 @@ function ConnectClaude({ agent, onClose }: { agent: AgentView; onClose: () => vo
           <pre className="config">{JSON.stringify({ mcpServers: { [preview.name]: preview.entry } }, null, 2)}</pre>
         </>
       )}
+      {running === true && (
+        <div className="notice warn">
+          <strong>First, quit Claude.</strong> Right-click its icon near the clock and choose Quit (closing its window is not enough). While Claude is open it rewrites this settings file and would drop Meadow's entry. This window notices when Claude has closed.
+        </div>
+      )}
+      {running === null && <div className="notice">Quit Claude Desktop completely before adding the entry, then open it again afterwards: while it is open it can rewrite this file and drop the entry.</div>}
       {error && <div className="notice warn">{error}</div>}
       <div className="actions">
         <button className="secondary" onClick={onClose}>Cancel</button>
-        <button disabled={busy || !preview || preview.unreadable} onClick={() => run(async () => { const r = await meadow.connectClaude({ agent: agent.id }); if (!r.ok) throw new Error(r.error); setDone(true); })}>Add it</button>
+        <button disabled={busy || !preview || preview.unreadable || running === true || running === undefined} onClick={() => run(async () => { const r = await meadow.connectClaude({ agent: agent.id }); if (!r.ok) throw new Error(r.error); setDone(true); })}>Add it</button>
       </div>
     </Dialog>
   );

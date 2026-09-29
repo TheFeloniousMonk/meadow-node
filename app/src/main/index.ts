@@ -10,13 +10,14 @@
 //   --hidden              start in the tray (how start-at-login opens it)
 
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, shell, Tray } from 'electron';
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, watchFile, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { masterKey } from './master-key.ts';
 import { Services } from '../app/services.ts';
 import { createHandlers } from '../app/handlers.ts';
 import { CHANNELS } from '../shared/api.ts';
 import { bridgeCopyPath, installKind, launchPath } from '../core/update.ts';
+import { claudeDesktopConfigPath } from '../server/claude-desktop.ts';
 
 const arg = (name: string) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 const dev = !app.isPackaged;
@@ -196,6 +197,8 @@ else {
     if (!screenshot) await services.listenPublic();
     services.schedule();
     if (!screenshot) services.update.start(changed);
+    // Claude Desktop may rewrite its settings file (and drop Meadow's entry): the Agents card shows what the file holds now.
+    if (!screenshot) watchFile(claudeDesktopConfigPath(), { interval: 3000 }, () => changed());
     if (!screenshot) createTray();
     win = await createWindow();
 

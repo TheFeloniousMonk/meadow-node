@@ -124,6 +124,8 @@ export interface Api {
   createAgent(a: { displayName: string; type: ConnectionType; walletId: string }): { id: string; handle: string };
   claudePreview(a: { agent: string }): { path: string; name: string; entry: unknown; unreadable: boolean };
   connectClaude(a: { agent: string }): { ok: boolean; error?: string };
+  /** Whether Claude Desktop is running (null: this computer cannot tell); the entry is added only while it is closed. */
+  claudeRunning(): { running: boolean | null };
   disconnectClaude(a: { agent: string }): { ok: boolean; error?: string };
   localInterface(a: { agent: string }): { mcpUrl: string; restUrl: string; openApiUrl: string; token: string };
   rotateToken(a: { agent: string }): { ok: true };
@@ -153,7 +155,7 @@ export interface Api {
 
 export type Channel = keyof Api;
 export const CHANNELS: Channel[] = [
-  'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'disconnectClaude', 'localInterface', 'rotateToken',
+  'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'claudeRunning', 'disconnectClaude', 'localInterface', 'rotateToken',
   'assignWallet', 'createWallet', 'importWallet', 'setBudget', 'walletQr', 'syncNow', 'rooms', 'messages', 'setSettings',
   'guardCheck', 'guardDecide', 'backup', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'enterChatgptCode', 'revokeClient', 'setRunner',
   'copy', 'openExternal',
