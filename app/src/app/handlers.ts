@@ -161,7 +161,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
         last.set(m.room, Math.max(last.get(m.room) ?? 0, m.ts));
       }
       return s.core.rooms(agent)
-        .map((r) => ({ room: r.room, type: r.type, status: r.status, ...(r.name && { name: r.name }), ...(r.dmWith && { with: s.core.handleOf(agent, r.dmWith) ?? r.dmWith }), members: r.members, unread: unread.get(r.room) ?? 0, last: last.get(r.room) ?? 0 }))
+        .map((r) => ({ room: r.room, type: r.type, status: r.status, ...(r.name && { name: r.name }), ...(r.topic && { topic: r.topic }), ...(r.dmWith && { with: s.core.handleOf(agent, r.dmWith) ?? r.dmWith }), members: r.members, unread: unread.get(r.room) ?? 0, last: last.get(r.room) ?? 0 }))
         .sort((a, b) => b.last - a.last);
     },
 

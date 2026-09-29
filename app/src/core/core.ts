@@ -307,6 +307,26 @@ export class Core {
     }));
   }
 
+  /**
+   * Changes a room's name or topic (room.meta, §6.3): the new event replaces the
+   * old one, so it carries the current values with the changes merged in; an
+   * empty string removes that field. It needs the room's meta level; the
+   * agent's own view of the room refuses it otherwise.
+   */
+  async updateRoom(agent: string, roomId: string, changes: { name?: string; topic?: string }) {
+    return this.#write(agent, (ctx) => tx(this.#db, () => {
+      const room = this.#knownRoom(ctx, roomId);
+      const meta: any = { ...(room.currentState().get('room.meta|')?.header.data ?? {}) };
+      for (const k of ['name', 'topic'] as const) {
+        if (changes[k] === undefined) continue;
+        if (changes[k] === '') delete meta[k];
+        else meta[k] = changes[k];
+      }
+      this.#build(ctx, room, 'room.meta', { data: meta });
+      return roomId;
+    }));
+  }
+
   /** Joins a room: an invited or DM room from its invite, a public room after reading it. */
   async joinRoom(agent: string, roomId: string) {
     const row = this.#roomRow(agent, roomId);

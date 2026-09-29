@@ -91,6 +91,8 @@ export interface RoomView {
   type: string | null;
   status: string;
   name?: string;
+  /** The room's topic (room.meta): plaintext, written by whoever holds the meta level. */
+  topic?: string;
   /** In a DM, the other agent: its handle when known, else its ID. */
   with?: string;
   members: string[];

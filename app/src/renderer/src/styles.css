@@ -173,6 +173,7 @@ th { color: var(--text-secondary); font-weight: 600; font-size: .9rem; }
 .convo.unread .title::after { content: ""; width: .55rem; height: .55rem; background: var(--button-bg); border-radius: 50%; margin-left: auto; }
 .thread { display: flex; flex-direction: column; gap: .75rem; overflow: auto; min-height: 0; padding-top: 0; }
 .thread-head { position: sticky; top: 0; z-index: 1; background: var(--bg-surface); padding-top: 1.25rem; padding-bottom: .5rem; margin-bottom: -.25rem; }
+.thread-head .topic { margin: .35rem 0 0; color: var(--text-secondary); white-space: pre-wrap; overflow-wrap: anywhere; max-width: 60rem; }
 .msg { border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: .8rem 1rem; background: var(--bg-surface); }
 .msg.unread { border-color: var(--amber-400); box-shadow: inset 3px 0 0 var(--amber-500); }
 .msg.mine { background: var(--bg-surface-alt); }

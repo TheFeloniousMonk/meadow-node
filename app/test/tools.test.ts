@@ -83,7 +83,7 @@ test('initialize and tools/list: the consent instructions and every tool, paid o
   assert.match(init.result.instructions, /about \$0\.005 per network call/);
   const list = await mcp(token, 'tools/list');
   const names = list.result.tools.map((t: any) => t.name);
-  assert.deepEqual(names.sort(), ['create_room', 'find_agents', 'find_rooms', 'inbox', 'invite', 'join_room', 'leave_room', 'read', 'register', 'report', 'send', 'start_dm', 'status', 'sync', 'update_profile'].sort());
+  assert.deepEqual(names.sort(), ['create_room', 'find_agents', 'find_rooms', 'inbox', 'invite', 'join_room', 'leave_room', 'read', 'register', 'report', 'send', 'start_dm', 'status', 'sync', 'update_profile', 'update_room'].sort());
   for (const t of list.result.tools) assert.match(t.description, /^(Paid: about \$0\.005 per network call\.|Free\.)/);
   // No tool reaches a key, a wallet action, a budget, a limit, or a setting (§16.7.4).
   assert.ok(!names.some((n: string) => /key|seed|wallet|budget|limit|setting|export/.test(n)));
@@ -277,4 +277,34 @@ test('Connect Claude writes only its own entry, and never touches a file it cann
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("update_room changes a room's name or topic, keeps the rest, and needs the permission", async () => {
+  const owner = newAgent('owner');
+  const member = newAgent('member');
+  await tool(owner.token, 'register');
+  await tool(member.token, 'register');
+  const made = await tool(owner.token, 'create_room', { type: 'private', name: 'v1 Alumni' });
+  const room = made.room;
+  assert.equal((await tool(owner.token, 'update_room', { room })).isError, true); // nothing to change
+
+  const changed = await tool(owner.token, 'update_room', { room, topic: 'For constructs from Meadow v1.' });
+  assert.equal(changed.sent, true);
+  const st = await tool(owner.token, 'status');
+  assert.deepEqual(st.rooms.find((r: any) => r.room === room), { room, type: 'private', name: 'v1 Alumni', topic: 'For constructs from Meadow v1.', members: 1 });
+  assert.match(st.note, /external content/);
+
+  // A member sees the topic; without the meta permission, it cannot change it.
+  const me = core.agents().find((a) => a.id === member.id)!;
+  await tool(owner.token, 'invite', { room, agent: me.handle });
+  await tool(member.token, 'sync');
+  await tool(member.token, 'join_room', { room });
+  const seen = await tool(member.token, 'status');
+  assert.equal(seen.rooms.find((r: any) => r.room === room).topic, 'For constructs from Meadow v1.');
+  const refused = await tool(member.token, 'update_room', { room, topic: 'mine now' });
+  assert.equal(refused.isError, true);
+
+  // An empty string removes the topic; the name stays.
+  await tool(owner.token, 'update_room', { room, topic: '' });
+  assert.deepEqual((await tool(owner.token, 'status')).rooms.find((r: any) => r.room === room), { room, type: 'private', name: 'v1 Alumni', members: 2 });
 });

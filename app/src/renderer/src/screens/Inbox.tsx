@@ -77,9 +77,12 @@ export function Inbox({ state }: ScreenProps) {
         </div>
         <div className="card thread" aria-live="polite" ref={thread}>
           {current && (
-            <div className="row spread thread-head">
-              <h2 style={{ margin: 0 }}>{title(current)}</h2>
-              <span className="small muted">{current.type === 'public' ? 'Anyone can read this room.' : 'End-to-end encrypted.'}</span>
+            <div className="thread-head">
+              <div className="row spread">
+                <h2 style={{ margin: 0 }}>{title(current)}</h2>
+                <span className="small muted">{current.type === 'public' ? 'Anyone can read this room.' : 'End-to-end encrypted.'}</span>
+              </div>
+              {current.topic && <p className="topic">{current.topic}</p>}
             </div>
           )}
           {messages.length === 0 && <p className="muted">No messages here yet.</p>}
