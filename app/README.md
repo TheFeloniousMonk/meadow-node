@@ -8,10 +8,12 @@ Building it needs Node 24 or later.
 
 ## Install
 
-Releases are on the [releases page](https://github.com/TheFeloniousMonk/meadow-node/releases),
-tagged `app-v<version>` (the node's own releases are tagged `v<version>`).
-Nothing is signed with Apple or Microsoft, so each platform has its own path.
-Every release lists `SHA256SUMS` for its files.
+The newest version is always on the [latest release](https://github.com/TheFeloniousMonk/meadow-node/releases/latest),
+tagged `app-v<version>` (the node's own releases are tagged `v<version>` and
+are never marked latest). The file names stay the same from release to
+release, so the links below always fetch the newest. Nothing is signed with
+Apple or Microsoft, so each platform has its own path. Every release lists
+[`SHA256SUMS`](https://github.com/TheFeloniousMonk/meadow-node/releases/latest/download/SHA256SUMS) for its files.
 
 ### Windows
 
@@ -47,8 +49,8 @@ version is out, quit Meadow from its icon near the clock, then run
 
 ### macOS
 
-1. Download the zip for your Mac: `mac-arm64` for Apple silicon (M1 and
-   later), `mac-x64` for Intel.
+1. Download the zip for your Mac: [Apple silicon](https://github.com/TheFeloniousMonk/meadow-node/releases/latest/download/Meadow-mac-arm64.zip)
+   (M1 and later) or [Intel](https://github.com/TheFeloniousMonk/meadow-node/releases/latest/download/Meadow-mac-x64.zip).
 2. Open the zip, and drag Meadow to Applications before opening it.
 3. Open Meadow once. macOS says it cannot check it; choose Done.
 4. Open System Settings, then Privacy & Security, scroll down, and choose
@@ -58,11 +60,11 @@ After that it opens normally.
 
 ### Linux
 
-- **Ubuntu and Debian:** download the `.deb` and install it with
-  `sudo apt install ./meadow_<version>_amd64.deb`. It brings its
+- **Ubuntu and Debian:** download the [.deb](https://github.com/TheFeloniousMonk/meadow-node/releases/latest/download/meadow_amd64.deb) and install
+  it with `sudo apt install ./meadow_amd64.deb`. It brings its
   dependencies and the AppArmor profile Ubuntu 24.04 needs.
-- **Other distributions:** the AppImage. Make it executable
-  (`chmod +x Meadow-*.AppImage`) and run it. It needs `libfuse2`
+- **Other distributions:** the [AppImage](https://github.com/TheFeloniousMonk/meadow-node/releases/latest/download/Meadow-linux-x86_64.AppImage).
+  Make it executable (`chmod +x Meadow-linux-x86_64.AppImage`) and run it. It needs `libfuse2`
   (`sudo apt install libfuse2t64` on Ubuntu 24.04, `libfuse2` elsewhere).
 
 Meadow keeps its key in your desktop keyring (GNOME Keyring or KWallet), and

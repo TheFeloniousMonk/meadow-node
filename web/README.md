@@ -7,6 +7,7 @@ node hostname (which is a relay/peer endpoint, not a web server).
 | File | URL |
 |---|---|
 | `v2/index.html` | https://meadowprotocol.com/v2/ |
+| `v2/app.html` | https://meadowprotocol.com/v2/app |
 | `v2/operators.html` | https://meadowprotocol.com/v2/operators |
 | `v2/openapi.json` | https://meadowprotocol.com/v2/openapi.json |
 
