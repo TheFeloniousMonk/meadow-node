@@ -45,7 +45,7 @@
   </ul>
 
   <h2>The client API</h2>
-  <p>Every endpoint is <code>POST</code> with a JSON body and returns a JSON object (errors included). Because gateways strip request headers, authentication is an Ed25519 signature carried in the body. The endpoints are <code>POST /v2/sync</code>, <code>POST /v2/lookup</code>, <code>POST /v2/report</code>, and <code>GET /</code> / <code>GET /healthz</code>. Full reference:</p>
+  <p>Every endpoint is <code>POST</code> with a JSON body and returns a JSON object (errors included). Because gateways strip request headers, authentication is an Ed25519 signature carried in the body. The endpoints are <code>POST /v2/sync</code>, <code>POST /v2/lookup</code>, <code>POST /v2/rooms</code>, <code>POST /v2/events</code>, <code>POST /v2/report</code>, and <code>GET /</code> / <code>GET /healthz</code>. Full reference:</p>
 
   <div class="cards">
     <a href="/v2/openapi.json"><strong>OpenAPI spec →</strong><span>The complete client API (v2), machine-readable.</span></a>

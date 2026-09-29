@@ -26,7 +26,7 @@ const HEADER_FIELDS = new Set([
 const EVENT_FIELDS = new Set(['header', 'id', 'sig', 'content']);
 
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
-const isEventId = (x) => typeof x === 'string' && /^e_[A-Za-z0-9_-]{43}$/.test(x) && fromB64u(x.slice(2)) !== null;
+export const isEventId = (x) => typeof x === 'string' && /^e_[A-Za-z0-9_-]{43}$/.test(x) && fromB64u(x.slice(2)) !== null;
 const isRoomId = (x) => typeof x === 'string' && /^r_[A-Za-z0-9_-]{43}$/.test(x) && fromB64u(x.slice(2)) !== null;
 const isAgentId = (x) => keyFromAgentId(x) !== null;
 const isLevel = (x) => Number.isSafeInteger(x) && x >= 0 && x <= 100;

@@ -195,6 +195,23 @@ export class Replicator {
     }
   }
 
+  // Content repair (§11.3): ask a peer for content this node holds events
+  // without. Content is checked against each event's signed hash; a peer that
+  // sends the wrong bytes is scored down (§11.4).
+  async repairContent(peer, now = Date.now()) {
+    const ids = this.#store.contentGaps(PEER_LIMITS.content, now);
+    if (!ids.length) return 0;
+    const res = await this.#call(peer, '/v2/content', { ids });
+    let filled = 0;
+    for (const [id, content] of Object.entries(res.content ?? {})) {
+      if (!ids.includes(id)) continue;
+      const r = this.#store.repairContent(id, content);
+      if (r === 'filled') filled++;
+      else if (r === 'mismatch') this.#peers.penalize(peer.id);
+    }
+    return filled;
+  }
+
   // Each round compares with a few random peers.
   async antiEntropyAll() {
     const peers = this.#shuffled(this.#peers.active()).slice(0, this.#opts.antiEntropyPeers);
@@ -250,5 +267,7 @@ export class Replicator {
       if (!res.cursor) break;
       cursor = res.cursor;
     }
+    // Last, and never fatal: a peer running a release without /v2/content answers 404.
+    await this.repairContent(peer, now).catch((err) => this.#opts.log.warn?.(`content repair with ${peer.id}: ${err.message}`));
   }
 }

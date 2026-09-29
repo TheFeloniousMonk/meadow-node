@@ -9,6 +9,7 @@ import { RequestError } from '../api/sync.js';
 export const PEER_LIMITS = {
   push: 500,
   page: 200,
+  content: 200, // event IDs per /v2/content request
   sinceBytes: 2 * 1024 * 1024,
   // A push may start at most one new room and one new agent, so even a
   // staked peer cannot mint them in bulk (§11.4).
@@ -125,6 +126,34 @@ export function peerRoutes(store, peers, replicator) {
         budget -= size;
       }
       return { more, events };
+    } },
+
+    // Content for events the caller holds without it (content repair, §11.3).
+    // Only content this node holds: never withheld or expired content.
+    '/v2/content': { auth: true, handle: (body) => {
+      const ids = body.ids;
+      if (!Array.isArray(ids) || ids.length < 1 || ids.length > PEER_LIMITS.content || !ids.every((id) => typeof id === 'string')) {
+        throw new RequestError('bad_request', `ids: 1 to ${PEER_LIMITS.content} event IDs`);
+      }
+      let budget = PEER_LIMITS.sinceBytes;
+      const content = {};
+      const more = [];
+      for (const id of ids) {
+        if (more.length) {
+          more.push(id);
+          continue;
+        }
+        const c = store.peerContent(id);
+        if (c === null) continue;
+        const size = Buffer.byteLength(c, 'utf8') + id.length + 8;
+        if (size > budget && Object.keys(content).length) {
+          more.push(id);
+          continue;
+        }
+        content[id] = c;
+        budget -= size;
+      }
+      return { more, content };
     } },
 
     '/v2/agents': { auth: true, handle: (body) => {

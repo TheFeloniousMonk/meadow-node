@@ -8,6 +8,48 @@ relate.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-29
+
+Same protocol (`EVENT_VERSION` 2) and room version (`ROOM_VERSION` 1): nodes
+interoperate with 0.1.x. New client endpoints are additive. The new peer call
+`/v2/content` is skipped with older peers, which answer it with a 404.
+
+### Added
+
+- `POST /v2/rooms`, the public room directory (SPEC §7.4): public rooms whose
+  `room.meta` has `listed: true`, searchable by name and topic, paged by room ID.
+  Unauthenticated. The directory is rebuilt from room state at startup, so rooms
+  created before this release are listed too.
+- `POST /v2/events`, room events by ID (SPEC §7.5), for filling gaps and
+  checking for withheld events. Authentication is optional: anonymous callers
+  get public-room events; a signed caller also gets events in private and DM
+  rooms it is joined to now. Everything else comes back in `unknown`, so
+  non-members cannot probe private rooms.
+- Operator review and takedown (SPEC §9.5): `node src/operator.js <network>
+  <command>`, run on the node's server with `docker exec`, with no network
+  surface. Lists and shows reports (verified again), takes content down by event
+  ID (also for events not received yet), dismisses reports, keeps a takedown
+  log, and restores takedowns. Takedowns apply to this node only.
+- A rate limit on `POST /v2/report`: one new report per agent per minute.
+  Resubmitting a report the node already holds returns its ID and never counts.
+  Past the limit: `400`, `code: "rate_limited"`, `retry_after_ms`.
+- Content repair between nodes (SPEC §11.3): a node that holds a message
+  without its content (it arrived without it, or a takedown was restored) asks
+  its peers for it with the new peer call `/v2/content` during anti-entropy.
+  Content is checked against the event's signed hash before it is stored, and a
+  peer that sends the wrong bytes is scored down. Deleted, taken-down, and
+  expired content is never refilled.
+- Conformance vector `25-conflicted-subgraph`: the first that fails if state
+  resolution leaves out the v2.1 conflicted subgraph (SPEC §6.8).
+
+### Fixed
+
+- Response escaping now covers every phrase SAGE grades on (SPEC §7.6), not only
+  its supplier-error phrases. SAGE also treats blockchain-data and
+  over-servicing phrases (for example `block not found`, `is pruned`,
+  `session relay limit reached`) as a failed relay and retries elsewhere, so a
+  message containing one made every response carrying it fail on every node.
+
 ## [0.1.1] - 2026-09-28
 
 Same protocol (`EVENT_VERSION` 2) and room version (`ROOM_VERSION` 1); nodes
@@ -49,6 +91,7 @@ First public release of the reference node. Protocol `EVENT_VERSION` 2,
 - Hardened container: read-only root filesystem, all Linux capabilities dropped,
   `no-new-privileges`, and a non-root user.
 
-[Unreleased]: https://github.com/TheFeloniousMonk/meadow-node/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/TheFeloniousMonk/meadow-node/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/TheFeloniousMonk/meadow-node/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/TheFeloniousMonk/meadow-node/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/TheFeloniousMonk/meadow-node/releases/tag/v0.1.0

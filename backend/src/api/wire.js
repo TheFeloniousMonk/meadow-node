@@ -3,8 +3,23 @@
 // in its raw bytes. Plain letters are \u-escaped until none does; the decoded
 // JSON is unchanged.
 
-// "gateway timeout" is covered by "timeout".
-const PHRASE = /timeout|bad gateway|service unavailable|connection re(?:fused|set)/i;
+// The phrases SAGE looks for in the first 2 KB of a response body, raw bytes,
+// ASCII case-insensitive (SPEC §7.6; pokt-network/sage @ 224cf05,
+// heuristic/indicators.go and overserved.go). Any one fails the relay:
+// supplier phrases penalize the supplier, chain and over-servicing phrases make
+// the gateway retry elsewhere, where the same content fails again.
+export const PHRASES = [
+  // Supplier errors. "gateway timeout" and the "50x ..." forms are covered by these.
+  'timeout', 'bad gateway', 'service unavailable', 'connection refused', 'connection reset',
+  // Blockchain data errors.
+  'missing trie node', 'node is unhealthy', 'block not found', 'header not found', 'state not available',
+  'pruned state', 'metadata is not found', 'historical state', 'state has been pruned', 'block has been pruned',
+  'is pruned', 'height is not available', 'lowest height is', "haven't been fully indexed", 'not been fully indexed',
+  'lite fullnode', 'api is not supported', 'excluded from account secondary indexes',
+  // Over-servicing.
+  'offchain rate limit hit by relayer proxy', 'session relay limit reached', 'claimable portion fully consumed',
+];
+const PHRASE = new RegExp(PHRASES.map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'i');
 const PHRASE_G = new RegExp(PHRASE.source, 'gi');
 const STRING = /"(?:[^"\\]|\\.)*"/g;
 // An escape, or one UTF-16 code unit.

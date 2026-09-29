@@ -14,10 +14,13 @@ export const SYNC_LIMITS = {
 
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 
+// A 4xx the client caused. `details` adds fields to the error object, such as
+// retry_after_ms for rate_limited (§7.6).
 export class RequestError extends Error {
-  constructor(code, message) {
+  constructor(code, message, details = {}) {
     super(message);
     this.code = code;
+    this.details = details;
   }
 }
 

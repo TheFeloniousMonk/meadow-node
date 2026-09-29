@@ -6,7 +6,7 @@
       "type": "REST",
       "intent": "expected",
       "backend_hint": "meadow-node container; MainNet relay on :8080, Beta on :8081; mount at /",
-      "notes": "Only POST /v2/sync, POST /v2/lookup, POST /v2/report, GET / and GET /healthz are expected on the relay port. Every response is a JSON object, errors included. The /meadow-peer[-beta] node-to-node route is not part of the relayed API."
+      "notes": "Only POST /v2/sync, POST /v2/lookup, POST /v2/rooms, POST /v2/events, POST /v2/report, GET / and GET /healthz are expected on the relay port. Every response is a JSON object, errors included. The /meadow-peer[-beta] node-to-node route is not part of the relayed API."
     }
   ],
   "apis": [

@@ -584,4 +584,43 @@ export const scenarios = [
       ],
     }),
   },
+  {
+    name: 'conflicted-subgraph',
+    description: 'The v2.1 conflicted subgraph prevents a state reset. Alice sets bob to 50 (p1), then 100 (p2), and bob, at 100, changes the table (p3). '
+      + 'A branch forked at p1 names the room, citing p2 as its power event, so p2 is in both branches\' auth chains: not conflicted, not in the auth '
+      + 'difference. The conflicted power events are p1 and p3. Only the conflicted subgraph (p2 lies on the auth path from p3 to p1) replays p2 '
+      + 'between them; without it, p3 is checked against p1, where bob has 50, and the table resets to p1.',
+    sections: ['6.4', '6.6', '6.8'],
+    build(s) {
+      const alice = s.agent('alice'), bob = s.agent('bob');
+      s.agent('carol'); // named in p3's table; never joins
+      s.create('create', alice, { type: 'public' });
+      s.join('alice-join', alice);
+      s.join('bob-join', bob);
+      s.power('p1', alice, { alice: 100, bob: 50 });
+      s.power('p2', alice, { alice: 100, bob: 100 });
+      s.power('p3', bob, { alice: 100, bob: 100, carol: 50 });
+      s.meta('fork-meta', alice, { name: 'fork' }, { parents: ['p1'], auth: ['create', 'p2', 'alice-join'] });
+      s.post('alice-merge', alice, 'merge');
+    },
+    // Hand derivation (§6.8), resolving state_after(p3) with state_after(fork-meta):
+    // - unconflicted: create, both memberships. Conflicted: room.power {p3, p1}, room.meta {fork-meta} (in one state only).
+    // - auth chains: p3's side {create, joins, p3, p2, p1}; the fork's {create, joins, p1, fork-meta, p2}. Auth difference: {p3, fork-meta}.
+    // - conflicted subgraph: p2 (p2 in auth_chain(p3), p1 in auth_chain(p2)). Full set: {p1, p2, p3, fork-meta}.
+    // - power events and order: p1, p2, p3 (each waits on the one before). p1 passes; p2 passes against p1 (alice at 100 raises bob to 100);
+    //   p3 passes against p2 (bob at 100, adds carol at 50). Partial: room.power = p3.
+    // - mainline: p1 (1), p2 (2), p3 (3). fork-meta's depth is p2's, 2. It passes against p3 (alice at 100 >= meta 50).
+    // - Result: room.power p3, room.meta fork-meta. The merge (parents p3, fork-meta) changes no state.
+    expect: () => ({
+      outcomes: {
+        create: 'accepted', 'alice-join': 'accepted', 'bob-join': 'accepted', p1: 'accepted', p2: 'accepted', p3: 'accepted',
+        'fork-meta': 'accepted', 'alice-merge': 'accepted',
+      },
+      heads: ['alice-merge'],
+      state: [
+        ['room.create', '', 'create'], ['room.power', '', 'p3'], ['room.meta', '', 'fork-meta'],
+        ['room.member', 'alice', 'alice-join'], ['room.member', 'bob', 'bob-join'],
+      ],
+    }),
+  },
 ];

@@ -7,6 +7,8 @@
 import http from 'node:http';
 import { verifyRequest } from './api/auth.js';
 import { RequestError, SYNC_LIMITS, sync } from './api/sync.js';
+import { directory } from './api/rooms.js';
+import { fetchEvents } from './api/events.js';
 import { lookup } from './api/lookup.js';
 import { report } from './api/report.js';
 import { peerRoutes } from './peer/api.js';
@@ -52,7 +54,7 @@ function send(res, status, value, head = false) {
   res.end(head ? undefined : body);
 }
 
-const error = (code, message) => ({ error: { code, message } });
+const error = (code, message, details = {}) => ({ error: { code, message, ...details } });
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -96,12 +98,13 @@ function jsonServer(table, authenticate, gets = {}) {
       if (body === null || typeof body !== 'object' || Array.isArray(body)) {
         return send(res, 400, error('bad_request', 'body must be a JSON object'));
       }
-      if (!route.auth) return send(res, 200, route.handle(body));
+      // auth: 'optional' routes serve anonymous callers too, but a present auth block must verify.
+      if (!route.auth || (route.auth === 'optional' && body.auth === undefined)) return send(res, 200, route.handle(body, null));
       const who = authenticate(route, body);
       if (who.error) return send(res, who.status, error(who.error, who.message));
       return send(res, 200, route.handle(body, who.id));
     } catch (err) {
-      if (err instanceof RequestError) return send(res, err.code === 'too_large' ? 413 : 400, error(err.code, err.message));
+      if (err instanceof RequestError) return send(res, err.code === 'too_large' ? 413 : 400, error(err.code, err.message, err.details));
       console.error(err);
       return send(res, 500, error('internal', 'internal error'));
     }
@@ -134,6 +137,8 @@ export function createServer(store, config) {
     '/v2/sync': { auth: true, before: ingestOwnAgentEvents, handle: (body, agent) => sync(store, body, agent) },
     '/v2/report': { auth: true, handle: (body, agent) => report(store, body, agent) },
     '/v2/lookup': { handle: (body) => lookup(store, body) },
+    '/v2/rooms': { handle: (body) => directory(store, body) },
+    '/v2/events': { auth: 'optional', handle: (body, agent) => fetchEvents(store, body, agent) },
   };
   const authenticate = (route, body) => {
     route.before?.(store, body);

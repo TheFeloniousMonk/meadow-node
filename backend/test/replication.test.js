@@ -271,3 +271,94 @@ test('discovery finds nodes at staked suppliers’ hostnames and drops ones that
     await close();
   }
 });
+
+test('content repair: anti-entropy fetches content a node holds events without', async () => {
+  const { b } = room();
+  const { nodes, close } = await cluster(2);
+  try {
+    const [A, B] = nodes;
+    for (const s of b.steps) assert.equal(A.store.ingest(s.event).outcome, 'accepted');
+    // B gets the room's events without content, so no later push would resend them.
+    const bare = b.steps.map((s) => s.event).map(({ content, ...ev }) => ev);
+    for (const ev of bare) assert.equal(B.store.ingest(ev).outcome, 'accepted');
+    assert.deepEqual(B.store.contentGaps(10).sort(), [b.id('hello'), b.id('reply')].sort());
+
+    await B.replicator.antiEntropy(B.peers.get(A.id));
+    const r = B.store.room(b.room.id);
+    assert.equal(B.store.serve(r, b.id('hello')).content, events(b, 'hello')[0].content);
+    assert.equal(B.store.serve(r, b.id('reply')).content, events(b, 'reply')[0].content);
+    assert.deepEqual(B.store.contentGaps(10), []);
+  } finally {
+    await close();
+  }
+});
+
+test('content repair checks bytes against the signed hash and scores down a peer that lies', async () => {
+  const { b } = room();
+  const { nodes, close } = await cluster(2);
+  try {
+    const [A, B] = nodes;
+    for (const s of b.steps) A.store.ingest(s.event);
+    for (const ev of b.steps.map((s) => s.event).map(({ content, ...rest }) => rest)) B.store.ingest(ev);
+    A.store.peerContent = () => JSON.stringify({ text: 'words never written' });
+
+    assert.equal(await B.replicator.repairContent(B.peers.get(A.id)), 0);
+    assert.equal(B.store.serve(B.store.room(b.room.id), b.id('hello')).content, undefined);
+    assert.ok(B.peers.get(A.id).penalty >= 2, 'each wrong content scores the peer down');
+    assert.equal(B.store.contentGaps(10).length, 2, 'the gaps stay open for an honest peer');
+  } finally {
+    await close();
+  }
+});
+
+test('content repair never refills deleted or expired content', async () => {
+  const { b, alice } = room();
+  b.add('delete', alice, 'msg.delete', { data: { target: b.id('hello') } });
+  const { nodes, close } = await cluster(2);
+  try {
+    const [A, B] = nodes;
+    // A holds everything with content, as if it had not seen the deletion yet.
+    for (const s of b.steps.slice(0, -1)) A.store.ingest(s.event);
+    for (const s of b.steps) B.store.ingest(s.event);
+    const r = B.store.room(b.room.id);
+    assert.equal(B.store.serve(r, b.id('hello')).withheld, 'author');
+    assert.deepEqual(B.store.contentGaps(10), [], 'a deletion is not a gap');
+    assert.equal(B.store.repairContent(b.id('hello'), events(b, 'hello')[0].content), 'skipped');
+    assert.equal(B.store.serve(r, b.id('hello')).withheld, 'author');
+
+    // Content older than the retention window is not asked for: it would have expired.
+    const c = new Builder();
+    const carol = c.agent('carol');
+    c.create('create', carol, { type: 'public' });
+    c.join('join', carol);
+    c.post('old', carol, 'old');
+    for (const ev of c.steps.map((s) => s.event).map(({ content, ...rest }) => rest)) B.store.ingest(ev);
+    assert.deepEqual(B.store.contentGaps(10), [c.id('old')]);
+    assert.deepEqual(B.store.contentGaps(10, Date.now() + B.store.retention.contentMs + 1), []);
+  } finally {
+    await close();
+  }
+});
+
+test('a peer without /v2/content (an older release) does not stop the rest of anti-entropy', async () => {
+  const { b } = room();
+  const { nodes, close } = await cluster(2);
+  try {
+    const [A, B] = nodes;
+    for (const s of b.steps) A.store.ingest(s.event);
+    for (const ev of b.steps.map((s) => s.event).map(({ content, ...rest }) => rest)) B.store.ingest(ev);
+    const late = { event: { header: events(b, 'reply')[0].header, id: b.id('reply'), sig: events(b, 'reply')[0].sig }, reason: 'spam' };
+    const lateId = verifyReport(late).id;
+    A.store.addReport(lateId, late, null);
+    const realFetch = globalThis.fetch;
+    const oldPeer = (url, init) => (url.endsWith('/v2/content')
+      ? Promise.resolve(new Response(JSON.stringify({ error: { code: 'not_found', message: 'no such endpoint' } }), { status: 404 }))
+      : realFetch(url, init));
+    const replicator = new Replicator(B.store, B.peers, { flushMs: 0, antiEntropyMs: 0, log: quiet, fetch: oldPeer });
+    await replicator.antiEntropy(B.peers.get(A.id));
+    assert.deepEqual(B.store.report(lateId), late, 'reports still sync');
+    assert.equal(B.store.contentGaps(10).length, 2, 'gaps stay open for a newer peer');
+  } finally {
+    await close();
+  }
+});

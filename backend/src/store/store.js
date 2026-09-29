@@ -7,11 +7,13 @@ import { DatabaseSync } from 'node:sqlite';
 import { randomBytes } from 'node:crypto';
 import { AGENT_KINDS, checkWellFormed, roomIdOf } from '../proto/event.js';
 import { applyAgentEvent, betterHead, handleOf, handleSuffix } from '../agent/agent.js';
-import { b64u, fromB64u } from '../proto/encoding.js';
+import { b64u, fromB64u, sha256 } from '../proto/encoding.js';
 import { keypairFromSeed } from '../proto/keys.js';
 import { Room } from '../room/room.js';
 
 const DAY = 24 * 60 * 60 * 1000;
+// Kinds that carry content (§5.1): the only ones a takedown or deletion can withhold.
+export const CONTENT_KINDS = new Set(['msg.post', 'room.keys']);
 export const RETENTION = {
   contentMs: 90 * DAY, // content older than this (by receipt) is dropped
   roomMs: 90 * DAY, // a room with no accepted event for this long is deleted
@@ -19,7 +21,7 @@ export const RETENTION = {
   reportMs: 30 * DAY, // how long a received report (with any opened body) is kept for review
 };
 
-const SCHEMA = `
+export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS events (
   seq         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,6 +76,7 @@ CREATE TABLE IF NOT EXISTS reports (
   reporter    TEXT,              -- set only when an agent reported to this node; never forwarded
   received_at INTEGER NOT NULL
 );
+CREATE INDEX IF NOT EXISTS reports_reporter ON reports (reporter, received_at) WHERE reporter IS NOT NULL;
 CREATE TABLE IF NOT EXISTS tombstones (
   room       TEXT PRIMARY KEY,
   expired_at INTEGER NOT NULL
@@ -86,6 +89,32 @@ CREATE TABLE IF NOT EXISTS memberships (
   PRIMARY KEY (room, agent)
 );
 CREATE INDEX IF NOT EXISTS memberships_agent ON memberships (agent, membership);
+CREATE TABLE IF NOT EXISTS content_gaps (  -- accepted content events held without content that a peer may still have (§11.3)
+  id          TEXT PRIMARY KEY,
+  room        TEXT NOT NULL,
+  received_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS content_gaps_room ON content_gaps (room);
+CREATE TABLE IF NOT EXISTS takedowns (  -- operator takedowns (§9.5), by event ID; applied to every later copy
+  event  TEXT PRIMARY KEY,
+  at     INTEGER NOT NULL,
+  report TEXT,
+  note   TEXT
+);
+CREATE TABLE IF NOT EXISTS report_resolutions (  -- operator review (§9.5); dropped with the report
+  id         TEXT PRIMARY KEY,
+  resolution TEXT NOT NULL,  -- takedown | dismissed
+  event      TEXT,
+  at         INTEGER NOT NULL,
+  note       TEXT
+);
+CREATE TABLE IF NOT EXISTS directory (  -- listed public rooms (§7.4), rebuilt from room state at startup
+  room    TEXT PRIMARY KEY,
+  name    TEXT,
+  topic   TEXT,
+  search  TEXT NOT NULL,  -- lowercased name and topic
+  members INTEGER NOT NULL
+);
 `;
 
 export class Store {
@@ -116,7 +145,8 @@ export class Store {
   constructor(path = ':memory:', retention = {}) {
     this.retention = { ...RETENTION, ...retention };
     this.#db = new DatabaseSync(path);
-    this.#db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;');
+    // busy_timeout: the operator command (src/operator.js) writes to the same database while the node runs.
+    this.#db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
     this.#db.exec(SCHEMA);
     const db = this.#db;
     this.#q = {
@@ -147,8 +177,22 @@ export class Store {
       agentsSearch: db.prepare(`SELECT * FROM agents WHERE search LIKE ? ESCAPE '\\' AND agent > ? ORDER BY agent LIMIT ?`),
       shareRoom: db.prepare(`SELECT 1 FROM memberships a JOIN memberships b ON a.room = b.room
                              WHERE a.agent = ? AND b.agent = ? AND a.membership = 'join' AND b.membership = 'join' LIMIT 1`),
-      fillContent: db.prepare(`UPDATE events SET content = ? WHERE id = ? AND content IS NULL AND withheld IS NULL
+      // A restored operator takedown (§9.5) leaves withheld = 'operator' with no takedown record; a copy with content fills it.
+      fillContent: db.prepare(`UPDATE events SET content = ?, withheld = NULL WHERE id = ? AND content IS NULL
+                               AND (withheld IS NULL OR (withheld = 'operator' AND NOT EXISTS (SELECT 1 FROM takedowns t WHERE t.event = events.id)))
                                AND outcome = 'accepted' AND soft_failed = 0`),
+      takenDown: db.prepare('SELECT 1 FROM takedowns WHERE event = ?'),
+      addGap: db.prepare('INSERT OR IGNORE INTO content_gaps (id, room, received_at) VALUES (?, ?, ?)'),
+      closeGap: db.prepare('DELETE FROM content_gaps WHERE id = ?'),
+      gaps: db.prepare('SELECT id FROM content_gaps WHERE received_at >= ? ORDER BY received_at DESC LIMIT ?'),
+      dropGaps: db.prepare('DELETE FROM content_gaps WHERE received_at < ?'),
+      dropRoomGaps: db.prepare('DELETE FROM content_gaps WHERE room = ?'),
+      // Gaps from before the table existed, and restored takedowns (§9.5), found at startup.
+      findGaps: db.prepare(`INSERT OR IGNORE INTO content_gaps (id, room, received_at)
+                            SELECT e.id, e.room, e.received_at FROM events e
+                            WHERE e.outcome = 'accepted' AND e.soft_failed = 0 AND e.content IS NULL
+                              AND (e.withheld IS NULL OR (e.withheld = 'operator' AND NOT EXISTS (SELECT 1 FROM takedowns t WHERE t.event = e.id)))
+                              AND json_extract(e.event, '$.header.kind') IN ('msg.post', 'room.keys')`),
       peerContent: db.prepare('SELECT content FROM events WHERE id = ?'),
       listRooms: db.prepare('SELECT room, last_event_at FROM rooms WHERE room > ? ORDER BY room LIMIT ?'),
       listAgents: db.prepare('SELECT agent, head FROM agents WHERE agent > ? ORDER BY agent LIMIT ?'),
@@ -156,18 +200,30 @@ export class Store {
       report: db.prepare('SELECT id FROM reports WHERE id = ?'),
       insertReport: db.prepare('INSERT INTO reports (id, report, reporter, received_at) VALUES (?, ?, ?, ?)'),
       reportJson: db.prepare('SELECT report FROM reports WHERE id = ?'),
+      lastReportBy: db.prepare('SELECT max(received_at) AS at FROM reports WHERE reporter = ?'),
       listReports: db.prepare('SELECT id, report FROM reports WHERE id > ? ORDER BY id LIMIT ?'),
       dropReports: db.prepare('DELETE FROM reports WHERE received_at < ?'),
+      dropResolutions: db.prepare('DELETE FROM report_resolutions WHERE id NOT IN (SELECT id FROM reports)'),
       expireContent: db.prepare(`UPDATE events SET content = NULL, withheld = 'expired'
                                  WHERE content IS NOT NULL AND received_at < ?`),
       upsertMember: db.prepare(`INSERT INTO memberships (room, agent, membership, event) VALUES (?, ?, ?, ?)
                                 ON CONFLICT (room, agent) DO UPDATE SET membership = excluded.membership, event = excluded.event`),
       withhold: db.prepare('UPDATE events SET content = NULL, withheld = ? WHERE id = ? AND withheld IS NULL'),
       content: db.prepare('SELECT content, withheld FROM events WHERE id = ?'),
+      eventRoom: db.prepare('SELECT room FROM events WHERE id = ?'),
       deletesOf: db.prepare(`SELECT event FROM events WHERE target = ? AND room = ? AND outcome = 'accepted'`),
       all: db.prepare('SELECT event, outcome, reason, soft_failed FROM events ORDER BY seq'),
       roomsOf: db.prepare('SELECT room, membership, event FROM memberships WHERE agent = ?'),
       membership: db.prepare('SELECT membership, event FROM memberships WHERE room = ? AND agent = ?'),
+      listDirectory: db.prepare(`SELECT d.room, d.name, d.topic, d.members, r.last_event_at FROM directory d
+                                 JOIN rooms r ON r.room = d.room WHERE d.room > ? ORDER BY d.room LIMIT ?`),
+      searchDirectory: db.prepare(`SELECT d.room, d.name, d.topic, d.members, r.last_event_at FROM directory d
+                                   JOIN rooms r ON r.room = d.room WHERE d.search LIKE ? ESCAPE '\\' AND d.room > ?
+                                   ORDER BY d.room LIMIT ?`),
+      upsertDirectory: db.prepare(`INSERT INTO directory (room, name, topic, search, members) VALUES (?, ?, ?, ?, ?)
+                                   ON CONFLICT (room) DO UPDATE SET name = excluded.name, topic = excluded.topic,
+                                     search = excluded.search, members = excluded.members`),
+      unlist: db.prepare('DELETE FROM directory WHERE room = ?'),
       dmInvites: db.prepare(`SELECT r.room FROM rooms r
                              WHERE r.dm_with = ? AND NOT EXISTS
                                (SELECT 1 FROM memberships m WHERE m.room = r.room AND m.agent = r.dm_with)`),
@@ -197,6 +253,30 @@ export class Store {
       if (!room) this.#rooms.set(roomId, (room = new Room(this.#agentView)));
       room.restore(ev, result);
     }
+    this.#db.exec('BEGIN');
+    try {
+      this.#db.exec('DELETE FROM directory');
+      for (const room of this.#rooms.values()) this.#index(room);
+      this.#q.findGaps.run();
+      this.#db.exec('COMMIT');
+    } catch (err) {
+      this.#db.exec('ROLLBACK');
+      throw err;
+    }
+  }
+
+  // Keeps the room's directory entry (§7.4) in step with its current state: a
+  // public room is listed while its room.meta says listed: true.
+  #index(room, state = room.currentState()) {
+    const meta = state.get('room.meta|')?.header.data;
+    if (room.create.header.data.type !== 'public' || meta?.listed !== true) {
+      this.#q.unlist.run(room.id);
+      return;
+    }
+    let members = 0;
+    for (const [k, ev] of state) if (k.startsWith('room.member|') && ev.header.data.membership === 'join') members++;
+    const search = [meta.name ?? '', meta.topic ?? ''].join('\n').toLowerCase();
+    this.#q.upsertDirectory.run(room.id, meta.name ?? null, meta.topic ?? null, search, members);
   }
 
   room(id) {
@@ -226,15 +306,19 @@ export class Store {
     this.#db.exec('BEGIN');
     try {
       const content = Number(this.#q.expireContent.run(now - contentMs).changes);
+      this.#q.dropGaps.run(now - contentMs); // content that old would have expired anyway
       const rooms = this.#q.staleRooms.all(now - roomMs).map((r) => r.room);
       for (const room of rooms) {
         this.#q.dropEvents.run(room);
         this.#q.dropMembers.run(room);
+        this.#q.dropRoomGaps.run(room);
         this.#q.dropRoom.run(room);
+        this.#q.unlist.run(room);
         this.#q.bury.run(room, now);
       }
       const forgotten = Number(this.#q.forget.run(now - tombstoneMs).changes);
       const reports = Number(this.#q.dropReports.run(now - reportMs).changes);
+      this.#q.dropResolutions.run();
       this.#db.exec('COMMIT');
       for (const room of rooms) this.#rooms.delete(room);
       return { content, rooms: rooms.length, forgotten, reports };
@@ -265,7 +349,7 @@ export class Store {
     const known = room.outcome(ev.id);
     if (known) {
       // A copy that still has its content fills a gap left by one that came without.
-      if (ev.content !== undefined) this.#q.fillContent.run(ev.content, ev.id);
+      if (ev.content !== undefined && Number(this.#q.fillContent.run(ev.content, ev.id).changes)) this.#q.closeGap.run(ev.id);
       return known;
     }
 
@@ -276,9 +360,15 @@ export class Store {
     this.#db.exec('BEGIN');
     try {
       const accepted = result.outcome === 'accepted';
+      // An operator takedown (§9.5) may name an event before it arrives: its content is never stored.
+      const takenDown = accepted && CONTENT_KINDS.has(ev.header.kind) && this.#q.takenDown.get(ev.id) !== undefined;
       this.#q.insert.run(ev.id, roomId, JSON.stringify({ header: ev.header, id: ev.id, sig: ev.sig }),
-        accepted ? ev.content ?? null : null, result.outcome, result.reason ?? null,
+        accepted && !takenDown ? ev.content ?? null : null, result.outcome, result.reason ?? null,
         ev.header.kind === 'msg.delete' ? ev.header.data.target : null, result.soft_failed ? 1 : 0, now);
+      if (takenDown) this.#q.withhold.run('operator', ev.id);
+      else if (accepted && !result.soft_failed && CONTENT_KINDS.has(ev.header.kind) && ev.content === undefined) {
+        this.#q.addGap.run(ev.id, roomId, now);
+      }
       if (isCreate) this.#q.insertRoom.run(roomId, ev.header.data.type, ev.header.data.dm_with ?? null, now);
       if (accepted) {
         this.#q.touchRoom.run(now, roomId);
@@ -378,10 +468,12 @@ export class Store {
   }
 
   #afterAccept(room, ev) {
-    for (const [k, state] of room.currentState()) {
+    const current = room.currentState();
+    for (const [k, state] of current) {
       if (!k.startsWith('room.member|')) continue;
       this.#q.upsertMember.run(room.id, state.header.data.target, state.header.data.membership, state.id);
     }
+    this.#index(room, current);
     const h = ev.header;
     if (h.kind === 'msg.delete') {
       const effect = room.deletionEffect(ev);
@@ -412,6 +504,36 @@ export class Store {
     return out;
   }
 
+  // The room a stored room event belongs to, or null.
+  eventRoom(id) {
+    return this.#q.eventRoom.get(id)?.room ?? null;
+  }
+
+  // Content repair (§11.3): events held without content, newest first, that are
+  // still inside the retention window.
+  contentGaps(limit, now = Date.now()) {
+    return this.#q.gaps.all(now - this.retention.contentMs, limit).map((r) => r.id);
+  }
+
+  // Fills a gap with content from a peer, after checking it against the signed
+  // header. Returns 'filled', 'mismatch' (the peer sent the wrong bytes), or
+  // 'skipped' (not a gap: unknown, already held, withheld, or taken down).
+  repairContent(id, content) {
+    const roomId = this.eventRoom(id);
+    const h = roomId && this.#rooms.get(roomId)?.event(id)?.header;
+    if (!h || !CONTENT_KINDS.has(h.kind)) return 'skipped';
+    if (typeof content !== 'string' || Buffer.byteLength(content, 'utf8') !== h.content_len ||
+        b64u(sha256(Buffer.from(content, 'utf8'))) !== h.content_hash) return 'mismatch';
+    if (!Number(this.#q.fillContent.run(content, id).changes)) return 'skipped';
+    this.#q.closeGap.run(id);
+    return 'filled';
+  }
+
+  // Content this node holds for peers asking (§11.2 /v2/content): not withheld, not expired.
+  peerContent(id) {
+    return this.#q.peerContent.get(id)?.content ?? null;
+  }
+
   // Replication (§11) --------------------------------------------------------
 
   // A room event as sent to peers: header and signature, plus content if this
@@ -437,8 +559,26 @@ export class Store {
     }));
   }
 
+  // Listed public rooms (§7.4) in ID order after `cursor`, optionally matching
+  // `query` as a case-insensitive substring of name or topic.
+  directory(query, cursor, limit) {
+    const rows = query
+      ? this.#q.searchDirectory.all('%' + query.toLowerCase().replace(/[\\%_]/g, (c) => '\\' + c) + '%', cursor, limit)
+      : this.#q.listDirectory.all(cursor, limit);
+    return rows.map((r) => ({ room: r.room, members: r.members, active_at: r.last_event_at, name: r.name, topic: r.topic }));
+  }
+
   listAgents(cursor, limit) {
     return this.#q.listAgents.all(cursor, limit);
+  }
+
+  hasReport(id) {
+    return this.#q.report.get(id) !== undefined;
+  }
+
+  // When `agent` last made a report to this node, or null (for the §7.8 rate limit).
+  lastReportBy(agent) {
+    return this.#q.lastReportBy.get(agent)?.at ?? null;
   }
 
   // Stores a verified report once; `reporter` only for reports made to this node.

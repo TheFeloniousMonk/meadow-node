@@ -78,6 +78,95 @@ test('sync over HTTP, with chunked bodies', async () => {
   assert.equal(JSON.parse(bad.raw).error.code, 'bad_request');
 });
 
+test('the room directory over HTTP, unauthenticated and escaped', async () => {
+  const b = new Builder();
+  const alice = b.agent('dir-owner');
+  b.create('create', alice, { type: 'public' });
+  b.join('join', alice);
+  b.meta('meta', alice, { name: 'Service Unavailable club', listed: true });
+  await call('POST', '/v2/sync', signed(alice, { outbox: events(b, 'create', 'join', 'meta') }));
+
+  const res = await call('POST', '/v2/rooms', { query: 'club' });
+  assert.equal(res.status, 200);
+  assert.ok(!/service unavailable/i.test(res.raw), 'room names are escaped on the wire');
+  assert.deepEqual(JSON.parse(res.raw).rooms.map((e) => [e.room, e.name]), [[b.room.id, 'Service Unavailable club']]);
+
+  const bad = await call('POST', '/v2/rooms', { limit: 'x' });
+  assert.equal(bad.status, 400);
+  assert.equal(JSON.parse(bad.raw).error.code, 'bad_request');
+});
+
+test('events by ID over HTTP: auth optional, but a present auth block must verify', async () => {
+  const b = new Builder();
+  const owner = b.agent('events-owner');
+  b.create('create', owner, { type: 'private' });
+  b.join('join', owner);
+  b.sealed('secret', owner, 'secret');
+  await call('POST', '/v2/sync', signed(owner, { outbox: events(b, 'create', 'join', 'secret') }));
+  const ids = [b.id('secret')];
+
+  const anon = await call('POST', '/v2/events', { ids });
+  assert.equal(anon.status, 200);
+  assert.deepEqual(JSON.parse(anon.raw).unknown, ids);
+
+  const member = await call('POST', '/v2/events', signed(owner, { ids }));
+  assert.equal(member.status, 200);
+  assert.deepEqual(JSON.parse(member.raw).events.map((e) => e.id), ids);
+
+  const forged = signed(owner, { ids });
+  forged.auth.sig = forged.auth.sig.replace(/^./, (c) => (c === 'A' ? 'B' : 'A'));
+  const bad = await call('POST', '/v2/events', forged);
+  assert.equal(bad.status, 401);
+  assert.ok(JSON.parse(bad.raw).error.code.startsWith('auth_'));
+});
+
+test('a rate-limited report is a JSON 4xx with retry_after_ms, never a 429', async () => {
+  const b = new Builder();
+  const author = b.agent('limit-author');
+  const reporter = b.agent('limit-reporter');
+  b.create('create', author, { type: 'public' });
+  b.join('join', author);
+  b.post('one', author, 'one');
+  b.post('two', author, 'two');
+  const strip = (ev) => ({ header: ev.header, id: ev.id, sig: ev.sig });
+  const [one, two] = events(b, 'one', 'two').map(strip);
+
+  const first = await call('POST', '/v2/report', signed(reporter, { report: { event: one, reason: 'spam' } }));
+  assert.equal(first.status, 200);
+  const retry = await call('POST', '/v2/report', signed(reporter, { report: { event: one, reason: 'spam' } }));
+  assert.equal(retry.status, 200, 'an exact resubmission is answered');
+  const second = await call('POST', '/v2/report', signed(reporter, { report: { event: two, reason: 'spam' } }));
+  assert.equal(second.status, 400);
+  const err = JSON.parse(second.raw).error;
+  assert.equal(err.code, 'rate_limited');
+  assert.ok(err.retry_after_ms > 0 && err.retry_after_ms <= 60_000);
+});
+
+test('no 2xx body has a top-level result, error, or jsonrpc key (SAGE grades those as JSON-RPC)', async () => {
+  const b = new Builder();
+  const alice = b.agent('shape-check');
+  b.create('create', alice, { type: 'public' });
+  b.join('join', alice);
+  b.meta('meta', alice, { name: 'Shape', listed: true });
+  b.post('hello', alice, 'hello');
+  const strip = (ev) => ({ header: ev.header, id: ev.id, sig: ev.sig });
+  const calls = [
+    ['GET', '/'],
+    ['GET', '/healthz'],
+    ['POST', '/v2/sync', signed(alice, { outbox: events(b, 'create', 'join', 'meta', 'hello') })],
+    ['POST', '/v2/lookup', { agent_id: alice.id }],
+    ['POST', '/v2/rooms', {}],
+    ['POST', '/v2/events', { ids: [b.id('hello')] }],
+    ['POST', '/v2/report', signed(alice, { report: { event: strip(events(b, 'hello')[0]), reason: 'spam' } })],
+  ];
+  for (const [method, path, body] of calls) {
+    const res = await call(method, path, body);
+    assert.equal(res.status, 200, path);
+    const keys = Object.keys(JSON.parse(res.raw));
+    for (const k of ['result', 'error', 'jsonrpc']) assert.ok(!keys.includes(k), `${path} has a top-level ${k}`);
+  }
+});
+
 test('wire escaping round-trips, including existing escapes', () => {
   const value = {
     a: 'TimeOut and Bad Gateway, Service Unavailable, connection reset',
