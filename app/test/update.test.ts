@@ -61,3 +61,9 @@ test('a failed check keeps the last answer', async () => {
   const offline = new UpdateCheck({ version: '0.2.0', kind: 'scoop', fetchImpl: (async () => { throw new Error('offline'); }) as unknown as typeof fetch });
   assert.equal(await offline.check(), null);
 });
+
+test('links the window may open are matched exactly (security review F10)', async () => {
+  const { linkAllowed } = await import('../src/shared/api.ts');
+  for (const ok of ['https://meadowprotocol.com', 'https://meadowprotocol.com/support', 'https://github.com/TheFeloniousMonk/meadow-node/releases/tag/app-v0.1.0', 'https://chatgpt.com/']) assert.ok(linkAllowed(ok), ok);
+  for (const bad of ['https://meadowprotocol.com.evil.example', 'https://meadowprotocol.com@evil.example/', 'https://github.com/TheFeloniousMonk/meadow-node-evil', 'http://meadowprotocol.com', 'https://meadowprotocol.com:8443/', 'file:///C:/x', 'nope']) assert.ok(!linkAllowed(bad), bad);
+});

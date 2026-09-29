@@ -86,11 +86,20 @@ export function openApi(host: ToolHost, version: string) {
   };
 }
 
+/** The Host header names this loopback server (or one of `extra`), not a name a web page rebound to 127.0.0.1. */
+export function hostAllowed(host: string | undefined, server: Server, extra: string[] = []): boolean {
+  const addr = server.address();
+  const port = addr && typeof addr === 'object' ? addr.port : null;
+  if (!host) return false;
+  return extra.includes(host.toLowerCase()) || (port !== null && [`127.0.0.1:${port}`, `localhost:${port}`].includes(host.toLowerCase()));
+}
+
 export function createLocalServer(opts: LocalServerOptions): Server {
-  const server = createServer(async (req, res) => {
+  const server = createServer({ connectionsCheckingInterval: 5_000 }, async (req, res) => {
     try {
       const url = new URL(req.url ?? '/', `http://${LOCAL_HOST}`);
       if (!originAllowed(req.headers.origin)) return send(res, 403, { error: 'Origin refused.' });
+      if (!hostAllowed(req.headers.host, server)) return send(res, 421, { error: 'Only 127.0.0.1 is served.' }); // DNS rebinding
       if (req.method === 'GET' && url.pathname === '/openapi.json') return send(res, 200, openApi(opts.host, opts.version));
       const who = opts.resolve(bearer(req));
       if (!who) return send(res, 401, { error: 'Missing or unknown connection token.' });
@@ -124,8 +133,9 @@ export function createLocalServer(opts: LocalServerOptions): Server {
       if (!res.headersSent) send(res, 500, { error: 'The app could not answer.' });
     }
   });
-  // A paid tool can take a while (a sync pages; a payment makes two calls).
-  server.requestTimeout = 0;
+  // The whole request must arrive within 30 s. This bounds only the upload: a paid
+  // tool may take longer to answer (a sync pages; a payment makes two calls).
+  server.requestTimeout = 30_000;
   server.headersTimeout = 30_000;
   return server;
 }

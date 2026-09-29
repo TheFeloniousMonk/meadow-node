@@ -166,6 +166,26 @@ export const EXTERNAL_LINKS = [
   'https://dashboard.ngrok.com/', 'https://ngrok.com/', 'https://chatgpt.com/',
 ];
 
+/**
+ * Whether the window may open `url` in the browser: https, no user name or
+ * password, the exact host of an allowed link, and a path at or under its path
+ * (`/meadow-node` allows `/meadow-node/releases/…`, not `/meadow-node-evil`).
+ */
+export function linkAllowed(url: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== 'https:' || u.username || u.password || u.port) return false;
+  return EXTERNAL_LINKS.some((l) => {
+    const a = new URL(l);
+    const base = a.pathname.replace(/\/$/, '');
+    return u.hostname === a.hostname && (base === '' || u.pathname === base || u.pathname.startsWith(base + '/'));
+  });
+}
+
 /** An answer the core refused, in plain words, carried across the bridge as a value. */
 export interface Failure {
   error: string;

@@ -21,6 +21,7 @@
 import { argon2Sync, createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { tx, type Db } from './db.ts';
 import { wasm } from './deps.ts';
+import { signerFromSeed } from './identity.ts';
 import type { Vault } from './vault.ts';
 
 export const BACKUP_FORMAT = 1;
@@ -141,6 +142,8 @@ export function describeBackup(c: Contents) {
  */
 export function restoreBackup(db: Db, vault: Vault, c: Contents, { replace = false } = {}): { agent: string; replaced: boolean } {
   const agent = c.agent.id as string;
+  // The file is the person's, but may not be what it claims: the agent must be the one its seed makes.
+  if (typeof c.seed !== 'string' || signerFromSeed(Buffer.from(c.seed, 'base64')).id !== agent) throw new BackupError('This backup is damaged: its agent does not match its key.');
   const here: any = db.prepare('SELECT wallet FROM agents WHERE id = ?').get(agent);
   const exists = !!here;
   // Replacing an agent already here keeps the wallet it had; a wallet is never in the file.
@@ -159,7 +162,7 @@ export function restoreBackup(db: Db, vault: Vault, c: Contents, { replace = fal
     for (const t of TABLES) {
       const rows = [...(c.tables[t] ?? [])].sort((x, y) => (x._order ?? 0) - (y._order ?? 0));
       for (const r of rows) {
-        const out: any = { ...r };
+        const out: any = { ...r, agent }; // every row belongs to the restored agent, whatever the file says
         delete out._order;
         if (t === 'own_chain' || t === 'events' || t === 'group_out') out.seq = r._order;
         if (t === 'messages' && r.body_sealed) out.body_sealed = vault.sealJson(`message:${agent}:${r.id}`, r.body_sealed);
@@ -181,7 +184,9 @@ export function restoreBackup(db: Db, vault: Vault, c: Contents, { replace = fal
 }
 
 function insert(db: Db, table: string, row: Record<string, unknown>) {
-  const cols = Object.keys(row);
+  // Only the table's own columns: names from the file never reach the SQL.
+  const known = new Set((db.prepare(`PRAGMA table_info(${table})`).all() as any[]).map((c) => c.name));
+  const cols = Object.keys(row).filter((k) => known.has(k));
   db.prepare(`INSERT INTO ${table} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`).run(...(cols.map((k) => row[k]) as any[]));
 }
 

@@ -20,6 +20,11 @@ export const OAUTH = {
   accessMs: 3600_000,
   refreshMs: 30 * 24 * 3600_000,
   maxPending: 5, // open requests at once, so no one can flood the person with dialogs
+  // Registration is open to anyone who knows the tunnel's address, so it is bounded:
+  maxUnusedClients: 20, // registered clients that hold no token, at once
+  unusedClientMs: 24 * 3600_000, // an unused registration is forgotten after a day
+  registerPerMinute: 10,
+  maxRedirectLength: 512,
   scope: 'meadow',
 };
 
@@ -44,6 +49,7 @@ export interface PendingRequest {
 export class OAuth {
   #db: Db;
   #now: () => number;
+  #registrations: number[] = [];
 
   constructor({ db, now = Date.now }: { db: Db; now?: () => number }) {
     this.#db = db;
@@ -53,12 +59,20 @@ export class OAuth {
   /** Dynamic client registration (RFC 7591), public clients only, redirecting to ChatGPT only. */
   register(body: any): OAuthError | Record<string, unknown> {
     const uris = body?.redirect_uris;
-    if (!Array.isArray(uris) || !uris.length || uris.length > 5 || !uris.every((u) => typeof u === 'string' && REDIRECTS.some((r) => r.test(u)))) {
+    if (!Array.isArray(uris) || !uris.length || uris.length > 5 || !uris.every((u) => typeof u === 'string' && u.length <= OAUTH.maxRedirectLength && REDIRECTS.some((r) => r.test(u)))) {
       return err('invalid_redirect_uri', 'This app accepts only ChatGPT as a client.');
     }
     if (body.token_endpoint_auth_method !== undefined && body.token_endpoint_auth_method !== 'none') {
       return err('invalid_client_metadata', 'Only public clients (token_endpoint_auth_method none) are supported.');
     }
+    const now = this.#now();
+    this.#registrations = this.#registrations.filter((t) => t > now - 60_000);
+    this.#db.prepare('DELETE FROM oauth_clients WHERE created_at < ? AND client_id NOT IN (SELECT client_id FROM oauth_tokens) AND client_id NOT IN (SELECT client_id FROM oauth_requests)').run(now - OAUTH.unusedClientMs);
+    const unused = (this.#db.prepare('SELECT COUNT(*) AS n FROM oauth_clients WHERE client_id NOT IN (SELECT client_id FROM oauth_tokens)').get() as any).n;
+    if (this.#registrations.length >= OAUTH.registerPerMinute || unused >= OAUTH.maxUnusedClients) {
+      return err('temporarily_unavailable', 'Too many registrations. Try again later.');
+    }
+    this.#registrations.push(now);
     const clientId = token('client');
     const name = typeof body.client_name === 'string' ? body.client_name.slice(0, 100) : 'ChatGPT';
     this.#db.prepare('INSERT INTO oauth_clients (client_id, name, redirect_uris, created_at) VALUES (?, ?, ?, ?)').run(clientId, name, JSON.stringify(uris), this.#now());

@@ -18,6 +18,17 @@ extraResources:
     to: crypto
     filter: ['meadow_crypto.js', 'meadow_crypto_bg.wasm', 'package.json']
 asar: true
+# Electron fuses (security review, 2026-09-29): another program running as the
+# same user must not be able to start Meadow with a debugger or NODE_OPTIONS
+# and have the OS keychain open the master key for it. RunAsNode stays on:
+# Claude Desktop runs the bridge that way (SPEC §16.7.1).
+electronFuses:
+  runAsNode: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  enableCookieEncryption: true
 npmRebuild: false
 win:
   target:

@@ -8,7 +8,7 @@ import { GUARD_SERVICE } from '../core/guard.ts';
 import { backupDue, describeBackup, makeBackup, readBackup, restoreBackup } from '../core/backup.ts';
 import { tokenBalance } from '../core/balance.ts';
 import { add, bridgeEntry, claudeDesktopConfigPath, entryName, remove, status } from '../server/claude-desktop.ts';
-import { CHANNELS, EXTERNAL_LINKS, type Api, type AppState, type Channel, type MessageView } from '../shared/api.ts';
+import { CHANNELS, linkAllowed, type Api, type AppState, type Channel, type MessageView } from '../shared/api.ts';
 import type { Services } from './services.ts';
 
 export interface HandlerEnv {
@@ -234,7 +234,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     },
 
     openExternal({ url }) {
-      if (!EXTERNAL_LINKS.some((l) => url === l || url.startsWith(l))) return { ok: false };
+      if (typeof url !== 'string' || !linkAllowed(url)) return { ok: false };
       env.openExternal(url);
       return { ok: true };
     },

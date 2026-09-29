@@ -8,8 +8,7 @@
 // protocol would not.
 
 import {
-  AgentLog, Room, checkWellFormed, dmKey, handleOf, powerOf, powerTable, roomIdOf, selectAuth, stateKey, verifyReport, MAX_PARENTS, ROOM_VERSION,
-} from './deps.ts';
+  AgentLog, Room, checkWellFormed, dmKey, handleOf, powerOf, powerTable, roomIdOf, selectAuth, stateKey, verifyReport, MAX_PARENTS, ROOM_VERSION, membershipOf } from './deps.ts';
 import type { MeadowEvent, State } from './deps.ts';
 import { tx, type Db } from './db.ts';
 import { AgentCrypto, E2E_LIMITS, bundleKey, newAccount, vodozemacKey, NeedBundle, openPlaintext, recipients, type Bundle, type InnerBody } from './e2e.ts';
@@ -497,9 +496,15 @@ export class Core {
         throw new ActionError(e?.code ?? 'sync_failed', `The network refused the sync: ${e?.message ?? res.status}.`);
       }
       const data = res.data;
+      const before = JSON.stringify(this.#heads(ctx));
       await this.#ingestSync(ctx, data, report);
       const createLimited = (data.pending ?? []).some((p: any) => p.reason === 'create_limit');
       if (!data.more && !createLimited && total <= rows.length) break;
+      // Every page is paid: a page that sent nothing and brought nothing new ends the sync (a node saying "more" forever would drain the budget).
+      if (!rows.length && JSON.stringify(this.#heads(ctx)) === before && !(data.invites ?? []).length) {
+        this.#problem(ctx.id, 'sync', 'A node said more was waiting but sent nothing new; the sync stopped to save money.');
+        break;
+      }
     }
     tx(this.#db, () => this.#housekeeping(ctx));
     if (this.#afterSync) await this.#afterSync(ctx.id, report);
@@ -535,10 +540,15 @@ export class Core {
       if (entry.expired) {
         tx(this.#db, () => this.#setRoom(ctx.id, roomId, { status: 'expired' }));
       } else if (entry.readable === false) {
-        // How a removed member learns of its removal (§7.2).
-        if (entry.membership && this.#room(ctx, roomId).size > 0) report.messages += await this.ingestRoomEvents(ctx.id, roomId, [entry.membership]);
+        // How a removed member learns of its removal (§7.2). A node's word is not
+        // enough: the room is marked removed only when a signed membership event,
+        // validated in the agent's own room, says so.
+        const room = this.#room(ctx, roomId);
+        if (entry.membership && room.size > 0) report.messages += await this.ingestRoomEvents(ctx.id, roomId, [entry.membership]);
+        const proved = room.size > 0 && ['leave', 'ban'].includes(membershipOf(room.currentState(), ctx.id));
         const row = this.#roomRow(ctx.id, roomId);
-        if (row?.status === 'joined' || row?.status === 'reading') tx(this.#db, () => this.#setRoom(ctx.id, roomId, { status: 'removed' }));
+        if (proved && (row?.status === 'joined' || row?.status === 'reading')) tx(this.#db, () => this.#setRoom(ctx.id, roomId, { status: 'removed' }));
+        else if (!proved) this.#problem(ctx.id, 'sync', `A node said this agent can no longer read room ${roomId}, without a signed removal; the room is kept.`);
       } else if (entry.events?.length) {
         report.messages += await this.ingestRoomEvents(ctx.id, roomId, entry.events);
       }

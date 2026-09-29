@@ -33,7 +33,8 @@ interface ToolDef {
   paid: boolean;
   description: string;
   inputSchema: { type: 'object'; properties: Record<string, unknown>; required?: string[]; additionalProperties: false };
-  run(h: ToolHost, agent: string, args: any): Promise<Json>;
+  /** `scope`, for the runner, is the rooms it may see and act in; the free tools show nothing else (§16.7.3). */
+  run(h: ToolHost, agent: string, args: any, scope?: Set<string>): Promise<Json>;
   /** The room a writing tool acts in, for the runner's room limit (§16.7.3). */
   roomOf?: (args: any) => string | undefined;
 }
@@ -63,13 +64,13 @@ const TOOLS: ToolDef[] = [
     name: 'status', paid: false,
     description: 'Your handle, unread messages, queued sends, rooms and invites, wallet balance, the budget left today, and the current price of a paid call.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-    run: (h, agent) => h.status(agent),
+    run: (h, agent, _a, scope) => h.status(agent, scope),
   },
   {
     name: 'inbox', paid: false,
     description: 'New messages already on this computer, grouped by room, oldest first. Giving them to you marks them read. Call sync first to fetch newer ones.',
     inputSchema: { type: 'object', properties: { limit: { type: 'integer', minimum: 1, maximum: 200, description: 'At most this many messages (default 50).' } }, additionalProperties: false },
-    run: (h, agent, a) => h.inbox(agent, a.limit ?? 50),
+    run: (h, agent, a, scope) => h.inbox(agent, a.limit ?? 50, scope),
   },
   {
     name: 'read', paid: false,
@@ -79,7 +80,7 @@ const TOOLS: ToolDef[] = [
       properties: { room: ROOM, message: str('A message ID (e_…).'), limit: { type: 'integer', minimum: 1, maximum: 200, description: 'The most recent this many (default 50).' } },
       additionalProperties: false,
     },
-    run: (h, agent, a) => h.read(agent, a),
+    run: (h, agent, a, scope) => h.read(agent, a, scope),
   },
   {
     name: 'sync', paid: true,
@@ -269,8 +270,8 @@ export class ToolHost {
   }
 
   /**
-   * Runs a tool as `agent`. `rooms`, for the runner, limits writing tools to
-   * those rooms and forbids creating rooms and DMs (§16.7.3).
+   * Runs a tool as `agent`. `rooms`, for the runner, limits every tool to
+   * those rooms (reading too) and forbids creating rooms and DMs (§16.7.3).
    */
   async call(agent: string, name: string, args: Json = {}, { audience = 'person', rooms }: { audience?: Audience; rooms?: Set<string> } = {}): Promise<ToolResult> {
     const tool = TOOLS.find((t) => t.name === name);
@@ -284,7 +285,7 @@ export class ToolHost {
     const wallet = this.wallets.walletOf(agent);
     const before = wallet ? this.#paid(wallet) : null;
     try {
-      const data = await tool.run(this, agent, args);
+      const data = await tool.run(this, agent, args, rooms);
       return { data: tool.paid ? { ...data, ...this.#cost(wallet, before) } : data };
     } catch (err) {
       if (err instanceof TransportError && err.kind === 'refused') return { data: { refused: err.message, ...this.#cost(wallet, before) } };
@@ -313,11 +314,11 @@ export class ToolHost {
 
   // --- Free tools -------------------------------------------------------------------
 
-  async status(agent: string): Promise<Json> {
+  async status(agent: string, only?: Set<string>): Promise<Json> {
     const me = this.core.agents().find((a) => a.id === agent)!;
-    const unread = this.core.messages(agent, { undelivered: true }).filter((m) => m.author !== agent).length;
+    const unread = this.core.messages(agent, { undelivered: true }).filter((m) => m.author !== agent && (!only || only.has(m.room))).length;
     const queued = this.core.outbox(agent).filter((e) => e.kind === 'msg.post').length;
-    const rooms = this.core.rooms(agent);
+    const rooms = this.core.rooms(agent).filter((r) => !only || only.has(r.room));
     const walletId = this.wallets.walletOf(agent);
     const w = walletId ? this.wallets.list().find((x) => x.id === walletId) : undefined;
     let balance = 'unknown';
@@ -388,9 +389,10 @@ export class ToolHost {
     return { rooms: Object.values(rooms), ...(more && { more_unread: more }), ...(held && { kept_aside: `${held} message${held === 1 ? '' : 's'} kept aside by MessageGuard for your person to look at.` }), ...(!fresh.length && { note: 'Nothing new on this computer. sync fetches from the network (paid).' }) };
   }
 
-  async read(agent: string, a: { room?: string; message?: string; limit?: number }): Promise<Json> {
+  async read(agent: string, a: { room?: string; message?: string; limit?: number }, only?: Set<string>): Promise<Json> {
     if (!a.room === !a.message) throw new ActionError('bad_request', 'Give either room or message.');
-    const all = this.core.messages(agent, a.room ? { room: a.room } : {});
+    if (only && a.room && !only.has(a.room)) return { refused: 'You are not enabled to read there. Your person enables rooms on the Agents screen.' };
+    const all = this.core.messages(agent, a.room ? { room: a.room } : {}).filter((m) => !only || only.has(m.room));
     const picked = a.message ? all.filter((m) => m.id === a.message) : all.slice(-(a.limit ?? 50));
     if (a.message && !picked.length) throw new ActionError('unknown_message', 'This agent has no such message.');
     this.core.markDelivered(agent, picked.filter((m) => !m.guard?.held).map((m) => m.id));
@@ -404,7 +406,7 @@ const maxZero = (x: bigint) => (x < 0n ? 0n : x);
 function checkArgs(schema: ToolDef['inputSchema'], args: unknown): string | null {
   if (args === null || typeof args !== 'object' || Array.isArray(args)) return 'Arguments must be an object.';
   const a = args as Json;
-  for (const k of Object.keys(a)) if (!(k in schema.properties)) return `Unknown argument ${k}.`;
+  for (const k of Object.keys(a)) if (!Object.hasOwn(schema.properties, k)) return `Unknown argument ${k}.`;
   for (const k of schema.required ?? []) if (a[k] === undefined) return `${k} is required.`;
   for (const [k, v] of Object.entries(a)) {
     const p: any = schema.properties[k];

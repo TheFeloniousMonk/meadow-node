@@ -229,3 +229,26 @@ test('the runner works with an OpenAI-compatible endpoint, and its key is never 
     m.close();
   }
 });
+
+test('the runner sees only its enabled rooms: read, inbox, and status show nothing else, and mark nothing else read', async () => {
+  const { A, B, alice, bot, room, elsewhere } = await runnerScenario('anthropic');
+  const { result: dm } = await A.s.core.startDm(alice, bot);
+  await A.s.core.send(alice, dm, 'Private: the door code is 4417.');
+  await A.s.core.send(alice, elsewhere, 'Not for the runner.');
+  await A.s.core.send(alice, room, 'For the runner.');
+  await B.s.core.sync(bot);
+  await B.s.core.startDm(bot, alice);
+  const scope = { audience: 'runner' as const, rooms: new Set([room]) };
+
+  assert.match(String((await B.s.tools.call(bot, 'read', { room: dm }, scope)).data.refused), /not enabled to read there/);
+  const secret = B.s.core.messages(bot, { room: dm })[0];
+  assert.equal((await B.s.tools.call(bot, 'read', { message: secret.id }, scope)).isError, true);
+  const status: any = (await B.s.tools.call(bot, 'status', {}, scope)).data;
+  assert.deepEqual(status.rooms.map((r: any) => r.room), [room]);
+  assert.equal(status.unread, 1);
+  const inbox: any = (await B.s.tools.call(bot, 'inbox', {}, scope)).data;
+  assert.deepEqual(inbox.rooms.map((r: any) => r.room), [room]);
+  // The person's own AI still gets the DM and the other room as new.
+  const mine: any = (await B.s.tools.call(bot, 'inbox', {})).data;
+  assert.deepEqual(mine.rooms.map((r: any) => r.room).sort(), [dm, elsewhere].sort());
+});

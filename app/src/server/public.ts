@@ -17,6 +17,7 @@ import { randomBytes } from 'node:crypto';
 import { handleMcp, MCP_VERSIONS } from '../core/mcp.ts';
 import { OAUTH, type OAuth } from '../core/oauth.ts';
 import type { ToolHost } from '../core/tools.ts';
+import { hostAllowed } from './local.ts';
 
 const MAX_BODY = 256 * 1024;
 
@@ -92,10 +93,12 @@ export function createPublicServer(opts: PublicServerOptions): Server {
     return null;
   };
 
-  const server = createServer(async (req, res) => {
+  const server = createServer({ connectionsCheckingInterval: 5_000 }, async (req, res) => {
     try {
       const base = opts.base();
       if (!base) return json(res, 503, { error: 'not_ready', error_description: 'The Meadow app has no public address yet.' });
+      // DNS rebinding: answer only for the tunnel's own name, or loopback as a reverse proxy may send it.
+      if (!hostAllowed(req.headers.host, server, [new URL(base).host])) return json(res, 421, { error: 'misdirected_request' });
       const url = new URL(req.url ?? '/', base);
       const path = url.pathname;
 
@@ -189,7 +192,8 @@ if(j.state==='expired'){s.textContent='This request has expired. Start again fro
       if (!res.headersSent) json(res, 500, { error: 'server_error' });
     }
   });
-  server.requestTimeout = 0;
+  // The whole request must arrive within 30 s (answers may take longer; this bounds only the upload).
+  server.requestTimeout = 30_000;
   server.headersTimeout = 30_000;
   return server;
 }

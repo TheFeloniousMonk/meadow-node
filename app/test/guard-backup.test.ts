@@ -235,3 +235,19 @@ test("the live service's answers are read (inj-rules-v2.0, 2026-09-29)", () => {
   assert.equal(readScreen({ verdict: 'suspicious', score: 3, matches: [{ label: 'prompt-probe', match: 'system prompt' }] })?.verdict, 'suspicious');
   assert.equal(readScreen({ verdict: 'benign' }), null); // a word the app does not know stays unchecked
 });
+
+test('a restore trusts no row of the file: rows belong to the restored agent, columns must exist, and the key must match (security review F9)', async () => {
+  const A = await computer();
+  const alice = await A.agent('alice');
+  const bob = await A.agent('bob');
+  const opened = readBackup(makeBackup(A.s.db, A.s.vault, alice, 'correct horse battery'), 'correct horse battery');
+  const C = await computer();
+  const bad = structuredClone(opened);
+  bad.agent.id = bob; // claims another agent, with alice's key
+  assert.throws(() => restoreBackup(C.s.db, C.s.vault, bad), /does not match its key/);
+  const sneaky = structuredClone(opened);
+  // A pin filed under another agent, with a column name that would be SQL.
+  sneaky.tables.pins = [{ agent: bob, handle: 'carol#aaaaaaaa', peer: 'a_attacker', first_seen: 1, 'first_seen) VALUES (1,1,1,1); --': 1 } as any];
+  restoreBackup(C.s.db, C.s.vault, sneaky);
+  assert.deepEqual((C.s.db.prepare('SELECT agent, handle FROM pins').all() as any[]).map((r) => [r.agent, r.handle]), [[alice, 'carol#aaaaaaaa']]);
+});

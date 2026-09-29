@@ -8,12 +8,14 @@
 
 import { randomBytes, randomUUID } from 'node:crypto';
 import { tx, type Db } from './db.ts';
-import { BASE, formatUsd, toAtomic, type Catalog } from './catalog.ts';
+import { BASE, USDC, formatUsd, toAtomic, type Catalog } from './catalog.ts';
 import { addressOf, isMnemonic, newMnemonic, normalizeMnemonic, privateKeyFromMnemonic, sameAddress, signTransfer, type Authorization, type Hex } from './evm.ts';
 import { TransportError } from './transport.ts';
 import type { Vault } from './vault.ts';
 
 export const DAY_MS = 24 * 3600 * 1000;
+/** The longest a signed authorization stays valid, whatever the 402 asks (§16.9). */
+const MAX_VALID_S = 300;
 /** The per-call maximum until the person sets one (§16.14): a limit, not a price. */
 export const DEFAULT_PER_CALL_MAX_USD = '0.01';
 
@@ -166,15 +168,21 @@ export class Wallets {
     const service = this.#catalog.service(req.serviceId);
     const rail = this.#catalog.baseRail(req.serviceId);
     if (!service || !rail) refuse(`${req.serviceId} is not in the portal's price list with a USDC on Base price, so the app will not pay for it.`, true);
+    // The price list may not change the token, the chain, or the unit limits are counted in.
+    if (!sameAddress(rail!.tokenAddress, USDC.address) || rail!.tokenDecimals !== USDC.decimals || rail!.chainId !== BASE.chainId) {
+      refuse(`The portal's price list describes ${req.serviceId}'s payment differently from USDC on Base, so the app will not pay for it.`, true);
+    }
 
     // Terms on the app's rail, in the exact scheme, to the catalog's asset and payee (checks 2).
     const all = parseTerms(req.offer);
-    const terms = all.find((t) => t.scheme === 'exact' && t.network === BASE.network && sameAddress(t.asset, rail!.tokenAddress));
+    const terms = all.find((t) => t.scheme === 'exact' && t.network === BASE.network && sameAddress(t.asset, USDC.address));
     if (!terms) return refuse('The portal did not offer a way to pay in USDC on Base, so nothing was paid.', true);
     if (!sameAddress(terms.payTo, rail!.payToAddress)) refuse('The portal asked to pay an address its price list does not show, so nothing was paid.', true);
 
+    if (terms.extra?.name !== USDC.name || terms.extra?.version !== USDC.version) refuse('The portal asked to sign for a token that is not USDC, so nothing was paid.', true);
+
     // The amount (check 3).
-    const decimals = rail!.tokenDecimals;
+    const decimals = USDC.decimals;
     const amount = BigInt(terms.amount);
     const price = toAtomic(service!.priceUsd, decimals);
     if (amount > price) refuse(`The portal asked for ${formatUsd(amount, decimals)}, more than its listed price of ${formatUsd(price, decimals)}, so nothing was paid.`, true);
@@ -218,13 +226,13 @@ export class Wallets {
       const key = privateKeyFromMnemonic(mnemonic);
       const from = addressOf(key);
       const nowS = Math.floor(this.#now() / 1000);
-      // As the portal's own payer does: a minute of clock skew before, the seller's timeout after.
+      // As the portal's own payer does: a minute of clock skew before, the seller's timeout after, capped at five minutes.
       const authorization: Authorization = {
         from, to: terms.payTo, value: terms.amount,
-        validAfter: String(nowS - 60), validBefore: String(nowS + Math.max(60, terms.maxTimeoutSeconds)),
+        validAfter: String(nowS - 60), validBefore: String(nowS + Math.min(MAX_VALID_S, Math.max(60, terms.maxTimeoutSeconds))),
         nonce: `0x${randomBytes(32).toString('hex')}`,
       };
-      const signature = signTransfer(key, { name: terms.extra.name, version: terms.extra.version, chainId: rail.chainId, verifyingContract: terms.asset }, authorization);
+      const signature = signTransfer(key, { name: USDC.name, version: USDC.version, chainId: BASE.chainId, verifyingContract: USDC.address }, authorization);
       key.fill(0);
       const r = this.#db.prepare(`INSERT INTO payments (wallet, agent, service, path, amount, asset, network, pay_to, nonce, valid_before, signed_at, status)
                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'signed')`)

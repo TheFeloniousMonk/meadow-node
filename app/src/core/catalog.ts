@@ -8,6 +8,12 @@ export const REFRESH_MS = 24 * 3600 * 1000;
 
 /** The one rail the app pays on (§16.16): USDC on Base. */
 export const BASE = { network: 'eip155:8453', chainId: 8453 };
+/**
+ * The one token the app pays in, pinned in code (§16.9): the price list names
+ * the rail, but never the unit the person's limits are counted in. USDC on
+ * Base, 6 decimals, EIP-712 domain "USD Coin" version "2".
+ */
+export const USDC = { address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', decimals: 6, name: 'USD Coin', version: '2' } as const;
 
 export interface Rail {
   id: string;
