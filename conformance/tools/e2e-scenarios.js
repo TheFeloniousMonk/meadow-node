@@ -173,13 +173,16 @@ export const e2eScenarios = [
   },
   {
     name: 'stolen-session',
-    description: 'Carol holds Alice\'s session, as every member does, and re-shares it to Bob as her own, then reposts Alice\'s ciphertext as her message. Her share has no valid creation proof, so it is discarded, and her repost finds no session under her name.',
+    description: 'Carol holds Alice\'s session, as every member does, and re-shares it to Bob as her own, then reposts Alice\'s ciphertext as her message. The signed key she received from Alice verifies as a creation proof, but the session ID is already bound to Alice; her exported copies have no valid proof. Every share is discarded, and her repost finds no session under her name.',
     sections: ['8.5', '8.7'],
     roomType: 'private',
     receiver: 'bob',
     build(w) {
       const [alice, bob, carol] = privateRoom(w, ['alice', 'bob', 'carol']);
-      alice.post(w.b, 'alice-says', 'I said this', w.bundles, { shareLabel: 'alice-keys' });
+      alice.share(w.b, 'alice-keys', w.bundles);
+      // The signed session key every recipient received in alice-keys (form session, index 0).
+      const signed = alice.own.get(w.b.room.id).at(-1).gs.sessionKey;
+      alice.post(w.b, 'alice-says', 'I said this', w.bundles);
       const { copy } = w.peek('carol', 'private');
       const session = sessionOf(w, 'alice-keys');
       const stolen = copy.inbound.get(`${w.b.room.id}|${alice.id}|${session}`);
@@ -188,16 +191,18 @@ export const e2eScenarios = [
         w.b.add(label, carol.agent, 'room.keys', { content });
       };
       const base = { t: 'meadow.room_key', room: w.b.room.id, sender: carol.id, recipient: bob.id, session };
+      forge('as-signed-key', { ...base, form: 'session', key: signed });
       forge('as-session', { ...base, form: 'session', key: stolen.exportAt(0) });
       forge('as-export-no-proof', { ...base, form: 'export', key: stolen.exportAt(0) });
       forge('as-export-own-proof', { ...base, form: 'export', key: stolen.exportAt(0), proof: new wasm.GroupSession().sessionKey });
       carol.repost(w.b, 'carol-claims', w.b.id('alice-says'));
     },
+    // as-signed-key: a valid proof, but the session ID is bound to Alice, who shared it first: discarded:bound.
     // as-session: an export is not a signed key: discarded:proof. as-export-no-proof: discarded:proof.
     // as-export-own-proof: the proof is for another session: discarded:session. carol-claims: no session under Carol: missing_key.
     expect: () => ({
       statuses: {
-        'alice-keys': 'accepted', 'alice-says': 'shown:I said this', 'as-session': 'discarded:proof',
+        'alice-keys': 'accepted', 'alice-says': 'shown:I said this', 'as-signed-key': 'discarded:bound', 'as-session': 'discarded:proof',
         'as-export-no-proof': 'discarded:proof', 'as-export-own-proof': 'discarded:session', 'carol-claims': 'missing_key',
       },
     }),

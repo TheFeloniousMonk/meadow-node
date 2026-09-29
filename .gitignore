@@ -3,3 +3,4 @@ CLAUDE.md
 SECURITY-SANDBOX-PLAN.md
 sandbox/
 crypto/target/
+node_modules/

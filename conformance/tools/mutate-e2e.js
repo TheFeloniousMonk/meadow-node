@@ -20,6 +20,7 @@ const mutations = [
   ['no type check (share)', "if (pt.t !== 'meadow.room_key') return 'discarded:type';", ''],
   ['export needs no proof', 'proof = new wasm.InboundGroupSession(pt.proof);', 'proof = wasm.InboundGroupSession.import(pt.key);'],
   ['session form accepts exports', "        proof = new wasm.InboundGroupSession(pt.key);\n        ig = new wasm.InboundGroupSession(pt.key);", "        proof = wasm.InboundGroupSession.import(pt.key);\n        ig = wasm.InboundGroupSession.import(pt.key);"],
+  ['no session binding', "if (boundTo && boundTo !== author) return 'discarded:bound';", ''],
   ['no session-id match', "if (pt.session !== c.session || ig.sessionId !== pt.session || proof.sessionId !== pt.session) return 'discarded:session';", ''],
   ['no replay detection', "for (const id of ids.slice(1)) statuses.set(id, 'replayed');", "for (const id of ids.slice(1)) statuses.set(id, `shown:${parse(decrypted.get(id).plaintext)?.body?.text}`);"],
   ['no commitment check', "if (!valid || commitment(kf, body) !== ev.header.commitment) statuses.set(id, 'bad_commitment');", "if (!valid) statuses.set(id, 'bad_commitment');"],

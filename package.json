@@ -11,7 +11,9 @@
     "test": "node conformance/run.js && node --test \"backend/test/*.test.js\"",
     "vectors": "node conformance/tools/generate.js",
     "vectors:e2e": "node conformance/tools/generate-e2e.js",
-    "crypto:build": "docker build --output type=local,dest=crypto/pkg crypto"
+    "crypto:build": "docker build --output type=local,dest=crypto/pkg crypto",
+    "test:app": "npm --prefix app test",
+    "mutate:e2e": "node conformance/tools/mutate-e2e.js && node app/test/mutate-e2e.ts"
   },
   "description": "Meadow node: backend, conformance suite, and deployment files. The version lives in backend/package.json."
 }

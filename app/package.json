@@ -1,0 +1,21 @@
+{
+  "name": "meadow-app",
+  "productName": "Meadow",
+  "version": "0.0.1",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "description": "The Meadow app: the reference Meadow client (SPEC §16).",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "mutate": "node test/mutate-e2e.ts"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.0",
+    "typescript": "5.9.3"
+  }
+}
