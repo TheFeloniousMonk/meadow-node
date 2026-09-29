@@ -1,0 +1,288 @@
+{
+  "name": "bad-messages",
+  "description": "A message whose commitment does not open to its body, one under an unknown algorithm, and one whose ciphertext is corrupted.",
+  "sections": [
+    "8.7",
+    "9.1"
+  ],
+  "type": "room",
+  "room_type": "private",
+  "receiver": {
+    "name": "bob",
+    "agent": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg"
+  },
+  "pickle_key": "0000000000000000000000000000000000000000000000000000000000000000",
+  "state": {
+    "account": "oTJQxRSwLqtIzXswxjRdBXJpsJmyW2oap5r1rnGC2ctSSEV25GHvE+JqmXAZ12iLpp3zd45D1e3admPcptCGP2SBQi49LWEGzEpBNIV16P9lkNVFopVuwDK6k3J6Cd0+/imsrLQp8yAhamm4zAd/Y/0WtG0hyjOIcYmsj8D/smsx7kDDN5D61ENaIO1lWKTMLkmEiMp7LZGijzeiTEjT6z+Gry+/sN1AM3n4LrBN4EL9Oe9PRRZtlwlojQOV/FBdqpT9NTo+JYtZs6PhmvVBCBPxetz88B5okUwzs/bwd+dcRO7no7/ep6QLwcp1OWu7FfTHLiaeAtZQ00QX+kHpslPDiIzQSQU0q0mMwMdW6Vs/uJbnVfqQC/ChbNYBBBl2kZxs5vbQ+UrMHH8Dh8dskbCCVNCxTI7dYubPpFaUJgmS0MjRQiM+GwOj59z3DxPS8ifa+0E+K9rhZhPBOHvVgVHRg1J+3aqCTVYKCXE+xJlRhz7kpipuCCvuM7stM3o1wxsioc/5vcX9Gzvy0wXE/YRCM5SjfJtU2a10HhgxPSAutxyedANJ7WADTTfF2Zmj1czybJ2iI7Um/8h7nOkpiROrZWkfSdiuisx+xcvYA8YfYgqh6SzDZu8w5DUVPwmW+YeVNO4f+YNwIMnUhaPF888FsXZk/SmZX19G4PILqKJJZ3dNUh7/Nh0qPaS1saXqozDQQfSno14wVKNwAvgWObLQ2j7dVzRfh0ji7NHwEWyJc5I5sncImAYUTGc2gYFvxPXb0eNQK5E",
+    "olm": {},
+    "own": {},
+    "inbound": {},
+    "bound": {},
+    "processed": []
+  },
+  "bundles": {
+    "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o": {
+      "curve25519": "Y8pEBrNiZf8u4uzNROhYMw6qn4rZHXHq7hqw7LOp41A",
+      "fallback": "/N444LTgB5qPqVSqIyVaSx4E/azIfd5EVlMQ1BxxPkU"
+    },
+    "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg": {
+      "curve25519": "uDRLmTzRoRdlXT/ndSHuxIxD+TgYUcsKWpSzlm42/l4",
+      "fallback": "5uZ1T8a4vV6wt1vCWS8ZtV0uCt2f585ab1G1C+MNIEk"
+    }
+  },
+  "steps": [
+    {
+      "label": "create",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.create",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000001000,
+          "parents": [],
+          "auth": [],
+          "data": {
+            "room_version": 1,
+            "type": "private"
+          }
+        },
+        "id": "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+        "sig": "Jw2d3qdPNB5GPXy7aQKWt4eTHD_qv1jCrXzgYE7TNlrMMsyposErJfWJxNs--mZYtOkvAw2-5052AZgoMrfyCw"
+      }
+    },
+    {
+      "label": "alice-join",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000002000,
+          "room": "r_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+          "parents": [
+            "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ"
+          ],
+          "data": {
+            "target": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+            "membership": "join"
+          },
+          "auth": [
+            "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ"
+          ]
+        },
+        "id": "e_Q4kPKNdG8tMF0e1-jtXOvV12zyWcvLTh9cht6njtIYA",
+        "sig": "x2ekOGh7LxIXqdXmipf2Fff07w169AOU7pr4w1CqajKPYK349oO_Wx17jywvoY4qbqjR3xV8tvf1E42KI_iYCw"
+      }
+    },
+    {
+      "label": "invite-bob",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000003000,
+          "room": "r_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+          "parents": [
+            "e_Q4kPKNdG8tMF0e1-jtXOvV12zyWcvLTh9cht6njtIYA"
+          ],
+          "data": {
+            "target": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+            "membership": "invite"
+          },
+          "auth": [
+            "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+            "e_Q4kPKNdG8tMF0e1-jtXOvV12zyWcvLTh9cht6njtIYA"
+          ]
+        },
+        "id": "e_47JmDvrqzKcabDY4mwqUnTD7TH5oHAG1Iq5oR9daGFU",
+        "sig": "Yu4tnQfaHNSPxxyZcnjCztz8_g37jnhy9W4JhQau9IHhO-MF9jr8NCg-s80lvOl1MbwE7-XqhZJhFcCDahGlDg"
+      }
+    },
+    {
+      "label": "bob-join",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+          "ts": 1790000004000,
+          "room": "r_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+          "parents": [
+            "e_47JmDvrqzKcabDY4mwqUnTD7TH5oHAG1Iq5oR9daGFU"
+          ],
+          "data": {
+            "target": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+            "membership": "join"
+          },
+          "auth": [
+            "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+            "e_47JmDvrqzKcabDY4mwqUnTD7TH5oHAG1Iq5oR9daGFU"
+          ]
+        },
+        "id": "e_KkVi8IB-RlMzDvaAT6whOtmEVDyowjk4BJFsjG_LgFE",
+        "sig": "CBzdX3lo5mIYypbhOLZq5Kt7Esco9HA-0IJm20TXAKvZ7zq75DKRYiUSKn5inaOOCZ53JDGTN9egQ-aN6VHeBw"
+      }
+    },
+    {
+      "label": "alice-keys",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.keys",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000005000,
+          "room": "r_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+          "parents": [
+            "e_KkVi8IB-RlMzDvaAT6whOtmEVDyowjk4BJFsjG_LgFE"
+          ],
+          "content_hash": "SLW48ctOPd6h7PV4EIndm9TBKqH0Ztry3HVvIPQvb_o",
+          "content_len": 1166,
+          "auth": [
+            "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+            "e_Q4kPKNdG8tMF0e1-jtXOvV12zyWcvLTh9cht6njtIYA"
+          ]
+        },
+        "id": "e_v9jtLocB_ZbFNMZv9RCXdCFUQuq8sY0sZyS3D-BOYwk",
+        "sig": "fn4nnkB1DtXKB4fRBpnBJ9vCVo87wdDdY4ZBtKbpBHfCFdbNFO_CpRBqhQa5ByHsNskY03_gyBiuIZcg9GGuDg",
+        "content": "{\"alg\":\"olm.v1\",\"kind\":\"share\",\"session\":\"lzCxjipEIlVVUAPcCHHXzAcUeyOzd33A7zfhBhDQkW4\",\"to\":[{\"agent\":\"a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg\",\"body\":\"Awog5uZ1T8a4vV6wt1vCWS8ZtV0uCt2f585ab1G1C+MNIEkSIBQH3772dP/ni0zBlXORf9TGKWBDn7HMtokyY5r3/SlTGiBjykQGs2Jl/y7i7M1E6FgzDqqfitkdceruGrDss6njUCKABQMKIAWyUENiMFFlGK6qn8K5/Qo6C7lp1olRC3v0O/+DMzA1EAAi0AQtA8k0ufDrdlAQejYmRIVfWoJJq+879KmMwva++l1i2uIvkL46JLYQ7oiSVJSEc5WvqCQgYfcaXJ8BV+tDIQl1aRmjCDxqFWP/lVXOenEyyw6Fg7fG7/u+4FNgXAJQTlWemZDvQOYI4/kmrgKHMIDmtz8OE64cZuC9PFjae3S7QWIvWet6jZ63GZ98JtyLdQm4ODlOx2UqDwc9m1+it82sOtByYNTLhYgYc5gsRYi8iqQW92+xfnurWbtvK8JOg1aVQ40zKDFO0TOqyZtDdC2Bd3GI+Xuo8RfGODpIiQAt1T/7iYTLUicGtYwP5fGvmEroxY9+tApfaibhOu8n/MdnYK6SI6adLaLMc3TQKnU7E2idpQpJa7Hf1GuWYilF9/KZyfAkGDFAXYnZvz/Hrozi+MS0jb5YBgavXo2z5qXN3QdK5wzuMUnk4FQNZ3JDWhVtMgk7qmGAKwdVcfDDOtDopiJtH9wCLsq1ZLJQMmo9G9aTR4j3WZUwpScRdhgPXGlgwN3m6FH0l7I8mB3wDylWxR/9/si7AHtOtdv6bvEzBE0GESCjZWdSmJr8AclMBzPDhU9PSZQtZbB+zhKH/F4XCpEbejYOpPAs8QMhy4uB1RWBzcZlOtUMxw/n6YVIcQglwW46Oz1o84VpfgFVfdNNiSPVBkuPsBvc4hwgW2jvaAvmQRpSq5yfqAFmrkggHqbz+hdYUWVc2EXEAMAAZq8eN9HDru4NOgnq4dXgxlGquR8W2RD9PYvb2wrQ+cAX9kn1Ffit5DFbBvcaHrPQ+KX0SvCCy5XWlKU\",\"type\":0}]}"
+      }
+    },
+    {
+      "label": "fine",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "msg.post",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000006000,
+          "room": "r_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+          "parents": [
+            "e_v9jtLocB_ZbFNMZv9RCXdCFUQuq8sY0sZyS3D-BOYwk"
+          ],
+          "content_hash": "Lh5y2R38BxrYBWEAxWfu5LzldMXma-RN200XP6V1XCI",
+          "content_len": 295,
+          "auth": [
+            "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+            "e_Q4kPKNdG8tMF0e1-jtXOvV12zyWcvLTh9cht6njtIYA"
+          ],
+          "commitment": "9Teh70MchahxSN81jwrbfMWqb-4ylHv-psgiJlisEC8"
+        },
+        "id": "e_Nm8gsNmkdpGZYeAlyrtFprJ4D8lE7gDgFn-zp-yIJf0",
+        "sig": "H5FxD_oV5J7x7fm5tptwQVUXoPie08hvPzfWgdq37bBv3yp9mtYJCoCKCS1DCt-uZiz1R__pk1JSoCsTqrxxCg",
+        "content": "{\"alg\":\"megolm.v1\",\"body\":\"AwgAElDjQsFUfojO9FhSH+EkZONU0nnq4FbuQxKM1zIw5Ntd4zgFCIJQcue01KXC99a6AsFir0VWFejafcd1Id0kyUpBbJrT9+xdCM7m3lhO6Pip2uB4swsUNo7GO/nUoTfYcfx/CCAX7aHODIEi8D98Q2loAstP5s/gCp0f4OUF0Y8FMwKxMiRcOaVvHc3XjJTb3R0STTU3NllDDQ\",\"session\":\"lzCxjipEIlVVUAPcCHHXzAcUeyOzd33A7zfhBhDQkW4\"}"
+      }
+    },
+    {
+      "label": "wrong-commitment",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "msg.post",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000007000,
+          "room": "r_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+          "parents": [
+            "e_Nm8gsNmkdpGZYeAlyrtFprJ4D8lE7gDgFn-zp-yIJf0"
+          ],
+          "content_hash": "1_u3KhFcyxyVBQVJttNUNOtLPMLulvJ65fBRMCZ-ud0",
+          "content_len": 316,
+          "auth": [
+            "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+            "e_Q4kPKNdG8tMF0e1-jtXOvV12zyWcvLTh9cht6njtIYA"
+          ],
+          "commitment": "yX4ZKER5ksJ2G8BJvAetWJdpwmdRx6NEq29ntDAz0QA"
+        },
+        "id": "e_JQ_w780V33wfWbM_f_RHchPcy-NkcdwdDjTLiYF6MGM",
+        "sig": "IJ_Ri2m37LiaFIrH0GThXgGAqWcySz0Oy39KcyeTEsfOI2Q7bfBNDnglsMrE3qvqmoHM0KOm6NvjlD5TWVhUBg",
+        "content": "{\"alg\":\"megolm.v1\",\"body\":\"AwgBEmDl0QKfCMA3bNzXfs323+j7PEvET8q3ltQCgz7i2+dvh5FUgSBYQi1m3bjNWspVhIQ8iqf/ZhHuxkejqcIdFNyRmbv0pmK5tM6ZvWJLVnEtXNCs4ujuIa5dPvnyuSHw3mboazJi/wLSGkBBDbH8IffCNTSFJcXvSTkkQf/WHWLhyUA9qS0VbW43l4QsnuVLvjeMBw3LZXcl3hrScJqzbJdAlBdAkUUr6AY\",\"session\":\"lzCxjipEIlVVUAPcCHHXzAcUeyOzd33A7zfhBhDQkW4\"}"
+      }
+    },
+    {
+      "label": "body-not-committed",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "msg.post",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000008000,
+          "room": "r_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+          "parents": [
+            "e_JQ_w780V33wfWbM_f_RHchPcy-NkcdwdDjTLiYF6MGM"
+          ],
+          "content_hash": "8tdhUBMY9vCKDgQl79467zals6LyIl2V4srI5l9mFgU",
+          "content_len": 316,
+          "auth": [
+            "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+            "e_Q4kPKNdG8tMF0e1-jtXOvV12zyWcvLTh9cht6njtIYA"
+          ],
+          "commitment": "vljaajLk4_UKpe8F8biFukm0Jvbl328i-DfClxNP7A0"
+        },
+        "id": "e_wZlc29TDvOgYqv0z0ifUKA00R5ZVSz002ZsSThI4mLw",
+        "sig": "CatY8KAlHZUKhy_1EC6M70kVIqSCunI1RaCQpP-s1yNqUJbgEhGvTKTJKkKkzTtH4TmXumMBs84ZpCPbYDDpBg",
+        "content": "{\"alg\":\"megolm.v1\",\"body\":\"AwgCEmDg8AlAdS1IYwk39VFV8a/RUMysNo2simQxFbYA82JBWZkNGNyWrHFT9FVgycte/bz2FhcjT1LoAkImKA9WSW/qgCOeKdugkLdHW6zLkepAqhRgwFrroAECfMzfjToVJWt+5JKyWJS+CoOr9RWvp6zORJrstGR+o+PkOMD85TD7uxxdRiks8rnvvHY+i9lFZkHJDpQY+xSi+iB+I6X+7TJf1iPG/axSHgo\",\"session\":\"lzCxjipEIlVVUAPcCHHXzAcUeyOzd33A7zfhBhDQkW4\"}"
+      }
+    },
+    {
+      "label": "unknown-alg",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "msg.post",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000009000,
+          "room": "r_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+          "parents": [
+            "e_wZlc29TDvOgYqv0z0ifUKA00R5ZVSz002ZsSThI4mLw"
+          ],
+          "content_hash": "teZcu8xXrB03iuf55KedGtbghHsglvU_Ti4TZO67VR8",
+          "content_len": 295,
+          "auth": [
+            "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+            "e_Q4kPKNdG8tMF0e1-jtXOvV12zyWcvLTh9cht6njtIYA"
+          ],
+          "commitment": "orCmabYe6XNg-BCdw1gQ-OnI_VbyRr2rHSjt-wBaaqY"
+        },
+        "id": "e_6255GHbTDrR4v5FBoTK6IaqdLFZiJvJ8wSqPo0v472k",
+        "sig": "kMbTFI2ygU7HE_WpX_CQzfmVzDrV9BakhXewUVNbHutVsfa9uCLt-RANEJ4FhRmjDZY7un5vx0t0R1VitGifAQ",
+        "content": "{\"alg\":\"megolm.v9\",\"body\":\"AwgDElCrTRNzLj6eEa0/muxEVw+FPI5GmWiUKYCl6jYaxWbNfn6fYK2Dg69jSG3Dgkl5cCQB6j/lO8iCEbM5IUavpWGfDaiNbWOVYDgk/nZWm4ay0ZVlJ5mge8zHhnuYCZfrCRBCmC6khKhA9YPYONaWyTvbIFnBF01ckv52phofdYN098tAf5SYDGsybDTgGpvOb+p9Nw4goPg5Bw\",\"session\":\"lzCxjipEIlVVUAPcCHHXzAcUeyOzd33A7zfhBhDQkW4\"}"
+      }
+    },
+    {
+      "label": "corrupted",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "msg.post",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000010000,
+          "room": "r_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+          "parents": [
+            "e_6255GHbTDrR4v5FBoTK6IaqdLFZiJvJ8wSqPo0v472k"
+          ],
+          "content_hash": "4dy_YB9GnktZaBHaFv4NF6BBbhL5qIKjXdydnMD2IfE",
+          "content_len": 295,
+          "auth": [
+            "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+            "e_Q4kPKNdG8tMF0e1-jtXOvV12zyWcvLTh9cht6njtIYA"
+          ],
+          "commitment": "WEAfC0uCUJqo3ofmau7uPHSwgYG1xyPpKA9K-Y7xLoc"
+        },
+        "id": "e_PF8UjvWF0Dq3fyly0dHfOjo0EYfy0arQgV1_9Fc3tmM",
+        "sig": "h6Ys7q0f_uNjNCb20hi7FwFeLkbe2kYjihI6cCYmWR8wy4omlkWYykU8qf37Wn7cRXxc7hZZKN1iV9sBNxEiCA",
+        "content": "{\"alg\":\"megolm.v1\",\"body\":\"AwgEElCzFktfcjkxtjA6AVxJvqcLge4EAIdIP8YrsE1iPxFPorRYoexkiJKz7AgZAi+hU3EiUbWKwLrTvTLnmd2wLaY2vpBaHG1P25y9xwSRbcJVFoYqAJzCe7IYvurJBYgoUeAdrcx3cLuTUYCvWDVpYUNRMbtrAcuv+YUbW6KZIVy/VKykBc7XzapDSFrp4i2ZUkx83T8lPk1ZAw\",\"session\":\"lzCxjipEIlVVUAPcCHHXzAcUeyOzd33A7zfhBhDQkW4\"}"
+      }
+    }
+  ],
+  "expect": {
+    "statuses": {
+      "alice-keys": "accepted",
+      "fine": "shown:ok",
+      "wrong-commitment": "bad_commitment",
+      "body-not-committed": "bad_commitment",
+      "unknown-alg": "unsupported",
+      "corrupted": "undecryptable"
+    },
+    "answers": {}
+  }
+}

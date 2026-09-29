@@ -1,0 +1,27 @@
+{
+  "name": "olm-prekey",
+  "description": "Olm, version 1 (§8.1, §8.3). The receiver's account (pickled with the all-zero key) decrypts two pre-key messages from a sender identified by its Curve25519 key: the first creates the inbound session, the second decrypts on it.",
+  "sections": [
+    "8.1",
+    "8.3"
+  ],
+  "type": "olm",
+  "receiver_account": "oTJQxRSwLqtIzXswxjRdBYd+RMswWgZYe4q1CLVb9G/8wE6doyxGbghTqLBqczq9mogLv0qor6/9jKm09krjqQmem1Q/2jq8PPKNaUPV6PXZ2dMEZXRvyJCTRCyZsdE77DkBGiPj1liGxI1aUneNZfWSuVUxKubgjRQZgzel0hiT+7AGHL+MsLBH83SRi9zzyN4ng3tZ1dP3AEPKd3LDo51YpUi121h6H9FEp9F0cb3pPCDuB8LWNwbfeVvR7Y3ScvvUBFsMNCRQM2ste8iZ2JjN+7U0HpoRDX1TlpMwBS8VoZPlZjHvJlVBN9KzfIhTwSz9RQidBTAak9/z3VhHmEBzAfIv/aMB3w5/uompVU2dkJMqOCy0Z0KFE88J13cWCILKdrL4TwnOYtsP+vymXrPM1oJd7a0qKOBSI056/dbxuHbJSygTXI6Y0LrT7tgHZqcq7mE4JrMhx7bxtQ7tpWRGI+gLRrRbip9HDPnsZKOjf9ExMv3/JuXU+xYiGTxtuy8gtTw5SJkGVlaDBFx3nj5XY5WLbnkI3DMtJXCiNylpB4jPAKgXufurh7gqN1soiLFjspei7V4q783JmQm5htoY4/vCJesae7vMoNye7Dca2ZqXkOBZ9dUulcTgUp+SH1sO+HNvf4PTa0LfUa9nU3oxgWvxuKTXZyrDaDVVb2YZqPcgH9eQ3vvsWDwKAsa1RRpacEcGdOlT/cnWCyDV9OCRWuLW+Hn5XiaI+mTXCrxmrVhoyKbP5FIIQM2HOgoJsCB/dmHVLypnbbXdy4wDWVT0D6Esv2Ah",
+  "receiver_bundle": {
+    "curve25519": "/HtY6wEf+UiSljfWD4qTFbRvRjSWCXT07YoGD0GochY",
+    "fallback": "UmKLKaYjrqi7MJVGKdlP9BvR5eqJdWAi30yX+ANqhjs"
+  },
+  "sender_curve25519": "8jCI+DMrWQ6LPkqHDVwPkJICQ3BrGxLV06Hvamsnr3Q",
+  "messages": [
+    {
+      "type": 0,
+      "body": "AwogUmKLKaYjrqi7MJVGKdlP9BvR5eqJdWAi30yX+ANqhjsSIOWQBAFsgis8xkmmzU3R4/Ie7cW5QXNfa/FmQDeCzOMUGiDyMIj4MytZDos+SocNXA+QkgJDcGsbEtXToe9qayevdCJPAwogj7F1GkwrGPB+aDYb4ilF3iiiSrTacAyDZwGcO11tjHAQACIgSfyei6k8O3TPZIbqvj9x68BaBUGqpejpB3U53hlnCS4Y+/zSmeX+qg",
+      "plaintext": "first pre-key message"
+    },
+    {
+      "type": 0,
+      "body": "AwogUmKLKaYjrqi7MJVGKdlP9BvR5eqJdWAi30yX+ANqhjsSIOWQBAFsgis8xkmmzU3R4/Ie7cW5QXNfa/FmQDeCzOMUGiDyMIj4MytZDos+SocNXA+QkgJDcGsbEtXToe9qayevdCJPAwogj7F1GkwrGPB+aDYb4ilF3iiiSrTacAyDZwGcO11tjHAQASIggYIJI8O8fXDPv9wSzeOkX1uvWFWOR7DM+RWeaD1Acjg0oUkZLKYX8w",
+      "plaintext": "second, still a pre-key message"
+    }
+  ]
+}

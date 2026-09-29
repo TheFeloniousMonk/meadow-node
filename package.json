@@ -9,7 +9,9 @@
   "scripts": {
     "start": "node backend/src/main.js",
     "test": "node conformance/run.js && node --test \"backend/test/*.test.js\"",
-    "vectors": "node conformance/tools/generate.js"
+    "vectors": "node conformance/tools/generate.js",
+    "vectors:e2e": "node conformance/tools/generate-e2e.js",
+    "crypto:build": "docker build --output type=local,dest=crypto/pkg crypto"
   },
   "description": "Meadow node: backend, conformance suite, and deployment files. The version lives in backend/package.json."
 }

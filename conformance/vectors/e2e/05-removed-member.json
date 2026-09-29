@@ -1,0 +1,314 @@
+{
+  "name": "removed-member",
+  "description": "Alice removes Carol, then writes: the recipient set changed, so Alice rotates and shares the new session with Bob only. Carol reads what came before her removal and nothing after.",
+  "sections": [
+    "8.4"
+  ],
+  "type": "room",
+  "room_type": "private",
+  "receiver": {
+    "name": "carol",
+    "agent": "a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc"
+  },
+  "pickle_key": "0000000000000000000000000000000000000000000000000000000000000000",
+  "state": {
+    "account": "oTJQxRSwLqtIzXswxjRdBaljbjO2Bx8x0r2Myd2LI+blVGWqvTxJUDdBls5EhSBtcJ/uitin1fMSklPcWCu9bu0ILhc0QCwusw/AKoYRNutzwrfZt9qcAMd9hz2aLQje0XUF3+tWwYsZBs2fPHl0bhuW300dSr9JdvKroHshoPgKaFd3w1uusy0VDw7AHunANvHzV67geuhd9sf4gOQZmXlrRQjwaCVHd2roFaV6nIAIDlxARKZwXeuJnisSJ0WQaeIW6V8Ubw0crbIdz9z3o24CAd7GImLkzR+GHzAydvESuN4NgGv0nOA6ZIeewAe4ia8E4q3P3oohlTEZoFZrVdFm+76VypNqPqz2ouVjMITBtvMvUdDTDM2OzCOYER/70USgW1z0XjBcVlIPeXrs8+LhTG7SPEPFVdK8uj9CVeCMfijMT1MuKwP7brVIhjnGApsfKUMEmWuV127rNzPZ1oCUbkgWmIovVu+h8H7BT2fph+zsI24Xyg5NiN7/abJHO07sPgvyafnBMMMhRrN4DKKvaKzbGQQB6aDGR8tP83lSd9/4I7NtRJrjoFi+J/aZolohFtK+HiG/SPL2lDPz7wFSh+LdSfXjCl/dB17LKaPyR720PEYZu+i9fHhaBuaGbbmySUFbN1PgTiEBHBg9wICt9MDoL1qTRiBrKk29t9sWrrOG0Ss3Vk0FN/ERr8MzNJQk48/+AY8OAaJ1i5VdHNm+ls3zBtgf+EKC7dNULsul6xn7LgJrwLyr1uWLV6y1vzHpO2E9ppY",
+    "olm": {},
+    "own": {},
+    "inbound": {},
+    "bound": {},
+    "processed": []
+  },
+  "bundles": {
+    "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o": {
+      "curve25519": "pIYFETiBsy92dUAL/o42xVZLZV69lgvOJWE5KTS33mQ",
+      "fallback": "iG1z5IfysER+/4MeOY9Yxa0KTQWzxJpHMrDjlOx5SyE"
+    },
+    "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg": {
+      "curve25519": "7W9mGclKgsdCecp4tKAoJt/Esgd27RGV36PB0MEI0Ws",
+      "fallback": "SQjemahnPW4my5mQPaiVAfM626pl+eYrLpJvCp63gGM"
+    },
+    "a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc": {
+      "curve25519": "a/9BTvxJ5oOtR+Eo0heXTge/m4xsFTuDtF6Q8qhmw2g",
+      "fallback": "mSCc9Taz25ikOd5N1M4831garbH4KqsZOBsJmZI5Njc"
+    }
+  },
+  "steps": [
+    {
+      "label": "create",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.create",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000001000,
+          "parents": [],
+          "auth": [],
+          "data": {
+            "room_version": 1,
+            "type": "private"
+          }
+        },
+        "id": "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+        "sig": "Jw2d3qdPNB5GPXy7aQKWt4eTHD_qv1jCrXzgYE7TNlrMMsyposErJfWJxNs--mZYtOkvAw2-5052AZgoMrfyCw"
+      }
+    },
+    {
+      "label": "alice-join",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000002000,
+          "room": "r_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+          "parents": [
+            "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ"
+          ],
+          "data": {
+            "target": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+            "membership": "join"
+          },
+          "auth": [
+            "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ"
+          ]
+        },
+        "id": "e_Q4kPKNdG8tMF0e1-jtXOvV12zyWcvLTh9cht6njtIYA",
+        "sig": "x2ekOGh7LxIXqdXmipf2Fff07w169AOU7pr4w1CqajKPYK349oO_Wx17jywvoY4qbqjR3xV8tvf1E42KI_iYCw"
+      }
+    },
+    {
+      "label": "invite-bob",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000003000,
+          "room": "r_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+          "parents": [
+            "e_Q4kPKNdG8tMF0e1-jtXOvV12zyWcvLTh9cht6njtIYA"
+          ],
+          "data": {
+            "target": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+            "membership": "invite"
+          },
+          "auth": [
+            "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+            "e_Q4kPKNdG8tMF0e1-jtXOvV12zyWcvLTh9cht6njtIYA"
+          ]
+        },
+        "id": "e_47JmDvrqzKcabDY4mwqUnTD7TH5oHAG1Iq5oR9daGFU",
+        "sig": "Yu4tnQfaHNSPxxyZcnjCztz8_g37jnhy9W4JhQau9IHhO-MF9jr8NCg-s80lvOl1MbwE7-XqhZJhFcCDahGlDg"
+      }
+    },
+    {
+      "label": "bob-join",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+          "ts": 1790000004000,
+          "room": "r_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+          "parents": [
+            "e_47JmDvrqzKcabDY4mwqUnTD7TH5oHAG1Iq5oR9daGFU"
+          ],
+          "data": {
+            "target": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+            "membership": "join"
+          },
+          "auth": [
+            "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+            "e_47JmDvrqzKcabDY4mwqUnTD7TH5oHAG1Iq5oR9daGFU"
+          ]
+        },
+        "id": "e_KkVi8IB-RlMzDvaAT6whOtmEVDyowjk4BJFsjG_LgFE",
+        "sig": "CBzdX3lo5mIYypbhOLZq5Kt7Esco9HA-0IJm20TXAKvZ7zq75DKRYiUSKn5inaOOCZ53JDGTN9egQ-aN6VHeBw"
+      }
+    },
+    {
+      "label": "invite-carol",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000005000,
+          "room": "r_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+          "parents": [
+            "e_KkVi8IB-RlMzDvaAT6whOtmEVDyowjk4BJFsjG_LgFE"
+          ],
+          "data": {
+            "target": "a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc",
+            "membership": "invite"
+          },
+          "auth": [
+            "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+            "e_Q4kPKNdG8tMF0e1-jtXOvV12zyWcvLTh9cht6njtIYA"
+          ]
+        },
+        "id": "e_JvPunfYtWHtRnvLNZoeTdQKoVhVuCl9Y2DOgCvLEFqQ",
+        "sig": "Apu6ZmowWklBu6nigVJADpNf1BzTX9spuTISwzmHDbRGf_JYZP0iFOEIAAY3gUXIL_RS5tNtGdEQPeLnybwuCw"
+      }
+    },
+    {
+      "label": "carol-join",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc",
+          "ts": 1790000006000,
+          "room": "r_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+          "parents": [
+            "e_JvPunfYtWHtRnvLNZoeTdQKoVhVuCl9Y2DOgCvLEFqQ"
+          ],
+          "data": {
+            "target": "a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc",
+            "membership": "join"
+          },
+          "auth": [
+            "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+            "e_JvPunfYtWHtRnvLNZoeTdQKoVhVuCl9Y2DOgCvLEFqQ"
+          ]
+        },
+        "id": "e_MflKxM3Aw6v-iJBxJjTHqwT-KemA44YdmUzpmf901QQ",
+        "sig": "ExsVPNDfT4BfwmbsGe0xozat344cW42krO-zyzeAD-dzCXFYXfKEH0BUFc9jCVs0HShwNlSItXE_g86i6Bz2BQ"
+      }
+    },
+    {
+      "label": "keys-1",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.keys",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000007000,
+          "room": "r_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+          "parents": [
+            "e_MflKxM3Aw6v-iJBxJjTHqwT-KemA44YdmUzpmf901QQ"
+          ],
+          "content_hash": "Yvax9dWsKvfyZJcPqZkZyrKQr3Cwor6HnoaQsMiuekA",
+          "content_len": 2238,
+          "auth": [
+            "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+            "e_Q4kPKNdG8tMF0e1-jtXOvV12zyWcvLTh9cht6njtIYA"
+          ]
+        },
+        "id": "e_k2RPQX-Cmdf-sL3Xf76NZpnjhQtYFCBcC9Dtn5EQfV4",
+        "sig": "1yTNljPK9xPYJ3fk-QVRRhpZOQZgbXFAjcW9aF5AdYlVwpWd2hcqg74o1Ki73aqCzsJmS9GP701uHAZL1vaIDA",
+        "content": "{\"alg\":\"olm.v1\",\"kind\":\"share\",\"session\":\"45kJBh1iZ2aaVYSPrglqhLD6aIdAP4BqIUaw3c/5GyQ\",\"to\":[{\"agent\":\"a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg\",\"body\":\"AwogSQjemahnPW4my5mQPaiVAfM626pl+eYrLpJvCp63gGMSIDvLUADSijLDnSlgV0BGlGYaTWYvKzDLhHkk1VzkCYsJGiCkhgUROIGzL3Z1QAv+jjbFVktlXr2WC84lYTkpNLfeZCKABQMKIMWAewhJ+p37Tn531LHq4u8TIMBXgN1Z1veZveSDr1psEAAi0AQ834IFSjzoUNRkWT6YBE5Hqfi8rRZcafjDchApJDQqAVqWAsdkiCfHN7JuM0eAhGuoBg1I7E4gZvJfz61dO+9B+PWXJU96b5mqHCZYjoc6m72wTKyMlsSOFrcRgVH8JWwrx5+y0m3aKrq5Wi3kjAUCMKQ6Oh+KVRQgI7HP0oYd+FMKA71tZGNkSAy9zCEyBmKIsWTl9lM3zhd2L0h+OnxnKM3m7ahOE3uIDVpIKcT4qQgPXKis4C5CdVWLZJnqSMVIFznmlQDy2/aP94U3QKetx4ib8i2yh0C9fAldJ1Tf2wsRDtmDk99S4C8/jIgDHoQssLP82rsgx9IP8WgfI5LcgGZFIsRLsXEPhNxlgr5uYtsVZeSBA1V5fPyV+Dsmu1lNyvqwxcyMMr5cGwXKC+HfQ6rqbwSSzMO9R2pknMqL2nMviEE9KiohqKsJGSMYxHS7Rho9Qjun+sNjKB1xF4KJxBIDL6kSKkpF0ukNel7wq7weKbYjogmUVDs/gRMaUnUQYHE1N6Wc4pmU5G0ioSPlxZHRU5R0/Y7FIpfBvOWl960Ak1wYVtdBzp8mykNccDQ2129t5IqxyNKp4wQO8L2rDvgtv3BOKgQpfiU9cRTXaVHYBQfGdmZnw3z+TkDAmF/E3/O1m5/EDm/fOBPSEoPMboFlyel7ty00xblDQL3lqyiwRzElvEQBQ2WLuf9eer7/kMZQhZMZZXHU9bCkQYfA/XxCn160pUls9iO6EudVjt/EnR2/huXzeyt+26Q48mQx92W36BW910u/SlQknDW1RM7R8EemCTQ\",\"type\":0},{\"agent\":\"a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc\",\"body\":\"AwogmSCc9Taz25ikOd5N1M4831garbH4KqsZOBsJmZI5NjcSIMMEPBgfBUg1TO+nw93TrkKnfHj4gKthSIdX88E3lKsIGiCkhgUROIGzL3Z1QAv+jjbFVktlXr2WC84lYTkpNLfeZCKABQMKIIpEDszi6F3OK51k/gtXSRs4KMwq8RM+ulV758tXUhNkEAAi0ASi/CdhSpVk2Uedvt0j8qsbEsfmdPwivERppQX7QO9T3im00qJSiuKIWwYSoKMg03iajNTCBmuYEm1B/I7qqzMr8gMfkunXrpI1WJKvWayzSVI5vfzy27lgVPu2ksHLgLWlevKJH6ECgW1FZQ8rl0vquLT0a8THkGYvhNbzSCFuKhZy/iNhr8ZWw0XT94sSUwHHUzYRWmZdXAjg0qLuJqzOGI4qqgkzjved293wGiuBbbnzqHZco9W8t8yxPfsG/8OOfDg0CHPKTmK4E+TNsyteDSvb3qBjeqG0NwHYxpYXcWV63npoJ1vND3MCbGZKoZ3rAZG5AktfuooTT46/hPdWyNMYBdAnoRrdV6qhV0AtuBmkVAy7U+M4ZdaxtQV0W5BSK+EQdz0FnX5hBSSk2E768SHlCGe5UZ0DqYD/mYg55U0jyL5CP+4NNe3vvhJXOEESWaMyGA0610szUBLD4CsK18aW60iyFcnas6tOzFaWVvcFGIgLSWwJCLlVcjCIFGnmCr7DhUbwrwUacyQbbWL0grqea9LHVbQuvGQ+AEFEcLujMWBzXGsCBL+RDaFY0ZAAm/ruzxm4XV7ApOkM+xaZdaiX6kf463CW0K5myxpWaU8G2KcM7NnJRVfPhee5tHItoud73u5VsrW0MFkSWO+DEzTesO9ZHD1iXNdXbTdHbqKMT75YaegbkpQq7qdOqPqWqV/WruLa3n/u+GHrVAlLSM2A25U4W7Cek+uKA2l81g7YeogoCKEJ5e5hd09+/PogkdeQDPTml6oilWzjtbHtU+XsI0XX3q4\",\"type\":0}]}"
+      }
+    },
+    {
+      "label": "before",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "msg.post",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000008000,
+          "room": "r_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+          "parents": [
+            "e_k2RPQX-Cmdf-sL3Xf76NZpnjhQtYFCBcC9Dtn5EQfV4"
+          ],
+          "content_hash": "M3hOiW_d34j_CpqQA7LF-RS-cTT3rf5Dz8OIu0cgyZ0",
+          "content_len": 316,
+          "auth": [
+            "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+            "e_Q4kPKNdG8tMF0e1-jtXOvV12zyWcvLTh9cht6njtIYA"
+          ],
+          "commitment": "NRQ4mW25bS1GgKK51nDYRJXy4kNyGbafIKwHES8DhYk"
+        },
+        "id": "e_O-RCoAB7Wm8Jcj2aizxT4BXS8wl8Qj1JhcwthHG6ZfA",
+        "sig": "QWTy3Gf4168lKC59VOUAz55FXNRzutZa3FSFZfw34ifC6VWGIaa82Z7MOVvW3rVUarB-snBO0DS2I7DdZa5vAg",
+        "content": "{\"alg\":\"megolm.v1\",\"body\":\"AwgAEmDo+Xf2UiqLAhbJPuTuM07YU/P97czyNZx5u54wq9TP47XM9WDEEDcV21jIcu5qrSyLWPrezNKpyYDH/wbZJEOtscJt1ecAGLgEja4lw0NsbBt3w3jonCPDOvKK9RgIbMIsfFhSVDzt4hdCSUbRoTTUMXgEyFW2wI5cpW0sevf8nlW4Ssls/zYTbZ57BMsp7i3x61gpdqVahHZaGi69Z1bwDFgpOFhqwg8\",\"session\":\"45kJBh1iZ2aaVYSPrglqhLD6aIdAP4BqIUaw3c/5GyQ\"}"
+      }
+    },
+    {
+      "label": "remove-carol",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000009000,
+          "room": "r_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+          "parents": [
+            "e_O-RCoAB7Wm8Jcj2aizxT4BXS8wl8Qj1JhcwthHG6ZfA"
+          ],
+          "data": {
+            "target": "a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc",
+            "membership": "leave"
+          },
+          "auth": [
+            "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+            "e_Q4kPKNdG8tMF0e1-jtXOvV12zyWcvLTh9cht6njtIYA",
+            "e_MflKxM3Aw6v-iJBxJjTHqwT-KemA44YdmUzpmf901QQ"
+          ]
+        },
+        "id": "e_fx2u7s69pU2vvTNCysRHSmVYbEKsNaRrctnpNsMLumE",
+        "sig": "29xDxzjo6stuFYULODSCJuPgbyhLQS-NhRgZMKEq3e-NPe4D6ai1y0fyOdbuewTNY3SArxPNflQgx5BY-wX1Aw"
+      }
+    },
+    {
+      "label": "keys-2",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.keys",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000010000,
+          "room": "r_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+          "parents": [
+            "e_fx2u7s69pU2vvTNCysRHSmVYbEKsNaRrctnpNsMLumE"
+          ],
+          "content_hash": "yI4anUJdai3hjmgEOzDEvnAU9ZIqekgP7dY49UZBhBE",
+          "content_len": 1166,
+          "auth": [
+            "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+            "e_Q4kPKNdG8tMF0e1-jtXOvV12zyWcvLTh9cht6njtIYA"
+          ]
+        },
+        "id": "e_6JpHa7EHELGavvh7G1ayFFu3GkOu6dVzZbGVX47i7ho",
+        "sig": "46UsSe_7_9hbU-_xGE8ntpx94DMFKjkh5PGIyPe0_IKeJ4ET_zEVrDpGnDmXymT0vatzRsjrPcOnGrGU-sFyBQ",
+        "content": "{\"alg\":\"olm.v1\",\"kind\":\"share\",\"session\":\"EVrZVNqJ0voMSWWD4WtVC655a5U/OJCp21idBfiYX5M\",\"to\":[{\"agent\":\"a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg\",\"body\":\"AwogSQjemahnPW4my5mQPaiVAfM626pl+eYrLpJvCp63gGMSIDvLUADSijLDnSlgV0BGlGYaTWYvKzDLhHkk1VzkCYsJGiCkhgUROIGzL3Z1QAv+jjbFVktlXr2WC84lYTkpNLfeZCKABQMKIMWAewhJ+p37Tn531LHq4u8TIMBXgN1Z1veZveSDr1psEAEi0ATSQ+21WyHSK/Xzr9139luAT+XXwsIILL7bgmxOumvmBNgHbsxCzWdvZG2VI24QLWY9OtGlDLEbsoAntH1J5o1hUGqitwlWq2QJzglnAojFtfMbcG4FbqWa4V9rnDNXCS5sM19QUgVio7xxc+OAkjH6OqbxXorfXnOexQBdN+9zu/m+1t5nXnTMKN5YF1zHuWBfD8AChMJTnwyfYrogg0kPReXn6E7Nw+suCZZrZN7rMwW9Qav9OUAO3YJcKxG4+dw0w5EHccDUnwWq3Bt4aMvuJmTixlNCq1o6lrvj06hGDxaeXW0akxLmgkivKkjcrua3LYR6Ndf0DWPTeBlulclM9L9/Gz5JHJyQXAOsqT+woYwrGx9triTn0RGYH5EoJKT1LQ8oBFFmaaiZRmB2iIqVqbYlUJB8vZjXYDucCFrZaRsX9Xw6rb6yoqrjBc0obq6uBAwBmpHpvMSHA5aeYtCE9QszMUMqVawPJOMpoxdKAb0K6oqITThmg4D+TTRxuvX8vaNy8HFvo3kreSKwp+dcNwrxZHF8uS1YjavYRJchu8+46mz4lmoBCE5Ai25xQlV2kKXiHtlDXZBmCVQWYdSTmu6xlSHUWqgxHOs2Z/MGuyiXqn7fCVbaGez7HUcjEfSV7uuw263A47fkXcaEtdtQxruW1jsM/ceyXbM/fAGfdxEJIa644si7VP7FaJNY+dsQfPu2S8yjgPbx3eBrHmFNqFsqNmaa0eTK/nLhWRkYaO8quDZXg/Lgc/kAus242uDmTIIrqeyPV33wzhNb5J54CaQWkZa8CVo\",\"type\":0}]}"
+      }
+    },
+    {
+      "label": "after",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "msg.post",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000011000,
+          "room": "r_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+          "parents": [
+            "e_6JpHa7EHELGavvh7G1ayFFu3GkOu6dVzZbGVX47i7ho"
+          ],
+          "content_hash": "JOLrM_3wbnDeAmTfW900j6MbCp_njNmDkj54AkLUkwc",
+          "content_len": 316,
+          "auth": [
+            "e_YkLWDBLPHExprHshprYcLxxb1u34fg1YHE4mvuMOWhQ",
+            "e_Q4kPKNdG8tMF0e1-jtXOvV12zyWcvLTh9cht6njtIYA"
+          ],
+          "commitment": "JJcQ2nIAIs4JajjrU63DZfb9Cc7NfQpO5l4M4-V8YIE"
+        },
+        "id": "e_srlz6xYwoeFNRk7BiXCDtrrlhxJ37MzvOATfO7s1so4",
+        "sig": "j8RDFrgbDRkoEHR9LgjdCc5_KJiIJ5xTZsXJDOSlhQNLX30203vnrbxx4U9HpavNNOCe3wIBGn9ty5JTBCP8BA",
+        "content": "{\"alg\":\"megolm.v1\",\"body\":\"AwgAEmBx/pnNlhGgYX5N+l009NvpgzTTSk7jDV1Ie9+7NdTSEp5BleAh4uJ87lNfGBRTuDJ6BfxmHstPmIY2CdwkVX+C+AkfIf0IIzT1FmFXPs49uKvjk6tobkXUjaWCE6DytFjGxJ68TQx0mobA8wFqrFvZkASxFtxc8LYmwnZZnjFBJjtxdAu+eOqslTMo5JZCFGzEKGB4rMew19rHMBKbZ5vgilqQWU1V8Qo\",\"session\":\"EVrZVNqJ0voMSWWD4WtVC655a5U/OJCp21idBfiYX5M\"}"
+      }
+    }
+  ],
+  "expect": {
+    "statuses": {
+      "keys-1": "accepted",
+      "before": "shown:hello both",
+      "keys-2": "ignored:not_for_me",
+      "after": "missing_key"
+    },
+    "answers": {}
+  }
+}

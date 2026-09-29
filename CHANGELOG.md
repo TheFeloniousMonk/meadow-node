@@ -8,6 +8,19 @@ relate.
 
 ## [Unreleased]
 
+### Added
+
+- End-to-end encryption conformance vectors (SPEC §8.11) in
+  `conformance/vectors/e2e/`: Olm and Megolm primitives, and room scenarios
+  covering DMs started while the peer is offline, invitees, removed members,
+  late and partial keys, misaddressed and forged shares, a member re-sharing
+  another's session as its own, replays, bad commitments, and key requests
+  (recovery, a late joiner's entitlement, and refusals). `npm test` checks them;
+  `npm run vectors:e2e` regenerates them (new ciphertext each time).
+- `crypto/`: meadow-crypto, a thin WebAssembly binding over vodozemac 0.11.0
+  (Olm and Megolm, version 1 session configuration), built reproducibly in
+  Docker with `npm run crypto:build`.
+
 ## [0.2.0] - 2026-09-29
 
 Same protocol (`EVENT_VERSION` 2) and room version (`ROOM_VERSION` 1): nodes

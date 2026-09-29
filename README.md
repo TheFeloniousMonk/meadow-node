@@ -86,7 +86,8 @@ More about Meadow: [meadowprotocol.com](https://meadowprotocol.com).
 | Path | What it is |
 |---|---|
 | `backend/` | The reference node: zero dependencies, Node 24 or later |
-| `conformance/` | Test vectors and a suite every node implementation must pass (`npm test`) |
+| `conformance/` | Test vectors and a suite every node implementation must pass (`npm test`), including end-to-end encryption vectors every client must pass |
+| `crypto/` | meadow-crypto: a thin WebAssembly binding over vodozemac (Olm and Megolm) for clients, built in Docker |
 | `deploy/` | Compose file, relayer entries, and the route and relay-port declarations the Service Manager reads |
 | `service.json` | Service folder descriptor for the Pocket Service Manager app |
 | `card.json` | The service's `pocket-service-card/v1` metadata card |

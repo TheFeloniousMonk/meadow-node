@@ -1,0 +1,3 @@
+[target.wasm32-unknown-unknown]
+# getrandom takes randomness from the JavaScript host (Node's crypto.getRandomValues).
+rustflags = ['--cfg', 'getrandom_backend="wasm_js"']

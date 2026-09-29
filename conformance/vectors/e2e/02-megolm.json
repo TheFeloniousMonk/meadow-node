@@ -1,0 +1,31 @@
+{
+  "name": "megolm",
+  "description": "Megolm, version 1 (§8.1, §8.4-8.6). `exported_0` and `exported_1` are the session exported at indexes 0 and 1; `session_key` is the signed key at index 3, after three messages. An import at 0 decrypts all three; an import at 1 decrypts 1 and 2 and refuses 0. `session_key` parses as a signed key; an exported key does not.",
+  "sections": [
+    "8.1",
+    "8.5",
+    "8.6"
+  ],
+  "type": "megolm",
+  "session_id": "PJ5/ZnlakWaVU9LDCkqy1VrEuxmMG7Bet+9Fto/tgsQ",
+  "exported_0": "AQAAAACJ2+R6i8MQRYY8xAu7OWwKNY/xtRzzQdeF4F2gS1swbpgVNpuxbF5mkOYLugGV76e3Qg8lOZU5IFZmnsPcz7EIGe+z+3nLpbTTMn35XyjGUoffakQNVF/2YF9w45MRp282d/rObmkRe5+2WVkQssDlzkWbKymOED7bOlJqWxL/vDyef2Z5WpFmlVPSwwpKstVaxLsZjBuwXrfvRbaP7YLE",
+  "exported_1": "AQAAAAGJ2+R6i8MQRYY8xAu7OWwKNY/xtRzzQdeF4F2gS1swbpgVNpuxbF5mkOYLugGV76e3Qg8lOZU5IFZmnsPcz7EIGe+z+3nLpbTTMn35XyjGUoffakQNVF/2YF9w45MRp2/S9O3Yrh4M+2H24O75UADmSHiIslpKWVNk8CFHLoWaOzyef2Z5WpFmlVPSwwpKstVaxLsZjBuwXrfvRbaP7YLE",
+  "session_key": "AgAAAAOJ2+R6i8MQRYY8xAu7OWwKNY/xtRzzQdeF4F2gS1swbpgVNpuxbF5mkOYLugGV76e3Qg8lOZU5IFZmnsPcz7EIGe+z+3nLpbTTMn35XyjGUoffakQNVF/2YF9w45MRp28pQ0hUJPihkmXIeSD/HzhrbAIgSpe4iu3vBfFzJiG4qTyef2Z5WpFmlVPSwwpKstVaxLsZjBuwXrfvRbaP7YLErXzGDGFv9lY+agymLWT+4Fkn7OsqiZ+CztXsBAaklJ2UxgZtKbll+Dl/O263bUCdWywhK6uYNYOPLYgHFjwXCw",
+  "messages": [
+    {
+      "body": "AwgAEhA2Zfk3nu45O/5l+BkOyh55OWczckdE6WmeDQZ+hbx6wCduKM/5F+Y6+5qAxyh47qlN6eG8k2kqbn/0HaohgpUQYj0S3HyDMo3qE58H3QMAim3DSOQASzIP",
+      "index": 0,
+      "plaintext": "index 0"
+    },
+    {
+      "body": "AwgBEhA0agZR1EtKYaycxYM+50M9P3xHGeSwOvm4H/vlFGvpwa7GeEITXx1icO+oJgn6wVZmFNEwQ9DVQGyMkUtJI7RBLro1NWlIdejdBlE5isp2zkuddnky+SoF",
+      "index": 1,
+      "plaintext": "index 1"
+    },
+    {
+      "body": "AwgCEhAnphimP/ehgLOhKks3XnxF+5+MUPkO9Qp53dgHN3SJ+Qg0pp9eMphCxCZxBPIzZ8PPoTWvgEcD5otk0clbOR8LyVJNqpW8oiggv5qzDjiqbaUOCfNXd7wD",
+      "index": 2,
+      "plaintext": "index 2"
+    }
+  ]
+}
