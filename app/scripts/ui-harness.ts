@@ -8,7 +8,7 @@
 //   then open http://127.0.0.1:5199/
 //
 // --seed adds two registered agents, a wallet, a public room, and a DM.
-// --update shows the update banner as a Scoop install would (§16.3).
+// --update shows the update banner as a Scoop install would (§16.3); add --update-download for a Mac's.
 
 import http from 'node:http';
 import { randomBytes } from 'node:crypto';
@@ -71,7 +71,7 @@ if (seeded && process.argv.includes('--busy')) {
     version++;
   }, 4000);
 }
-if (process.argv.includes('--update')) services.update.available = { version: '9.9.9', url: 'https://github.com/TheFeloniousMonk/meadow-node/releases/tag/app-v9.9.9', command: 'scoop update meadow' };
+if (process.argv.includes('--update')) services.update.available = { version: '9.9.9', url: 'https://github.com/TheFeloniousMonk/meadow-node/releases/tag/app-v9.9.9', command: process.argv.includes('--update-download') ? null : 'scoop update meadow', action: process.argv.includes('--update-download') ? 'download' : 'scoop', asset: process.argv.includes('--update-download') ? 'Meadow-mac-arm64.zip' : null };
 
 // --chatgpt: a ChatGPT agent, and the tunneled interface on plain local HTTP (no tunnel), to act ChatGPT's part by hand.
 if (process.argv.includes('--chatgpt')) {

@@ -12,11 +12,12 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, shell, Tray } from 'electron';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, watchFile, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
+import { spawn } from 'node:child_process';
 import { masterKey } from './master-key.ts';
 import { Services } from '../app/services.ts';
 import { createHandlers } from '../app/handlers.ts';
 import { CHANNELS } from '../shared/api.ts';
-import { bridgeCopyPath, installKind, launchPath } from '../core/update.ts';
+import { bridgeCopyPath, downloadRelease, installKind, launchPath, scoopUpdateScript } from '../core/update.ts';
 import { claudeDesktopConfigPath } from '../server/claude-desktop.ts';
 
 const arg = (name: string) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
@@ -189,6 +190,26 @@ else {
       },
       applySettings: (s) => {
         if (!dev) startAtLogin(s.startAtLogin);
+      },
+      // Update now (§16.3). Scoop owns its files: a visible console runs the update once Meadow
+      // has quit, then opens it again. Elsewhere: this computer's file, checked, in Downloads.
+      installUpdate: async () => {
+        const u = services!.update.available;
+        if (!u) return { ok: false, error: 'No update is waiting.' };
+        if (u.action === 'scoop') {
+          const script = join(app.getPath('temp'), 'meadow-update.cmd');
+          writeFileSync(script, scoopUpdateScript(launchPath(process.execPath, process.env, install)));
+          spawn('cmd.exe', ['/c', 'start', '"Meadow update"', script], { detached: true, stdio: 'ignore', windowsHide: false }).unref();
+          setTimeout(() => {
+            quitting = true;
+            app.quit();
+          }, 1500);
+          return { ok: true };
+        }
+        if (u.action !== 'download' || !u.asset) return { ok: false, error: 'This copy cannot update itself; download the new version from the release page.' };
+        const file = await downloadRelease({ version: u.version, name: u.asset, dir: app.getPath('downloads') });
+        shell.showItemInFolder(file);
+        return { ok: true, file };
       },
     });
     for (const c of CHANNELS) ipcMain.handle(`meadow:${c}`, (_e, arg) => handle(c, arg));

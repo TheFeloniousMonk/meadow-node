@@ -19,6 +19,8 @@ export interface HandlerEnv {
   openExternal(url: string): void;
   /** Claude Desktop's settings file; by default where Claude Desktop keeps it on this computer. */
   claudeConfigPath?: string;
+  /** Update now (§16.3), done by the main process: it may quit the app. */
+  installUpdate?(): Promise<{ ok: true; file?: string } | { ok: false; error: string }>;
   /** Whether Claude Desktop is running (true, false, or null for cannot tell); by default asks the system. */
   claudeRunning?(): Promise<boolean | null>;
   /** Asks where to save a file (a system dialog); resolves to the path written, or null if cancelled. */
@@ -186,6 +188,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     guardCheck: undefined as any, // async, below
     connectClaude: undefined as any,
     claudeRunning: undefined as any,
+    installUpdate: undefined as any,
     setTunnel: undefined as any,
 
     enterChatgptCode({ agent, code }) {
@@ -245,6 +248,15 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
   const asyncHandlers: Partial<Record<keyof Api, (a: any) => Promise<unknown>>> = {
     syncNow: ({ agent }) => s.syncOne(agent),
     claudeRunning: async () => ({ running: await claudeRunning() }),
+    installUpdate: async () => {
+      if (!s.update.available) return { ok: false, error: 'No update is waiting.' };
+      if (!env.installUpdate) return { ok: false, error: 'This copy cannot update itself.' };
+      try {
+        return await env.installUpdate();
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
     // Only while Claude Desktop is closed: open, it writes back its own copy of the file and drops the entry.
     connectClaude: async ({ agent }) => {
       if ((await claudeRunning()) === true) return { ok: false, error: 'Claude is still open. Quit it from its icon near the clock first, then add the entry.' };

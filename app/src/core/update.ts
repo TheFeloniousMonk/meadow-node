@@ -6,6 +6,8 @@
 // GitHub on start and once a day, and only says a newer version exists: on
 // Windows the person runs `scoop update meadow`, elsewhere they download it.
 
+import { createHash } from 'node:crypto';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export const REPO = 'TheFeloniousMonk/meadow-node';
@@ -61,6 +63,68 @@ export interface UpdateInfo {
   url: string;
   /** What the person runs, when the install has a command (Scoop). */
   command: string | null;
+  /** What Update now does here: run Scoop, download this file, or nothing (only the release page). */
+  action: 'scoop' | 'download' | 'none';
+  /** The file Update now downloads, for 'download'. */
+  asset: string | null;
+}
+
+/**
+ * The release file for this computer, by its fixed name (electron-builder.yml),
+ * or null where the app does not download one (Scoop updates itself; a dev copy
+ * never updates).
+ */
+export function assetFor(platform: string, arch: string, kind: InstallKind): string | null {
+  if (kind === 'dev' || kind === 'scoop') return null;
+  if (platform === 'darwin') return arch === 'arm64' ? 'Meadow-mac-arm64.zip' : 'Meadow-mac-x64.zip';
+  if (platform === 'linux') return kind === 'appimage' ? 'Meadow-linux-x86_64.AppImage' : 'meadow_amd64.deb';
+  return null;
+}
+
+/**
+ * Downloads one file of a release into `dir` and checks it against the
+ * release's SHA256SUMS; a file that does not match is deleted, not kept.
+ * Returns where it was saved.
+ */
+export async function downloadRelease({ version, name, dir, fetchImpl = fetch }: { version: string; name: string; dir: string; fetchImpl?: typeof fetch }): Promise<string> {
+  const base = `https://github.com/${REPO}/releases/download/${TAG_PREFIX}${version}/`;
+  const sums = await fetchImpl(base + 'SHA256SUMS', { signal: AbortSignal.timeout(30_000) });
+  if (!sums.ok) throw new Error('The release has no checksum file, so nothing was downloaded.');
+  const want = (await sums.text()).split(/\r?\n/).map((l) => l.trim().split(/\s+/)).find((p) => p[1] === name)?.[0];
+  if (!want || !/^[0-9a-f]{64}$/.test(want)) throw new Error(`The release lists no checksum for ${name}, so nothing was downloaded.`);
+  const res = await fetchImpl(base + name, { signal: AbortSignal.timeout(15 * 60_000) });
+  if (!res.ok) throw new Error(`The download failed (HTTP ${res.status}).`);
+  const data = Buffer.from(await res.arrayBuffer());
+  if (createHash('sha256').update(data).digest('hex') !== want) throw new Error('The download does not match its checksum, so it was not kept. Try again later.');
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, name);
+  writeFileSync(file, data);
+  return file;
+}
+
+/**
+ * The console script a Scoop install runs to update itself (as the Pocket
+ * Service Manager does): it waits for Meadow to quit, runs `scoop update
+ * meadow` where the person can see it, and opens Meadow again. On a failure it
+ * stays open and says what to do.
+ */
+export function scoopUpdateScript(launch: string): string {
+  return [
+    '@echo off',
+    'title Meadow update',
+    'echo Updating Meadow. Meadow opens again when it is done.',
+    'timeout /t 3 /nobreak >nul',
+    `call scoop update ${SCOOP_APP}`,
+    'if errorlevel 1 goto failed',
+    `start "" "${launch}"`,
+    'exit /b 0',
+    ':failed',
+    'echo.',
+    'echo The update did not finish. If Scoop says Meadow is still running, quit Claude Desktop',
+    `echo too (it keeps a Meadow bridge open), then run: scoop update ${SCOOP_APP}`,
+    'pause',
+    '',
+  ].join('\r\n');
 }
 
 interface Release { tag_name?: unknown; html_url?: unknown; draft?: unknown; prerelease?: unknown }
@@ -87,10 +151,15 @@ export class UpdateCheck {
   #fetch: typeof fetch;
   #timer: NodeJS.Timeout | null = null;
 
-  constructor({ version, kind, fetchImpl = fetch }: { version: string; kind: InstallKind; fetchImpl?: typeof fetch }) {
+  readonly platform: string;
+  readonly arch: string;
+
+  constructor({ version, kind, fetchImpl = fetch, platform = process.platform, arch = process.arch }: { version: string; kind: InstallKind; fetchImpl?: typeof fetch; platform?: string; arch?: string }) {
     this.version = version;
     this.kind = kind;
     this.#fetch = fetchImpl;
+    this.platform = platform;
+    this.arch = arch;
   }
 
   /** One check. A failure (offline, rate-limited) keeps the last answer and says nothing. */
@@ -103,8 +172,12 @@ export class UpdateCheck {
       if (!res.ok) return this.available;
       const latest = latestRelease(await res.json());
       this.checkedAt = Date.now();
+      const asset = assetFor(this.platform, this.arch, this.kind);
       this.available = latest && compareVersions(latest.version, this.version) > 0
-        ? { version: latest.version, url: latest.url, command: this.kind === 'scoop' ? `scoop update ${SCOOP_APP}` : null }
+        ? {
+          version: latest.version, url: latest.url, command: this.kind === 'scoop' ? `scoop update ${SCOOP_APP}` : null,
+          action: this.kind === 'scoop' ? 'scoop' : asset ? 'download' : 'none', asset,
+        }
         : null;
     } catch {
       // Keep what we knew.

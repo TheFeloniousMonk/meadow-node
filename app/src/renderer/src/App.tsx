@@ -49,10 +49,17 @@ function Shell() {
   const [route, setRoute] = useState<Route | null>(asked);
   const status = useMemo(() => (state ? checks(state, balances) : null), [state, balances]);
 
-  // Open on the Dashboard when setup is complete, else on the checklist (§16.5).
+  // Open on the Dashboard when setup is complete, else on the checklist (§16.5). "Funded" needs a
+  // balance read from Base, which takes a moment: decide once it is in, or after 4 s (offline).
+  const [waited, setWaited] = useState(false);
   useEffect(() => {
-    if (!route && status) setRoute(status.allDone ? 'dashboard' : 'setup');
-  }, [route, status]);
+    const t = window.setTimeout(() => setWaited(true), 4000);
+    return () => window.clearTimeout(t);
+  }, []);
+  const balancesKnown = bal.at !== null || waited || state?.wallets.length === 0;
+  useEffect(() => {
+    if (!route && status && balancesKnown) setRoute(status.allDone ? 'dashboard' : 'setup');
+  }, [route, status, balancesKnown]);
 
   useEffect(() => {
     if (!state) return;
@@ -104,19 +111,38 @@ function Shell() {
 /** A newer release (§16.3): the Scoop command on Windows, the release page elsewhere. */
 function UpdateBanner({ state }: { state: AppState }) {
   const u = state.update;
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ ok: true; file?: string } | { ok: false; error: string } | null>(null);
   if (!u) return null;
+  const update = async () => {
+    setBusy(true);
+    setResult(await meadow.installUpdate());
+    setBusy(false);
+  };
+  const notes = <button className="link" onClick={() => meadow.openExternal({ url: u.url })}>What's new</button>;
+  if (result?.ok && result.file) {
+    const mac = /\.zip$/.test(result.file);
+    const deb = /\.deb$/.test(result.file);
+    return (
+      <div className="notice update" role="status">
+        <strong>Meadow {u.version} is downloaded and checked</strong> ({result.file}). To install it, quit Meadow from its icon near the clock, then{' '}
+        {mac ? 'open the zip and drag the new Meadow into Applications, replacing the old one.' : deb ? <>run <code>sudo apt install ./meadow_amd64.deb</code> in that folder.</> : 'make the new AppImage executable and run it instead of the old one.'}{' '}
+        Your agents, wallets, and settings stay as they are.
+      </div>
+    );
+  }
   return (
     <div className="notice update" role="status">
       <strong>Meadow {u.version} is available.</strong>{' '}
-      {u.command ? (
-        <>
-          To update, close Meadow from its icon near the clock, then run this in PowerShell:{' '}
-          <code>{u.command}</code>{' '}
-          <button className="secondary" onClick={() => meadow.copy({ text: u.command! })}>Copy</button>
-        </>
-      ) : (
+      {u.action === 'scoop' && <>Meadow closes, updates, and opens again. </>}
+      {u.action === 'download' && <>The app downloads it and checks it; you install it in one step. </>}
+      {u.action === 'none' ? (
         <button className="link" onClick={() => meadow.openExternal({ url: u.url })}>Download it from the releases page.</button>
-      )}
+      ) : (
+        <button disabled={busy || (result?.ok ?? false)} onClick={update}>{busy ? (u.action === 'scoop' ? 'Starting…' : 'Downloading…') : 'Update now'}</button>
+      )}{' '}
+      {notes}
+      {result && !result.ok && <div className="small" style={{ marginTop: '.4rem' }}>{result.error}</div>}
     </div>
   );
 }

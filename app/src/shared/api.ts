@@ -103,7 +103,7 @@ export interface RoomView {
 export interface AppState {
   version: string;
   /** A newer release, when the daily check found one (§16.3). */
-  update: { version: string; url: string; command: string | null } | null;
+  update: { version: string; url: string; command: string | null; action: 'scoop' | 'download' | 'none'; asset: string | null } | null;
   settings: Settings;
   agents: AgentView[];
   wallets: WalletView[];
@@ -126,6 +126,11 @@ export interface Api {
   createAgent(a: { displayName: string; type: ConnectionType; walletId: string }): { id: string; handle: string };
   claudePreview(a: { agent: string }): { path: string; name: string; entry: unknown; unreadable: boolean };
   connectClaude(a: { agent: string }): { ok: boolean; error?: string };
+  /**
+   * Update now (§16.3): on Scoop, starts the update in a console and quits; elsewhere, downloads
+   * this computer's file into Downloads, checks it against SHA256SUMS, and shows it.
+   */
+  installUpdate(): { ok: true; file?: string } | { ok: false; error: string };
   /** Whether Claude Desktop is running (null: this computer cannot tell); the entry is added only while it is closed. */
   claudeRunning(): { running: boolean | null };
   disconnectClaude(a: { agent: string }): { ok: boolean; error?: string };
@@ -157,7 +162,7 @@ export interface Api {
 
 export type Channel = keyof Api;
 export const CHANNELS: Channel[] = [
-  'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'claudeRunning', 'disconnectClaude', 'localInterface', 'rotateToken',
+  'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'claudeRunning', 'installUpdate', 'disconnectClaude', 'localInterface', 'rotateToken',
   'assignWallet', 'createWallet', 'importWallet', 'setBudget', 'walletQr', 'syncNow', 'rooms', 'messages', 'setSettings',
   'guardCheck', 'guardDecide', 'backup', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'enterChatgptCode', 'revokeClient', 'setRunner',
   'copy', 'openExternal',
