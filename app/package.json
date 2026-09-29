@@ -16,6 +16,13 @@
   },
   "devDependencies": {
     "@types/node": "24.19.0",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "viem": "2.57.0"
+  },
+  "dependencies": {
+    "@noble/curves": "2.4.0",
+    "@noble/hashes": "2.4.0",
+    "@scure/bip32": "2.4.0",
+    "@scure/bip39": "2.4.0"
   }
 }

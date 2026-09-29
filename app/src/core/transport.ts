@@ -22,8 +22,11 @@ export interface Transport {
  */
 export class TransportError extends Error {
   kind: 'refused' | 'network' | 'http';
-  constructor(kind: 'refused' | 'network' | 'http', message: string) {
+  /** A refusal because the terms did not match the catalog, which a fresh catalog may change. */
+  catalogMismatch: boolean;
+  constructor(kind: 'refused' | 'network' | 'http', message: string, { catalogMismatch = false } = {}) {
     super(message);
     this.kind = kind;
+    this.catalogMismatch = catalogMismatch;
   }
 }

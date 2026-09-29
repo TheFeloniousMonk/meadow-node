@@ -21,8 +21,28 @@ CREATE TABLE IF NOT EXISTS agents (
   fallback_rotated_at INTEGER NOT NULL DEFAULT 0,
   chain_head TEXT,                      -- this agent's own chain head (§5.4)
   registered_at INTEGER,                -- when a node accepted agent.register
+  wallet TEXT,                          -- the wallet that pays for it (§16.2)
   created_at INTEGER NOT NULL
 );
+
+-- Wallets (§16.9): a recovery phrase, sealed; USDC on Base.
+CREATE TABLE IF NOT EXISTS wallets (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, address TEXT NOT NULL UNIQUE,
+  secret_sealed BLOB NOT NULL,          -- {mnemonic}
+  daily_budget TEXT NOT NULL,           -- token base units per any 24 hours
+  created_at INTEGER NOT NULL
+);
+
+-- Every payment the core signed (§16.9, §16.10.4). It counts against the budget from
+-- the moment it is signed. status: signed, settled, failed (not settled by the portal).
+CREATE TABLE IF NOT EXISTS payments (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  wallet TEXT NOT NULL, agent TEXT, service TEXT NOT NULL, path TEXT NOT NULL,
+  amount TEXT NOT NULL, asset TEXT NOT NULL, network TEXT NOT NULL, pay_to TEXT NOT NULL,
+  nonce TEXT NOT NULL, valid_before INTEGER NOT NULL,
+  signed_at INTEGER NOT NULL, status TEXT NOT NULL, tx TEXT, error TEXT
+);
+CREATE INDEX IF NOT EXISTS payments_wallet ON payments (wallet, signed_at);
 
 -- The agent's own chain events, as signed.
 CREATE TABLE IF NOT EXISTS own_chain (
