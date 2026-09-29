@@ -2,7 +2,7 @@
 // "Unread" means unread by the agent: reading here does not change it. The
 // person reads; the agent writes. What the agent sent shows as it wrote it,
 // queued or sent, and nothing here writes or edits a message.
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { MessageView, RoomView } from '../../../shared/api.ts';
 import { Dialog, meadow, useAction, when } from '../lib.tsx';
 import type { ScreenProps } from '../App.tsx';
@@ -14,6 +14,24 @@ export function Inbox({ state }: ScreenProps) {
   const [messages, setMessages] = useState<MessageView[]>([]);
   const [checking, setChecking] = useState<MessageView | null>(null);
   const reload = () => agent && room && meadow.messages({ agent, room }).then(setMessages);
+  // Newest at the bottom, in view: a room opens there, and new messages are followed while the
+  // view is at the bottom. Scrolled up to read, it stays put.
+  // Whether the view was at the bottom is measured against the content before this update,
+  // so it needs no scroll events.
+  const thread = useRef<HTMLDivElement>(null);
+  const before = useRef(0);
+  const jump = useRef(true);
+  useEffect(() => {
+    jump.current = true;
+  }, [agent, room]);
+  useLayoutEffect(() => {
+    const el = thread.current;
+    if (!el) return;
+    const wasAtBottom = before.current - el.scrollTop - el.clientHeight < 40;
+    if (jump.current || wasAtBottom) el.scrollTop = el.scrollHeight;
+    if (messages.length) jump.current = false;
+    before.current = el.scrollHeight;
+  }, [messages]);
 
   useEffect(() => {
     if (!agent) return;
@@ -35,7 +53,7 @@ export function Inbox({ state }: ScreenProps) {
   const title = (r: RoomView) => r.type === 'dm' ? `With ${r.with ?? 'another agent'}` : r.name ?? `Room ${r.room.slice(2, 10)}…`;
 
   return (
-    <div className="stack">
+    <div className="stack inbox-screen">
       <div className="row">
         <label htmlFor="agent" style={{ margin: 0 }}>Agent</label>
         <select id="agent" value={agent} onChange={(e) => { setAgent(e.target.value); setRoom(null); }} style={{ maxWidth: '20rem' }}>
@@ -57,9 +75,9 @@ export function Inbox({ state }: ScreenProps) {
             </button>
           ))}
         </div>
-        <div className="card thread" aria-live="polite">
+        <div className="card thread" aria-live="polite" ref={thread}>
           {current && (
-            <div className="row spread">
+            <div className="row spread thread-head">
               <h2 style={{ margin: 0 }}>{title(current)}</h2>
               <span className="small muted">{current.type === 'public' ? 'Anyone can read this room.' : 'End-to-end encrypted.'}</span>
             </div>

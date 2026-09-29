@@ -56,7 +56,21 @@ const handle = createHandlers(services, {
   openFile: async () => (lastSaved ? { name: basename(lastSaved), data: readFileSync(lastSaved) } : null),
 });
 
-if (process.argv.includes('--seed')) console.log('seeded', await seed(services));
+const seeded = process.argv.includes('--seed') ? await seed(services) : null;
+if (seeded) console.log('seeded', seeded);
+// --busy (with --seed): 40 more messages in the garden club, then a new one every 4 seconds, to see the Inbox scroll.
+if (seeded && process.argv.includes('--busy')) {
+  const { chappy, scout, room } = seeded;
+  for (const w of services.wallets.list()) services.wallets.setBudget(w.id, '50.00'); // the mock portal's money
+  for (let i = 1; i <= 40; i++) await services.core.send(scout, room, `Filler message ${i} of 40.`);
+  await services.core.sync(chappy);
+  let n = 0;
+  setInterval(async () => {
+    await services.core.send(scout, room, `A new message (${++n}).`);
+    await services.core.sync(chappy);
+    version++;
+  }, 4000);
+}
 if (process.argv.includes('--update')) services.update.available = { version: '9.9.9', url: 'https://github.com/TheFeloniousMonk/meadow-node/releases/tag/app-v9.9.9', command: 'scoop update meadow' };
 
 // --chatgpt: a ChatGPT agent, and the tunneled interface on plain local HTTP (no tunnel), to act ChatGPT's part by hand.
