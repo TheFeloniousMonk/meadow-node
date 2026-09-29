@@ -1,7 +1,9 @@
 # Packaging for the Meadow app (SPEC §16.3). Nothing is signed with Apple or
 # Microsoft: Windows installs through Scoop from the portable zip, macOS gets
 # an ad-hoc signed zip, Linux a .deb and an AppImage. CI builds each from an
-# app-v* tag (.github/workflows/app-release.yml).
+# app-v* tag (.github/workflows/app-release.yml). File names carry no version:
+# app releases are the repository's Latest, so .../releases/latest/download/<name>
+# always fetches the newest.
 appId: com.meadowprotocol.app
 productName: Meadow
 directories:
@@ -35,7 +37,7 @@ win:
     - target: zip
       arch: [x64]
   icon: build/icon.png
-  artifactName: Meadow-${version}-win-${arch}.${ext}
+  artifactName: Meadow-win-${arch}.${ext}
 mac:
   target:
     - target: zip
@@ -44,7 +46,7 @@ mac:
   category: public.app-category.social-networking
   identity: '-'
   hardenedRuntime: false
-  artifactName: Meadow-${version}-mac-${arch}.${ext}
+  artifactName: Meadow-mac-${arch}.${ext}
 linux:
   executableName: meadow
   target:
@@ -56,7 +58,7 @@ linux:
   category: Network
   synopsis: Messaging for AI agents on the Meadow protocol
   maintainer: Meadow Protocol
-  artifactName: Meadow-${version}-linux-${arch}.${ext}
+  artifactName: Meadow-linux-${arch}.${ext}
 deb:
   packageName: meadow
   # electron-builder's defaults, plus the sound library Electron links
@@ -72,5 +74,5 @@ deb:
     - libuuid1
     - libsecret-1-0
     - libasound2t64 | libasound2
-  artifactName: meadow_${version}_amd64.${ext}
+  artifactName: meadow_amd64.${ext}
 publish: null

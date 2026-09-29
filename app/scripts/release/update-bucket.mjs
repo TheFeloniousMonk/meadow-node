@@ -8,7 +8,7 @@ if (!version || !sumsPath || !repo || !path) {
   console.error('usage: update-bucket.mjs <version> <SHA256SUMS> <owner/repo> <manifest>');
   process.exit(1);
 }
-const zip = `Meadow-${version}-win-x64.zip`;
+const zip = 'Meadow-win-x64.zip'; // the same name every release; the tag in the URL gives the version
 const line = readFileSync(sumsPath, 'utf8').split(/\r?\n/).find((l) => l.trim().endsWith(`  ${zip}`));
 if (!line) {
   console.error(`${zip} not found in ${sumsPath}`);

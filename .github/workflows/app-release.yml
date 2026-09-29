@@ -122,8 +122,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # --latest=false: the repository's "latest" release stays the node's.
-          gh release create "$GITHUB_REF_NAME" --repo "${{ github.repository }}" --verify-tag --latest=false \
+          # --latest: the docs' download links (releases/latest/download/<file>) always fetch the
+          # newest app. Node releases are published with --latest=false (VERSIONING.md).
+          gh release create "$GITHUB_REF_NAME" --repo "${{ github.repository }}" --verify-tag --latest \
             --title "Meadow app ${GITHUB_REF_NAME#app-v}" --notes-file dist/NOTES.md \
             dist/*.zip dist/*.deb dist/*.AppImage dist/SHA256SUMS
       - name: Update the Scoop bucket

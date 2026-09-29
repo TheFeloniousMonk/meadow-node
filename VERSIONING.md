@@ -63,6 +63,11 @@ whether old and new interoperate, and any migration steps.
    the changelog entry, with interop and migration notes.
 4. Commit, then tag and push:
    `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin main --tags`.
+   Publish its GitHub release with `--latest=false`
+   (`gh release create vX.Y.Z --latest=false …`). The repository's Latest
+   release is always the Meadow app's, because the download links in the docs
+   use `releases/latest/download/`. The app's own releases (`app-vX.Y.Z`) are
+   cut by CI; see `app/README.md`.
 5. If the card's recommended minimum should move, update
    `serving.implementations` in `card.json` and re-register in the Service
    Manager.
