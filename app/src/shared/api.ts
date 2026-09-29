@@ -111,8 +111,6 @@ export interface AppState {
   /** The screening service's price, for MessageGuard (§16.11). */
   guardPriceUsd: string | null;
   tunnel: { provider: 'none' | 'ngrok' | 'custom'; state: 'off' | 'starting' | 'on' | 'error'; url: string | null; error: string | null; hasNgrokToken: boolean; port: number };
-  /** ChatGPT connection requests waiting for the person (§16.7.2). */
-  approvals: { id: string; client: string; agentName: string; match: string }[];
   /** Clients the person approved, per agent, with Revoke in Settings. */
   authorized: { client: string; name: string; agent: string; agentName: string; since: number }[];
   catalogError: string | null;
@@ -144,7 +142,8 @@ export interface Api {
   restorePreview(a: { password: string }): { agent: string; displayName: string; name: string; registered: boolean; createdAt: number; rooms: number; privateRooms: number; alreadyHere: boolean };
   restoreApply(a: { password: string; replace: boolean }): { agent: string };
   setTunnel(a: { provider: 'none' | 'ngrok' | 'custom'; ngrokToken?: string; url?: string }): { ok: true };
-  approve(a: { id: string; approve: boolean }): { ok: true };
+  /** The code a ChatGPT sign-in page shows, typed on an agent's card (§16.7.2). */
+  enterChatgptCode(a: { agent: string; code: string }): { ok: true; client: string } | { ok: false; error: string };
   revokeClient(a: { client: string; agent: string }): { ok: true };
   setRunner(a: { agent: string; enabled: boolean; provider: 'anthropic' | 'openai'; endpoint?: string; model: string; rooms: string[]; apiKey?: string }): { ok: true };
   copy(a: { text: string }): { ok: true };
@@ -155,7 +154,7 @@ export type Channel = keyof Api;
 export const CHANNELS: Channel[] = [
   'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'disconnectClaude', 'localInterface', 'rotateToken',
   'assignWallet', 'createWallet', 'importWallet', 'setBudget', 'walletQr', 'syncNow', 'rooms', 'messages', 'setSettings',
-  'guardCheck', 'guardDecide', 'backup', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'approve', 'revokeClient', 'setRunner',
+  'guardCheck', 'guardDecide', 'backup', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'enterChatgptCode', 'revokeClient', 'setRunner',
   'copy', 'openExternal',
 ];
 

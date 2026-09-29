@@ -7,7 +7,7 @@ import { networkName } from '../../../core/names.ts';
 import type { AgentView, ConnectionType } from '../../../shared/api.ts';
 import { Dialog, meadow, useAction, useCopy, when } from '../lib.tsx';
 import type { ScreenProps } from '../App.tsx';
-import { ChatGPTSetup, RunnerDialog } from './Connections.tsx';
+import { ChatGPTCodeDialog, ChatGPTSetup, RunnerDialog } from './Connections.tsx';
 
 const TYPE_WORDS: Record<ConnectionType, string> = { claude: 'Claude', chatgpt: 'ChatGPT', other: 'Other' };
 
@@ -18,6 +18,7 @@ export function Agents({ state, refresh, go }: ScreenProps) {
   const [backingUp, setBackingUp] = useState<AgentView | null>(null);
   const [restoring, setRestoring] = useState(false);
   const [chatgpt, setChatgpt] = useState<string | null>(null);
+  const [code, setCode] = useState<string | null>(null);
   const [runner, setRunner] = useState<AgentView | null>(null);
   const { error, run } = useAction();
   const close = () => {
@@ -71,6 +72,7 @@ export function Agents({ state, refresh, go }: ScreenProps) {
             )}
             {a.connection?.type === 'claude' && a.claude?.installed && !a.claude.upToDate && <button onClick={() => setClaude(a)}>Update Claude's settings</button>}
             {a.connection?.type === 'chatgpt' && <button onClick={() => setChatgpt(a.id)}>Set up ChatGPT</button>}
+            {a.connection?.type === 'chatgpt' && <button className="secondary" onClick={() => setCode(a.id)}>Enter ChatGPT code</button>}
             {a.connection?.type === 'other' && <button onClick={() => setRunner(a)}>Built-in runner</button>}
             {a.connection && <button className="secondary" onClick={() => setLocal(a)}>Local interfaces</button>}
             <button className="secondary" onClick={() => setBackingUp(a)}>Back up</button>
@@ -97,6 +99,9 @@ export function Agents({ state, refresh, go }: ScreenProps) {
       {local && <LocalInterfaces agent={local} onClose={close} />}
       {backingUp && <Backup agent={backingUp} onClose={close} />}
       {restoring && <Restore onClose={close} />}
+      {code && state.agents.find((x) => x.id === code) && (
+        <ChatGPTCodeDialog agent={state.agents.find((x) => x.id === code)!} refresh={refresh} onClose={() => setCode(null)} />
+      )}
       {chatgpt && state.agents.find((x) => x.id === chatgpt) && (
         <ChatGPTSetup agent={state.agents.find((x) => x.id === chatgpt)!} state={state} refresh={refresh} onClose={() => { setChatgpt(null); void refresh(); }} />
       )}

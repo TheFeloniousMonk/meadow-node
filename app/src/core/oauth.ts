@@ -6,8 +6,11 @@
 //
 // - dynamic client registration (RFC 7591), redirects only to ChatGPT;
 // - authorization code with PKCE S256 (RFC 7636), resource indicators (RFC 8707);
-// - each authorization request waits for the person, who sees the same short
-//   code in the browser and in the app, and approves or refuses there;
+// - each authorization request waits for the person: the browser page shows
+//   an 8-character code, and the person types it into the app. Nothing pops
+//   up for an incoming request, so a stranger who knows the tunnel's address
+//   cannot win a click; a request no one types the code for simply expires
+//   (security review F3, 2026-09-29);
 // - access tokens for one hour, refresh tokens for 30 days, rotated on use,
 //   bound to one agent's resource; stored as hashes; revocable in Settings.
 
@@ -19,16 +22,22 @@ export const OAUTH = {
   codeMs: 5 * 60_000,
   accessMs: 3600_000,
   refreshMs: 30 * 24 * 3600_000,
-  maxPending: 5, // open requests at once, so no one can flood the person with dialogs
+  maxPending: 40, // open requests at once (one per client, so more than there can be clients); past it, the oldest goes
   // Registration is open to anyone who knows the tunnel's address, so it is bounded:
-  maxUnusedClients: 20, // registered clients that hold no token, at once
+  maxUnusedClients: 20, // registered clients that hold no token; past it the oldest is forgotten, never a new one refused
   unusedClientMs: 24 * 3600_000, // an unused registration is forgotten after a day
-  registerPerMinute: 10,
+  registerPerMinute: 10, // per source address
   maxRedirectLength: 512,
   scope: 'meadow',
 };
 
 /** Where an approved client may be sent back to: ChatGPT only. */
+/** The code the person types: 8 characters, with no 0/O, 1/I/L, or U to misread. */
+export const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTVWXYZ';
+export const formatCode = (c: string) => `${c.slice(0, 4)}-${c.slice(4)}`;
+/** What the person typed, as a code: case, spaces, and dashes do not matter. */
+export const normalizeCode = (typed: string) => typed.toUpperCase().replace(/[\s-]/g, '');
+
 export const REDIRECTS = [/^https:\/\/chatgpt\.com\/[\w\-./]*$/, /^https:\/\/chat\.openai\.com\/[\w\-./]*$/];
 
 const hash = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex');
@@ -49,7 +58,7 @@ export interface PendingRequest {
 export class OAuth {
   #db: Db;
   #now: () => number;
-  #registrations: number[] = [];
+  #registrations = new Map<string, number[]>();
 
   constructor({ db, now = Date.now }: { db: Db; now?: () => number }) {
     this.#db = db;
@@ -57,7 +66,7 @@ export class OAuth {
   }
 
   /** Dynamic client registration (RFC 7591), public clients only, redirecting to ChatGPT only. */
-  register(body: any): OAuthError | Record<string, unknown> {
+  register(body: any, source = ''): OAuthError | Record<string, unknown> {
     const uris = body?.redirect_uris;
     if (!Array.isArray(uris) || !uris.length || uris.length > 5 || !uris.every((u) => typeof u === 'string' && u.length <= OAUTH.maxRedirectLength && REDIRECTS.some((r) => r.test(u)))) {
       return err('invalid_redirect_uri', 'This app accepts only ChatGPT as a client.');
@@ -66,13 +75,19 @@ export class OAuth {
       return err('invalid_client_metadata', 'Only public clients (token_endpoint_auth_method none) are supported.');
     }
     const now = this.#now();
-    this.#registrations = this.#registrations.filter((t) => t > now - 60_000);
-    this.#db.prepare('DELETE FROM oauth_clients WHERE created_at < ? AND client_id NOT IN (SELECT client_id FROM oauth_tokens) AND client_id NOT IN (SELECT client_id FROM oauth_requests)').run(now - OAUTH.unusedClientMs);
-    const unused = (this.#db.prepare('SELECT COUNT(*) AS n FROM oauth_clients WHERE client_id NOT IN (SELECT client_id FROM oauth_tokens)').get() as any).n;
-    if (this.#registrations.length >= OAUTH.registerPerMinute || unused >= OAUTH.maxUnusedClients) {
-      return err('temporarily_unavailable', 'Too many registrations. Try again later.');
+    const recent = (this.#registrations.get(source) ?? []).filter((t) => t > now - 60_000);
+    if (recent.length >= OAUTH.registerPerMinute) return err('temporarily_unavailable', 'Too many registrations. Try again in a minute.');
+    this.#registrations.set(source, [...recent, now]);
+    for (const [k, v] of this.#registrations) if (!v.some((t) => t > now - 60_000)) this.#registrations.delete(k);
+    // Storage stays bounded without refusing anyone: unused registrations are forgotten after a day,
+    // and past the cap the oldest unused one goes (with any request it has waiting).
+    const unused = `client_id NOT IN (SELECT client_id FROM oauth_tokens)`;
+    this.#db.prepare(`DELETE FROM oauth_clients WHERE created_at < ? AND ${unused}`).run(now - OAUTH.unusedClientMs);
+    const extra = this.#db.prepare(`SELECT client_id FROM oauth_clients WHERE ${unused} ORDER BY created_at`).all() as any[];
+    for (const c of extra.slice(0, Math.max(0, extra.length - OAUTH.maxUnusedClients + 1))) {
+      this.#db.prepare("UPDATE oauth_requests SET decision = 'replaced' WHERE client_id = ? AND decision IS NULL").run(c.client_id);
+      this.#db.prepare('DELETE FROM oauth_clients WHERE client_id = ?').run(c.client_id);
     }
-    this.#registrations.push(now);
     const clientId = token('client');
     const name = typeof body.client_name === 'string' ? body.client_name.slice(0, 100) : 'ChatGPT';
     this.#db.prepare('INSERT INTO oauth_clients (client_id, name, redirect_uris, created_at) VALUES (?, ?, ?, ?)').run(clientId, name, JSON.stringify(uris), this.#now());
@@ -92,7 +107,7 @@ export class OAuth {
    * resource URL belongs to, or null. Errors before a valid redirect is known
    * are shown on the page, never redirected (RFC 6749 §4.1.2.1).
    */
-  authorize(q: Record<string, string | undefined>, agentOf: (resource: string) => string | null): OAuthError | { id: string; match: string } {
+  authorize(q: Record<string, string | undefined>, agentOf: (resource: string) => string | null, source = ''): OAuthError | { id: string; match: string } {
     const client = q.client_id ? this.#client(q.client_id) : null;
     if (!client) return err('invalid_client', 'This client is not registered with the app.');
     if (!q.redirect_uri || !client.redirect_uris.includes(q.redirect_uri)) return err('invalid_request', 'The redirect address is not one this client registered.');
@@ -101,12 +116,15 @@ export class OAuth {
     const agent = q.resource ? agentOf(q.resource) : null;
     if (!q.resource || !agent) return err('invalid_target', 'That address is not an agent on this app that ChatGPT may use.');
     this.#sweep();
-    const open = (this.#db.prepare('SELECT COUNT(*) AS n FROM oauth_requests WHERE decision IS NULL').get() as any).n;
-    if (open >= OAUTH.maxPending) return err('temporarily_unavailable', 'Too many connection requests are waiting. Try again in a few minutes.');
+    // One waiting request per client and per source: a new one replaces it. When the queue is
+    // still full, the oldest goes, so a flood cannot keep the real ChatGPT out.
+    this.#db.prepare("UPDATE oauth_requests SET decision = 'replaced' WHERE decision IS NULL AND (client_id = ? OR (source = ? AND source != ''))").run(q.client_id!, source);
+    const open = this.#db.prepare('SELECT id FROM oauth_requests WHERE decision IS NULL ORDER BY created_at').all() as any[];
+    for (const r of open.slice(0, Math.max(0, open.length - OAUTH.maxPending + 1))) this.#db.prepare("UPDATE oauth_requests SET decision = 'replaced' WHERE id = ?").run(r.id);
     const id = token('req');
-    const match = String(randomInt(1000, 10000));
-    this.#db.prepare(`INSERT INTO oauth_requests (id, client_id, agent, redirect_uri, state, challenge, resource, match, created_at)
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, q.client_id!, agent, q.redirect_uri, q.state ?? null, q.code_challenge, q.resource, match, this.#now());
+    const match = Array.from({ length: 8 }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('');
+    this.#db.prepare(`INSERT INTO oauth_requests (id, client_id, agent, redirect_uri, state, challenge, resource, match, created_at, source)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, q.client_id!, agent, q.redirect_uri, q.state ?? null, q.code_challenge, q.resource, match, this.#now(), source);
     return { id, match };
   }
 
@@ -126,7 +144,27 @@ export class OAuth {
       .map((r) => ({ id: r.id, client: r.name, agent: r.agent, match: r.match, createdAt: r.created_at }));
   }
 
-  /** The person's decision, made in the app window. Approving issues a one-time code. */
+  /**
+   * The person typed the code a browser page showed, on an agent's card
+   * (§16.7.2): the one waiting request for that agent with that code is
+   * approved. A code that matches two requests approves neither.
+   */
+  enterCode(agent: string, typed: string): { ok: true; client: string } | { ok: false; error: string } {
+    this.#sweep();
+    const code = normalizeCode(typed);
+    if (!/^[2-9A-Z]{8}$/.test(code)) return { ok: false, error: 'The code has 8 letters and digits, like K7QM-3XPD.' };
+    const rows = this.#db.prepare(`SELECT r.id, c.name FROM oauth_requests r JOIN oauth_clients c ON c.client_id = r.client_id
+                                    WHERE r.decision IS NULL AND r.agent = ? AND r.match = ?`).all(agent, code) as any[];
+    if (!rows.length) return { ok: false, error: 'No ChatGPT sign-in for this agent is waiting with that code. Check it, or start again from ChatGPT: a code lasts 10 minutes.' };
+    if (rows.length > 1) {
+      for (const r of rows) this.decide(r.id, false);
+      return { ok: false, error: 'That code matched more than one request, so none was approved. Start again from ChatGPT.' };
+    }
+    this.decide(rows[0].id, true);
+    return { ok: true, client: rows[0].name };
+  }
+
+  /** Approves or refuses one request. Approving issues a one-time code. */
   decide(id: string, approve: boolean) {
     const r: any = this.#db.prepare('SELECT * FROM oauth_requests WHERE id = ? AND decision IS NULL').get(id);
     if (!r) return;
@@ -147,7 +185,7 @@ export class OAuth {
   status(id: string): { state: 'pending' | 'done' | 'expired'; redirect?: string } {
     this.#sweep();
     const r: any = this.#db.prepare('SELECT * FROM oauth_requests WHERE id = ?').get(id);
-    if (!r || r.decision === 'expired') return { state: 'expired' };
+    if (!r || r.decision === 'expired' || r.decision === 'replaced') return { state: 'expired' };
     if (r.decision === null) return { state: 'pending' };
     const url = new URL(r.redirect_uri);
     if (r.decision === 'approved' && r.code) {

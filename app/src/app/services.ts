@@ -33,8 +33,6 @@ export const DEFAULT_SETTINGS: Omit<Settings, 'perCallMaxUsd'> = {
 
 /** How the app tells the person about new messages; the main process shows a system notification. */
 export type Notify = (agent: string, displayName: string, count: number, held: number) => void;
-/** How the app asks the person to look at a ChatGPT connection request; the main process brings the window forward. */
-export type AskApproval = () => void;
 
 export class Services {
   readonly db: Db;
@@ -53,7 +51,6 @@ export class Services {
   publicServer: Server | null = null;
   publicError: string | null = null;
   #notify: Notify;
-  #askApproval: AskApproval;
   server: Server | null = null;
   serverError: string | null = null;
   lastSync = new Map<string, number>();
@@ -62,11 +59,10 @@ export class Services {
 
   readonly version: string;
 
-  constructor({ dbPath, masterKey, version, changed, catalog = new Catalog(), notify = () => {}, askApproval = () => {}, install = 'dev' }: {
-    dbPath: string; masterKey: Uint8Array; version: string; changed: () => void; catalog?: Catalog; notify?: Notify; askApproval?: AskApproval; install?: InstallKind;
+  constructor({ dbPath, masterKey, version, changed, catalog = new Catalog(), notify = () => {}, install = 'dev' }: {
+    dbPath: string; masterKey: Uint8Array; version: string; changed: () => void; catalog?: Catalog; notify?: Notify; install?: InstallKind;
   }) {
     this.#notify = notify;
-    this.#askApproval = askApproval;
     this.#changed = changed;
     this.version = version;
     this.db = openDb(dbPath);
@@ -124,10 +120,8 @@ export class Services {
       host: this.tools, oauth: this.oauth, version: this.version,
       base: () => this.tunnel.url,
       agents: () => this.chatgptAgents(),
-      onRequest: () => {
-        this.#changed();
-        this.#askApproval();
-      },
+      // A sign-in request waits, unseen, for the person to type its code (§16.7.2): nothing pops up.
+      onRequest: () => this.#changed(),
       onTokens: () => this.#changed(),
     });
     this.publicServer = server;

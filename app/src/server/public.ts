@@ -18,6 +18,7 @@ import { handleMcp, MCP_VERSIONS } from '../core/mcp.ts';
 import { OAUTH, type OAuth } from '../core/oauth.ts';
 import type { ToolHost } from '../core/tools.ts';
 import { hostAllowed } from './local.ts';
+import { formatCode } from '../core/oauth.ts';
 
 const MAX_BODY = 256 * 1024;
 
@@ -93,6 +94,17 @@ export function createPublicServer(opts: PublicServerOptions): Server {
     return null;
   };
 
+  /**
+   * Where a request came from, to keep one sign-in waiting per source. Behind a
+   * tunnel every connection is from loopback, and the tunnel appends the real
+   * address to X-Forwarded-For; only that last entry is the tunnel's word.
+   */
+  const sourceOf = (req: IncomingMessage) => {
+    const xff = req.headers['x-forwarded-for'];
+    const last = (Array.isArray(xff) ? xff.join(',') : xff ?? '').split(',').map((x) => x.trim()).filter(Boolean).at(-1);
+    return last ?? req.socket.remoteAddress ?? '';
+  };
+
   const server = createServer({ connectionsCheckingInterval: 5_000 }, async (req, res) => {
     try {
       const base = opts.base();
@@ -127,23 +139,24 @@ export function createPublicServer(opts: PublicServerOptions): Server {
         } catch {
           return json(res, 400, { error: 'invalid_client_metadata', error_description: 'The body must be JSON.' });
         }
-        const r = opts.oauth.register(body);
+        const r = opts.oauth.register(body, sourceOf(req));
         return json(res, 'error' in r ? 400 : 201, r);
       }
 
       if (req.method === 'GET' && path === '/oauth/authorize') {
         const q = Object.fromEntries(url.searchParams);
-        const r = opts.oauth.authorize(q, agentOf(base));
+        const r = opts.oauth.authorize(q, agentOf(base), sourceOf(req));
         if ('error' in r) return page(res, 400, 'Meadow could not connect', `<h1>This connection cannot go ahead</h1><p>${escape(r.error_description)}</p>`);
         opts.onRequest();
         // The resource was checked above: <base>/<name>/mcp.
         const agent = opts.agents().get(q.resource!.slice(base.length + 1, -'/mcp'.length));
-        return page(res, 200, 'Approve in the Meadow app',
-          `<h1>Approve in the Meadow app</h1>
-<p>On your computer, the Meadow app is asking whether ChatGPT may act as <strong>${escape(agent?.displayName ?? 'your agent')}</strong>.</p>
-<p>Check that the app shows this code, then click <strong>Approve</strong> there:</p>
-<p class="code">${r.match}</p>
-<p class="muted" id="status">Waiting for your answer in the app…</p>`,
+        const who = escape(agent?.displayName ?? 'your agent');
+        return page(res, 200, 'Type this code into Meadow',
+          `<h1>Type this code into the Meadow app</h1>
+<p>To let ChatGPT act as <strong>${who}</strong> on Meadow, open the Meadow app on your computer, go to <strong>Agents</strong>, and press <strong>Enter ChatGPT code</strong> on ${who}'s card. Then type:</p>
+<p class="code">${formatCode(r.match)}</p>
+<p>If you did not start connecting ChatGPT, close this page: nothing happens unless the code is typed into Meadow.</p>
+<p class="muted" id="status">Waiting for the code in the app. It works for 10 minutes…</p>`,
           `const id=${JSON.stringify(r.id)};const s=document.getElementById('status');
 async function poll(){try{const r=await fetch('/oauth/status?request='+encodeURIComponent(id),{cache:'no-store'});const j=await r.json();
 if(j.state==='done'){s.textContent='Done. Returning to ChatGPT…';location.replace(j.redirect);return}

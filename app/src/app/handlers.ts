@@ -84,7 +84,6 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
         pricePerCallUsd: price ? formatUsd(price.atomic, price.decimals) : null,
         guardPriceUsd: guardPrice ? formatUsd(guardPrice.atomic, guardPrice.decimals) : null,
         tunnel: { ...s.tunnel.status, error: s.publicError ?? s.tunnel.status.error, hasNgrokToken: s.ngrokToken() !== null, port: s.settings().publicPort },
-        approvals: s.oauth.pending().map((p) => ({ id: p.id, client: p.client, match: p.match, agentName: s.core.agents().find((a) => a.id === p.agent)?.display_name ?? 'an agent' })),
         authorized: s.oauth.authorized().map((c) => ({ ...c, agentName: s.core.agents().find((a) => a.id === c.agent)?.display_name ?? c.agent })),
         catalogError: s.catalog.fetchedAt ? null : 'The app has not read the portal\'s price list yet.',
       };
@@ -188,9 +187,9 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     guardCheck: undefined as any, // async, below
     setTunnel: undefined as any,
 
-    approve({ id, approve }) {
-      s.oauth.decide(id, approve);
-      return { ok: true };
+    enterChatgptCode({ agent, code }) {
+      if (typeof agent !== 'string' || typeof code !== 'string' || code.length > 40) return { ok: false, error: 'Type the code the ChatGPT page shows.' };
+      return s.oauth.enterCode(agent, code);
     },
 
     revokeClient({ client, agent }) {

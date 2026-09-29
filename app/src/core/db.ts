@@ -209,6 +209,8 @@ const COLUMNS: [table: string, column: string, definition: string][] = [
   ['group_in', 'received_at', 'INTEGER NOT NULL DEFAULT 0'],
   // A restore keeps Olm sessions for receiving only (§8.9).
   ['olm_sessions', 'send', 'INTEGER NOT NULL DEFAULT 1'],
+  // Where a ChatGPT sign-in request came from, to keep one waiting per source (§16.7.2).
+  ['oauth_requests', 'source', "TEXT NOT NULL DEFAULT ''"],
 ];
 
 export function openDb(path = ':memory:'): Db {

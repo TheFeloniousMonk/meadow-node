@@ -1,6 +1,6 @@
 // Connections that reach beyond this computer's own apps: ChatGPT through the
-// person's tunnel, with its approval (SPEC §16.7.2), and the built-in runner
-// (§16.7.3).
+// person's tunnel, approved by typing the code its sign-in page shows (SPEC
+// §16.7.2), and the built-in runner (§16.7.3).
 import { useEffect, useState } from 'react';
 import type { AgentView, AppState, RoomView } from '../../../shared/api.ts';
 import { Dialog, meadow, useAction, useCopy, when } from '../lib.tsx';
@@ -9,25 +9,45 @@ import { Dialog, meadow, useAction, useCopy, when } from '../lib.tsx';
 const CHECKED = '29 September 2026';
 
 /**
- * A ChatGPT connection request waiting for the person. The browser shows a
- * code; so does this dialog. Approve only if they match and the person just
- * started this in ChatGPT.
+ * Where the person types the code ChatGPT's sign-in page shows (§16.7.2).
+ * Nothing pops up for a sign-in request: only a code typed here, for this
+ * agent, lets a client in, so a stranger who finds the tunnel gets nowhere.
  */
-export function ApprovalDialog({ state, refresh }: { state: AppState; refresh: () => Promise<void> }) {
-  const req = state.approvals[0];
-  const { busy, run } = useAction();
-  if (!req) return null;
-  const decide = (approve: boolean) => run(async () => { await meadow.approve({ id: req.id, approve }); await refresh(); });
+export function ChatGPTCodeEntry({ agent, refresh, onDone }: { agent: AgentView; refresh: () => Promise<void>; onDone?: (client: string) => void }) {
+  const [code, setCode] = useState('');
+  const [done, setDone] = useState<string | null>(null);
+  const { busy, error, run } = useAction();
+  const submit = () => run(async () => {
+    const r = await meadow.enterChatgptCode({ agent: agent.id, code });
+    if (!r.ok) throw new Error(r.error);
+    setDone(r.client);
+    setCode('');
+    await refresh();
+    onDone?.(r.client);
+  });
+  if (done) return <div className="notice"><strong>Connected.</strong> The page in your browser goes back to ChatGPT by itself. It said its name was “{done}” (a name it chose; Meadow cannot check it). You can revoke it in Settings.</div>;
   return (
-    <Dialog title="ChatGPT wants to connect">
-      <p><strong>{req.client}</strong> asks to act as <strong>{req.agentName}</strong> on Meadow: to read its messages, write as it, and spend from its wallet within its daily budget.</p>
-      <p>Your browser should show this code:</p>
-      <p style={{ fontSize: '2.4rem', fontWeight: 700, letterSpacing: '.3rem', margin: '.25rem 0 1rem' }}>{req.match}</p>
-      <div className="notice warn">Approve only if you started connecting ChatGPT just now, and the codes match. If you did not, refuse.</div>
-      <div className="actions">
-        <button className="secondary" disabled={busy} onClick={() => decide(false)}>Refuse</button>
-        <button disabled={busy} onClick={() => decide(true)}>Approve</button>
+    <div className="stack" style={{ gap: '.5rem' }}>
+      <div className="field">
+        <label htmlFor={`code-${agent.id}`}>The code on the ChatGPT page</label>
+        <input id={`code-${agent.id}`} className="mono" value={code} placeholder="K7QM-3XPD" autoComplete="off" spellCheck={false} maxLength={12}
+          style={{ fontSize: '1.4rem', letterSpacing: '.2rem', maxWidth: '14rem' }}
+          onChange={(e) => setCode(e.target.value.toUpperCase())} onKeyDown={(e) => { if (e.key === 'Enter' && code) submit(); }} />
       </div>
+      <div className="notice warn">Type a code only from a page you opened yourself by connecting ChatGPT, just now. Whoever the code belongs to can then act as {agent.displayName}: read its messages, write as it, and spend within its daily budget. If someone asks you to type a code for them, do not.</div>
+      {error && <div className="notice warn">{error}</div>}
+      <div className="actions"><button disabled={busy || !code.trim()} onClick={submit}>Connect</button></div>
+    </div>
+  );
+}
+
+/** The card's "Enter ChatGPT code": for connecting again later (after 30 days unused, or a revoke). */
+export function ChatGPTCodeDialog({ agent, refresh, onClose }: { agent: AgentView; refresh: () => Promise<void>; onClose: () => void }) {
+  return (
+    <Dialog title={`Enter ChatGPT code for ${agent.displayName}`} onClose={onClose}>
+      <p>When ChatGPT connects to Meadow, it opens a page in your browser with an 8-character code. Type it here.</p>
+      <ChatGPTCodeEntry agent={agent} refresh={refresh} />
+      <div className="actions"><button className="secondary" onClick={onClose}>Close</button></div>
     </Dialog>
   );
 }
@@ -84,7 +104,6 @@ export function TunnelControls({ state, refresh }: { state: AppState; refresh: (
 /** The ChatGPT walkthrough (§16.7.2): plain steps a family member can follow once, dated. */
 export function ChatGPTSetup({ agent, state, refresh, onClose }: { agent: AgentView; state: AppState; refresh: () => Promise<void>; onClose: () => void }) {
   const copy = useCopy();
-  const done = state.authorized.some((c) => c.agent === agent.id);
   return (
     <Dialog title={`Connect ChatGPT as ${agent.displayName}`} onClose={onClose}>
       <p className="small muted">These steps were checked against OpenAI's and ngrok's instructions on {CHECKED}. ChatGPT's screens change from time to time; if a menu has moved, look for the same words nearby.</p>
@@ -105,14 +124,14 @@ export function ChatGPTSetup({ agent, state, refresh, onClose }: { agent: AgentV
           <strong>Add Meadow to ChatGPT:</strong> open Apps (or Plugins), press <em>+</em>, and create an app with the name <em>Meadow ({agent.displayName})</em>, the address from step 2, and <em>OAuth</em> as the authentication.
         </li>
         <li>
-          <strong>Approve it here.</strong> ChatGPT opens a page. If ngrok shows a notice first, press <em>Visit Site</em>. The page shows a four-digit code, and this app asks you to approve: check the codes match, then press Approve.
+          <strong>Type the code here.</strong> ChatGPT opens a page in your browser. If ngrok shows a notice first, press <em>Visit Site</em>. The page shows an 8-character code, like K7QM-3XPD. Type it below and press Connect.
+          <div className="card" style={{ marginTop: '.5rem' }}><ChatGPTCodeEntry agent={agent} refresh={refresh} /></div>
         </li>
         <li>
           <strong>Try it.</strong> In a new chat, turn on the Meadow app from the Developer mode tools, and say: <em>"Register me on Meadow."</em> ChatGPT may ask you to confirm some actions; that is ChatGPT's own check.
         </li>
       </ol>
       <p className="small muted">ChatGPT can reach Meadow only while this computer is on and the Meadow app is running (it keeps running near the clock). Free ngrok accounts allow 20,000 requests a month.</p>
-      {done && <div className="notice"><strong>Connected.</strong> ChatGPT is approved to act as {agent.displayName}. You can revoke it in Settings.</div>}
       <div className="actions"><button onClick={onClose}>Done</button></div>
     </Dialog>
   );
