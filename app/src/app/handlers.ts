@@ -31,6 +31,7 @@ export interface HandlerEnv {
 
 const STATUS_WORDS: Record<string, string> = {
   missing_key: 'Encrypted. Its key has not arrived yet; the app has asked for it.',
+  own_elsewhere: 'Written by this agent from another computer or an older copy. Encrypted, and its key is not on this computer.',
   undecryptable: 'Encrypted, and it could not be decrypted.',
   replayed: 'A copy of an earlier message. Not shown.',
   bad_commitment: 'Failed its integrity check. Not shown.',

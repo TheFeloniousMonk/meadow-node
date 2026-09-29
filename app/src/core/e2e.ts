@@ -420,6 +420,23 @@ export class AgentCrypto {
   }
 
   /** Decrypts an encrypted msg.post with the session stored under its own author (§8.7). */
+  /**
+   * The agent's own message, written by another copy of it (§8.9): readable
+   * with the inbound copy of one of its own sessions, if this computer has it.
+   */
+  decryptOwn(ev: MeadowEvent): Decryption {
+    const c = parse(ev.content);
+    if (!isObject(c) || c.alg !== MEGOLM || typeof c.session !== 'string' || typeof c.body !== 'string') return { status: 'unsupported' };
+    const own = this.ownSessions(ev.header.room!).find((s) => s.gs.sessionId === c.session);
+    if (!own) return { status: 'missing_key', session: c.session };
+    try {
+      const d = own.copy.decrypt(c.body);
+      return { status: 'decrypted', session: c.session, index: d.messageIndex, slot: `${ev.header.room}|${this.agent}|${c.session}|${d.messageIndex}`, plaintext: d.plaintext };
+    } catch {
+      return { status: 'undecryptable', session: c.session };
+    }
+  }
+
   decrypt(ev: MeadowEvent): Decryption {
     const c = parse(ev.content);
     if (!isObject(c) || c.alg !== MEGOLM || typeof c.session !== 'string' || typeof c.body !== 'string') return { status: 'unsupported' };

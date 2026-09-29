@@ -268,3 +268,37 @@ test('decoys cannot carry an attack through unchecked, before or after them (sec
     assert.ok(B.s.core.messages(bob, { room }).every((m) => m.guard && m.guard.verdict !== 'unchecked'));
   }
 });
+
+test("an agent's own posts written by another copy show in its history, as read, and are never asked for", async () => {
+  const A = await computer();
+  const B = await computer();
+  const alice = await A.agent('alice');
+  const bob = await B.agent('bob');
+  const { result: pub } = await A.s.core.createRoom(alice, { type: 'public' });
+  const carol = await B.agent('carol');
+  const { result: team } = await A.s.core.createRoom(alice, { type: 'private' });
+  await A.s.core.invite(alice, team, bob);
+  await B.s.core.sync(bob);
+  await B.s.core.joinRoom(bob, team);
+  await A.s.core.sync(alice);
+  await A.s.core.send(alice, team, 'before the backup');
+  const older = makeBackup(A.s.db, A.s.vault, alice, 'older backup');
+  // After the backup, the old copy writes on: in public; in the private room on the session the backup holds;
+  // then, once carol is invited (a new session, §8.4), on one it does not.
+  await A.s.core.send(alice, pub, 'said after the backup');
+  await A.s.core.send(alice, team, 'same session, after the backup');
+  await A.s.core.invite(alice, team, carol);
+  await A.s.core.send(alice, team, 'new session, after the backup');
+
+  const C = await computer();
+  restoreBackup(C.s.db, C.s.vault, readBackup(older, 'older backup'));
+  C.s.wallets.assign(alice, C.wallet);
+  const report = await C.s.core.sync(alice);
+  assert.equal(report.messages, 0, 'nothing new: they are its own');
+  const mine = (room: string) => C.s.core.messages(alice, { room }).map((m) => [m.status === 'shown' ? m.text : m.status, m.delivered]);
+  assert.deepEqual(mine(pub), [['said after the backup', true]]);
+  assert.deepEqual(mine(team), [['before the backup', true], ['same session, after the backup', true], ['own_elsewhere', true]]);
+  assert.ok(!C.s.core.outbox(alice).some((e) => e.kind === 'room.keys'), 'no key request to itself');
+  const status: any = (await C.s.tools.call(alice, 'status', {})).data;
+  assert.equal(status.unread, 0);
+});

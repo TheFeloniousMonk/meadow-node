@@ -143,6 +143,19 @@ export class Core {
     }
     ctx = { id: agent, name: row.name, crypto: new AgentCrypto(this.#db, this.#vault.pickleKey(agent), agent, this.#now), log, rooms: new Map() };
     this.#ctx.set(agent, ctx);
+    // Own posts stored as events before the app kept them (see #ownFromElsewhere): once, now.
+    const orphans = this.#db.prepare(`SELECT e.event, e.content, e.outcome, r.type FROM events e
+      JOIN rooms r ON r.agent = e.agent AND r.room = e.room
+      LEFT JOIN messages m ON m.agent = e.agent AND m.id = e.id
+      WHERE e.agent = ? AND m.id IS NULL AND json_extract(e.event, '$.header.author') = ? AND json_extract(e.event, '$.header.kind') = 'msg.post'`).all(agent, agent) as any[];
+    if (orphans.length) {
+      const slots = new Set<string>();
+      for (const o of orphans) {
+        const ev = JSON.parse(o.event);
+        this.#ownFromElsewhere(ctx, o.type, o.content === null ? ev : { ...ev, content: o.content }, JSON.parse(o.outcome), slots);
+      }
+      if (slots.size) tx(this.#db, () => this.#settleSlots(ctx!, slots));
+    }
     return ctx;
   }
 
@@ -614,7 +627,10 @@ export class Core {
       const status = m === 'join' ? 'joined' : m === 'invite' ? null : m === 'ban' ? 'banned' : h.author === ctx.id ? 'left' : 'removed';
       tx(this.#db, () => this.#setRoom(ctx.id, room.id, { type, ...(status && { status }), ...(status === 'joined' && { invite: null }) }));
     }
-    if (h.author === ctx.id) return 0;
+    if (h.author === ctx.id) {
+      this.#ownFromElsewhere(ctx, type, ev, outcome, slots);
+      return 0;
+    }
     // Keys go to §8's own checks even when soft-failed: a conforming node serves those without
     // content, but if one arrives with it, entitlement (§8.6) is what refuses it, not arrival order.
     if (h.kind === 'room.keys' && type !== 'public') {
@@ -641,6 +657,31 @@ export class Core {
       } else this.#decryptInto(ctx, ev, slots);
     });
     return existing ? 0 : 1;
+  }
+
+  /**
+   * The agent's own post, arriving from the network with no record here: it
+   * was written by another copy (before a restore from an older backup, or by
+   * another client). It is kept as the agent's own, already read, so its
+   * history is whole; it never counts as new. An encrypted one is readable
+   * only if its session is on this computer; its key is never requested, since
+   * only the copy that wrote it held it (§8.9).
+   */
+  #ownFromElsewhere(ctx: Ctx, type: string | undefined, ev: MeadowEvent, outcome: any, slots: Set<string>) {
+    if (ev.header.kind !== 'msg.post' || outcome.soft_failed) return;
+    if (this.#db.prepare('SELECT 1 FROM messages WHERE agent = ? AND id = ?').get(ctx.id, ev.id)) return;
+    tx(this.#db, () => {
+      if (ev.content === undefined) return this.#storeMessage(ctx, ev, { status: 'withheld' }, true);
+      if (type === 'public') {
+        const body = parsePublic(ev.content);
+        return this.#storeMessage(ctx, ev, body ? { status: 'shown', body } : { status: 'unsupported' }, true);
+      }
+      const d = ctx.crypto.decryptOwn(ev);
+      if (d.status !== 'decrypted') return this.#storeMessage(ctx, ev, { status: 'own_elsewhere', session: d.session, index: d.index }, true);
+      const opened = openPlaintext(d.plaintext, ev.header.commitment);
+      this.#storeMessage(ctx, ev, { status: 'decrypted', body: opened?.body, kf: opened?.kf, session: d.session, index: d.index, slot: d.slot, checked: opened ? 'ok' : 'bad_commitment' }, true);
+      slots.add(d.slot);
+    });
   }
 
   async #receiveKeys(ctx: Ctx, room: Room, ev: MeadowEvent, slots: Set<string>) {
