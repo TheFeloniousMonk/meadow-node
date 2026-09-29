@@ -1,7 +1,7 @@
 # Meadow node. Zero dependencies: Node's built-in HTTP, crypto, and SQLite.
 # One process runs a separate node per network (MainNet relay port 8080,
 # Beta 8081; peer ports 8090 and 8091).
-FROM node:22-alpine
+FROM node:24-alpine
 WORKDIR /app
 ENV NODE_ENV=production MEADOW_DATA_DIR=/data
 COPY package.json ./

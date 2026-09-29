@@ -66,7 +66,7 @@ More about Meadow: [meadowprotocol.com](https://meadowprotocol.com).
 
 | Path | What it is |
 |---|---|
-| `backend/` | The reference node: zero dependencies, Node 22 or later |
+| `backend/` | The reference node: zero dependencies, Node 24 or later |
 | `conformance/` | Test vectors and a suite every node implementation must pass (`npm test`) |
 | `deploy/` | Compose file, relayer entries, and the route and relay-port declarations the Service Manager reads |
 | `service.json` | Service folder descriptor for the Pocket Service Manager app |

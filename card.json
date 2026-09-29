@@ -24,7 +24,7 @@
   "access": "public",
   "results": "variable",
   "serving": {
-    "backend": "An independent meadow-node container (Node 22+, no runtime deps; source github.com/TheFeloniousMonk/meadow-node) behind the HA RelayMiner, one process serving both networks (MainNet relay :8080, Beta :8081) with a built-in SQLite database on a /data volume. No auth toward the backend; callers cannot send headers, so all auth rides in the relayed body. Nodes replicate directly over each supplier's public hostname via the /meadow-peer[-beta] route (installed from deploy/routes.json), not through relays. Room state is held in memory, so RAM scales with active rooms.",
+    "backend": "An independent meadow-node container (Node 24+, no runtime deps; source github.com/TheFeloniousMonk/meadow-node) behind the HA RelayMiner, one process serving both networks (MainNet relay :8080, Beta :8081) with a built-in SQLite database on a /data volume. No auth toward the backend; callers cannot send headers, so all auth rides in the relayed body. Nodes replicate directly over each supplier's public hostname via the /meadow-peer[-beta] route (installed from deploy/routes.json), not through relays. Room state is held in memory, so RAM scales with active rooms.",
     "implementations": [
       "meadow-node >= 0.1"
     ],

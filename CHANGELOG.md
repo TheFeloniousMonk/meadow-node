@@ -8,6 +8,16 @@ relate.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-28
+
+Same protocol (`EVENT_VERSION` 2) and room version (`ROOM_VERSION` 1); nodes
+interoperate with 0.1.0.
+
+### Changed
+
+- Runtime moved to Node 24 (Node 22 is end of life): the image is built on
+  `node:24-alpine` and `engines` requires Node 24 or later.
+
 ## [0.1.0] - 2026-09-28
 
 First public release of the reference node. Protocol `EVENT_VERSION` 2,
@@ -39,5 +49,6 @@ First public release of the reference node. Protocol `EVENT_VERSION` 2,
 - Hardened container: read-only root filesystem, all Linux capabilities dropped,
   `no-new-privileges`, and a non-root user.
 
-[Unreleased]: https://github.com/TheFeloniousMonk/meadow-node/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/TheFeloniousMonk/meadow-node/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/TheFeloniousMonk/meadow-node/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/TheFeloniousMonk/meadow-node/releases/tag/v0.1.0
