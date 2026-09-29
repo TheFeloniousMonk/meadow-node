@@ -41,6 +41,12 @@ interface OlmEntry {
   session: import('../../../crypto/pkg/meadow_crypto.js').Session;
   created: number;
   lastDecrypt: number;
+  /**
+   * False for a session restored from a backup (§8.9): the peer's copy may have
+   * moved past this state, so it may still decrypt what was in flight but
+   * never encrypts again. A fresh session starts from the peer's bundle.
+   */
+  send: boolean;
 }
 
 export interface OwnSession {
@@ -143,7 +149,7 @@ export class AgentCrypto {
     this.account = wasm.Account.fromPickle(row.account, pickleKey);
     for (const r of db.prepare('SELECT * FROM olm_sessions WHERE agent = ? ORDER BY created').all(agent) as any[]) {
       const list = this.#olm.get(r.peer) ?? [];
-      list.push({ sessionId: r.session_id, session: wasm.Session.fromPickle(r.pickle, pickleKey), created: r.created, lastDecrypt: r.last_decrypt });
+      list.push({ sessionId: r.session_id, session: wasm.Session.fromPickle(r.pickle, pickleKey), created: r.created, lastDecrypt: r.last_decrypt, send: r.send !== 0 });
       this.#olm.set(r.peer, list);
     }
     for (const r of db.prepare('SELECT * FROM group_out WHERE agent = ? ORDER BY seq').all(agent) as any[]) {
@@ -178,8 +184,8 @@ export class AgentCrypto {
   }
 
   #saveOlm(peer: string, e: OlmEntry) {
-    this.#db.prepare(`INSERT OR REPLACE INTO olm_sessions (agent, peer, session_id, pickle, created, last_decrypt)
-                      VALUES (?, ?, ?, ?, ?, ?)`).run(this.agent, peer, e.sessionId, e.session.pickle(this.#key), e.created, e.lastDecrypt);
+    this.#db.prepare(`INSERT OR REPLACE INTO olm_sessions (agent, peer, session_id, pickle, created, last_decrypt, send)
+                      VALUES (?, ?, ?, ?, ?, ?, ?)`).run(this.agent, peer, e.sessionId, e.session.pickle(this.#key), e.created, e.lastDecrypt, e.send ? 1 : 0);
   }
 
   #saveOwn(room: string, s: OwnSession) {
@@ -197,18 +203,18 @@ export class AgentCrypto {
   // --- Olm (§8.3) ------------------------------------------------------------
 
   hasOlmSession(peer: string): boolean {
-    return (this.#olm.get(peer)?.length ?? 0) > 0;
+    return (this.#olm.get(peer) ?? []).some((e) => e.send);
   }
 
   /** Encrypts to `peer` on its preferred session, creating one from `bundle` if there is none. */
   olmEncrypt(peer: string, bundle: Bundle | undefined, plaintext: string): { agent: string; type: number; body: string } {
     const list = this.#olm.get(peer) ?? [];
     // The session that most recently decrypted from the peer, else the most recently created (§8.3).
-    let entry = [...list].sort((a, b) => a.lastDecrypt - b.lastDecrypt || a.created - b.created).at(-1);
+    let entry = list.filter((e) => e.send).sort((a, b) => a.lastDecrypt - b.lastDecrypt || a.created - b.created).at(-1);
     if (!entry) {
       if (!bundle) throw new NeedBundle(peer);
       const session = this.account.createOutboundSession(bundle.curve25519, bundle.fallback);
-      entry = { sessionId: session.sessionId, session, created: this.#now(), lastDecrypt: 0 };
+      entry = { sessionId: session.sessionId, session, created: this.#now(), lastDecrypt: 0, send: true };
       list.push(entry);
       this.#olm.set(peer, list);
     }
@@ -237,7 +243,7 @@ export class AgentCrypto {
       const r = this.account.createInboundSession(curve, msg.body);
       const plaintext = r.plaintext;
       const session = r.takeSession();
-      const entry = { sessionId: session.sessionId, session, created: this.#now(), lastDecrypt: this.#now() };
+      const entry = { sessionId: session.sessionId, session, created: this.#now(), lastDecrypt: this.#now(), send: true };
       list.push(entry);
       this.#olm.set(peer, list);
       this.#saveOlm(peer, entry);

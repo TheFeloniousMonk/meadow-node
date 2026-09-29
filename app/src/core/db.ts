@@ -207,6 +207,8 @@ const COLUMNS: [table: string, column: string, definition: string][] = [
   // Backups (§16.12) and the backup nudge (§8.9).
   ['agents', 'last_backup_at', 'INTEGER'],
   ['group_in', 'received_at', 'INTEGER NOT NULL DEFAULT 0'],
+  // A restore keeps Olm sessions for receiving only (§8.9).
+  ['olm_sessions', 'send', 'INTEGER NOT NULL DEFAULT 1'],
 ];
 
 export function openDb(path = ':memory:'): Db {

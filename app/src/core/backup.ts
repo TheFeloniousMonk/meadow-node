@@ -152,7 +152,9 @@ export function restoreBackup(db: Db, vault: Vault, c: Contents, { replace = fal
 
   tx(db, () => {
     for (const t of [...TABLES, 'connections', 'agents'] as const) db.prepare(`DELETE FROM ${t} WHERE ${t === 'agents' ? 'id' : 'agent'} = ?`).run(agent);
-    const row = { ...c.agent, secret_sealed: vault.sealJson(`agent:${agent}:secret`, { seed: c.seed }), account: repickle(wasm.Account, c.account), wallet };
+    // A fresh fallback key goes out with the next sync: the one in the backup may
+    // have been replaced by the old copy, and this copy must be reachable (§8.2, §8.9).
+    const row = { ...c.agent, fallback_used: 1, fallback_rotated_at: 0, secret_sealed: vault.sealJson(`agent:${agent}:secret`, { seed: c.seed }), account: repickle(wasm.Account, c.account), wallet };
     insert(db, 'agents', row);
     for (const t of TABLES) {
       const rows = [...(c.tables[t] ?? [])].sort((x, y) => (x._order ?? 0) - (y._order ?? 0));
@@ -161,7 +163,11 @@ export function restoreBackup(db: Db, vault: Vault, c: Contents, { replace = fal
         delete out._order;
         if (t === 'own_chain' || t === 'events' || t === 'group_out') out.seq = r._order;
         if (t === 'messages' && r.body_sealed) out.body_sealed = vault.sealJson(`message:${agent}:${r.id}`, r.body_sealed);
-        if (t === 'olm_sessions') out.pickle = repickle(wasm.Session, r.pickle);
+        // The peers' copies may have moved past these (§8.9): receive on them, never send.
+        if (t === 'olm_sessions') {
+          out.pickle = repickle(wasm.Session, r.pickle);
+          out.send = 0;
+        }
         if (t === 'group_out') {
           out.pickle = repickle(wasm.GroupSession, r.pickle);
           out.copy = repickle(wasm.InboundGroupSession, r.copy);

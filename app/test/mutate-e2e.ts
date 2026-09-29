@@ -40,7 +40,8 @@ const mutations: [string, string, string, string][] = [
 let survived = 0;
 try {
   for (const [name, file, from, to] of mutations) {
-    const original = originals.get(file)!;
+    // Patterns use LF; a Windows checkout (core.autocrlf) has CRLF. Mutate an LF copy; the finally restores the original bytes.
+    const original = originals.get(file)!.replace(/\r\n/g, '\n');
     if (!original.includes(from)) {
       console.log(`SKIP   ${name}: pattern not found`);
       survived++;

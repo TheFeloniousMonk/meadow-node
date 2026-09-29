@@ -36,8 +36,14 @@ export interface GuardSettings {
   perSyncLimit: number;
 }
 
-/** The service's answer, read defensively: its shape is its own (the catalog does not pin it). */
+/**
+ * The service's answer, read defensively: its shape is its own (the catalog
+ * does not pin it). The live service (ruleset inj-rules-v2.0, 2026-09-29) says
+ * no_known_pattern when no rule matched, which it notes is not a promise of
+ * safety; the app shows that as "no known tricks found" (§16.11).
+ */
 export function readScreen(data: any): Screen | null {
+  if (data?.verdict === 'no_known_pattern') data = { ...data, verdict: 'safe' };
   if (!data || !['safe', 'suspicious', 'malicious'].includes(data.verdict)) return null;
   const matches = Array.isArray(data.matches)
     ? data.matches.filter((m: any) => m && typeof m.label === 'string').map((m: any) => ({ label: m.label, match: typeof m.match === 'string' ? m.match.slice(0, 200) : '' }))

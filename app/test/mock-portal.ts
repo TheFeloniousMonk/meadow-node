@@ -105,7 +105,7 @@ export async function startMockPortal(): Promise<MockPortal> {
         ...(suspicious ? [{ label: 'instruction-override', match: 'ignore your instructions', weight: 3 }] : []),
         ...(malicious ? [{ label: 'secret-exfiltration', match: 'wallet phrase', weight: 6 }] : []),
       ];
-      const verdict = malicious ? 'malicious' : suspicious ? 'suspicious' : 'safe';
+      const verdict = malicious ? 'malicious' : suspicious ? 'suspicious' : 'no_known_pattern'; // as the live service says it
       return send(200, { portal: { provenance: 'test', serviceId: service }, data: { verdict, score: matches.reduce((n, x) => n + x.weight, 0), matches, ruleset: 'test-rules', deterministic: true } }, settled);
     }
     const upstream = await fetch(nodeUrl + match[2], { method: 'POST', headers: { 'content-type': 'application/json' }, body });

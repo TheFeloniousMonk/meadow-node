@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { Catalog } from '../src/core/catalog.ts';
 import { Services } from '../src/app/services.ts';
+import { readScreen } from '../src/core/guard.ts';
 import { BackupError, backupDue, describeBackup, makeBackup, readBackup, restoreBackup } from '../src/core/backup.ts';
 import { startMockPortal, type MockPortal } from './mock-portal.ts';
 
@@ -177,4 +178,60 @@ test('a backup restores on another computer: identity, rooms, and encrypted hist
   await A.s.core.sync(alice);
   assert.deepEqual(C.s.core.messages(bob, { room: dm }).map((m) => m.text), ['before the backup', 'after the restore', 'restored and replying']);
   assert.deepEqual(A.s.core.messages(alice, { room: dm }).map((m) => m.text), ['before the backup', 'after the restore', 'restored and replying']);
+});
+
+test('an older backup, after the old copy wrote on: key requests recover it, and it can write again (§8.9)', async () => {
+  const A = await computer();
+  const B = await computer();
+  const alice = await A.agent('alice');
+  const carol = await A.agent('carol');
+  const bob = await B.agent('bob');
+  const { result: dm } = await A.s.core.startDm(alice, bob);
+  await A.s.core.send(alice, dm, 'hello');
+  await B.s.core.sync(bob);
+  await B.s.core.startDm(bob, alice);
+  await B.s.core.send(bob, dm, 'hi');
+  const older = makeBackup(B.s.db, B.s.vault, bob, 'older backup');
+
+  // After the backup, Bob's old copy joins a private room and writes there: its Olm state moves on.
+  const { result: team } = await A.s.core.createRoom(alice, { type: 'private' });
+  await A.s.core.invite(alice, team, bob);
+  await A.s.core.invite(alice, team, carol);
+  await B.s.core.sync(bob);
+  await B.s.core.joinRoom(bob, team);
+  await A.s.core.sync(carol);
+  await A.s.core.joinRoom(carol, team);
+  await A.s.core.sync(alice);
+  await A.s.core.send(alice, team, 'one');
+  await B.s.core.sync(bob);
+  await B.s.core.send(bob, team, 'bob here');
+  await A.s.core.sync(alice);
+  await A.s.core.remove(alice, team, carol); // a new session, shared to Bob on Alice's newer Olm state
+  await A.s.core.send(alice, team, 'two');
+
+  const C = await computer();
+  restoreBackup(C.s.db, C.s.vault, readBackup(older, 'older backup'));
+  C.s.wallets.assign(bob, C.wallet);
+  const view = () => C.s.core.messages(bob, { room: team }).map((m) => (m.status === 'shown' ? m.text : m.status));
+  let asked = false;
+  for (let i = 0; i < 4 && !view().includes('two'); i++) {
+    asked ||= C.s.core.outbox(bob).some((e) => e.kind === 'room.keys');
+    await C.s.core.sync(bob);
+    await A.s.core.sync(alice);
+    await A.s.core.sync(alice);
+  }
+  assert.deepEqual(view().filter((t) => t === 'one' || t === 'two'), ['one', 'two']);
+  assert.ok(asked, 'recovered through a key request');
+
+  // Alice reads what the restored copy writes (it no longer sends on its old sessions).
+  await C.s.core.send(bob, team, 'restored');
+  await A.s.core.sync(alice);
+  assert.equal(A.s.core.messages(alice, { room: team }).at(-1)?.text, 'restored');
+});
+
+test("the live service's answers are read (inj-rules-v2.0, 2026-09-29)", () => {
+  const none = { verdict: 'no_known_pattern', score: 0, matches: [], ruleset: 'inj-rules-v2.0', note: 'no_known_pattern means none of the rules matched, not that the text is safe' };
+  assert.deepEqual(readScreen(none), { verdict: 'safe', matches: [], ruleset: 'inj-rules-v2.0' });
+  assert.equal(readScreen({ verdict: 'suspicious', score: 3, matches: [{ label: 'prompt-probe', match: 'system prompt' }] })?.verdict, 'suspicious');
+  assert.equal(readScreen({ verdict: 'benign' }), null); // a word the app does not know stays unchecked
 });
