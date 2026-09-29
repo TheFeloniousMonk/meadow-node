@@ -19,6 +19,7 @@ import { createPublicServer } from '../server/public.ts';
 import { OAuth } from '../core/oauth.ts';
 import { Runner } from '../core/runner.ts';
 import { Tunnel } from './tunnel.ts';
+import { UpdateCheck, type InstallKind } from '../core/update.ts';
 import type { Settings } from '../shared/api.ts';
 
 export const DEFAULT_SETTINGS: Omit<Settings, 'perCallMaxUsd'> = {
@@ -48,6 +49,7 @@ export class Services {
   readonly oauth: OAuth;
   readonly runner: Runner;
   readonly tunnel: Tunnel;
+  readonly update: UpdateCheck;
   publicServer: Server | null = null;
   publicError: string | null = null;
   #notify: Notify;
@@ -60,8 +62,8 @@ export class Services {
 
   readonly version: string;
 
-  constructor({ dbPath, masterKey, version, changed, catalog = new Catalog(), notify = () => {}, askApproval = () => {} }: {
-    dbPath: string; masterKey: Uint8Array; version: string; changed: () => void; catalog?: Catalog; notify?: Notify; askApproval?: AskApproval;
+  constructor({ dbPath, masterKey, version, changed, catalog = new Catalog(), notify = () => {}, askApproval = () => {}, install = 'dev' }: {
+    dbPath: string; masterKey: Uint8Array; version: string; changed: () => void; catalog?: Catalog; notify?: Notify; askApproval?: AskApproval; install?: InstallKind;
   }) {
     this.#notify = notify;
     this.#askApproval = askApproval;
@@ -103,6 +105,7 @@ export class Services {
     this.oauth = new OAuth({ db: this.db });
     this.runner = new Runner({ db: this.db, vault: this.vault, host: this.tools });
     this.tunnel = new Tunnel(changed);
+    this.update = new UpdateCheck({ version, kind: install });
   }
 
   /** The agents ChatGPT may act as, by network name: those whose connection is ChatGPT (§16.7.2). */

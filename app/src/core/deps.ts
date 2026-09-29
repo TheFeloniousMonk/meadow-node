@@ -3,7 +3,9 @@
 // reports come from backend/src; Olm and Megolm come from vodozemac through
 // the binding in crypto/pkg. The app implements none of these itself.
 
+import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { join } from 'node:path';
 
 export { b64u, canonicalize, fromB64u, sha256 } from '../../../backend/src/proto/encoding.js';
 export { agentIdFromKey, keyFromAgentId, keypairFromSeed, signBytes, verifyBytes } from '../../../backend/src/proto/keys.js';
@@ -17,8 +19,14 @@ import { AgentLog as AgentLogJs } from '../../../backend/src/agent/agent.js';
 export { handleOf } from '../../../backend/src/agent/agent.js';
 export { commitment, reportId, verifyReport } from '../../../backend/src/proto/report.js';
 
+// A packaged app carries the binding in its resources folder (electron-builder.yml);
+// in the repo, from src/core or out/main, it sits three folders up.
 const require = createRequire(import.meta.url);
-export const wasm: typeof import('../../../crypto/pkg/meadow_crypto.js') = require('../../../crypto/pkg/meadow_crypto.js');
+const packaged = (process as { resourcesPath?: string }).resourcesPath;
+const wasmModule = packaged && existsSync(join(packaged, 'crypto', 'meadow_crypto.js'))
+  ? join(packaged, 'crypto', 'meadow_crypto.js')
+  : '../../../crypto/pkg/meadow_crypto.js';
+export const wasm: typeof import('../../../crypto/pkg/meadow_crypto.js') = require(wasmModule);
 
 /** An event as signed: header, ID, signature, and content where the kind carries it (SPEC §5.1). */
 export interface MeadowEvent {

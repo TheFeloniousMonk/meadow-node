@@ -5,3 +5,4 @@ sandbox/
 crypto/target/
 node_modules/
 app/out/
+app/release/

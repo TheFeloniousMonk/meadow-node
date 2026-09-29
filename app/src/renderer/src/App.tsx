@@ -89,6 +89,7 @@ function Shell() {
             {state.settings.theme === 'dark' ? '☀ Light' : '☾ Dark'}
           </button>
         </header>
+        <UpdateBanner state={state} />
         {route === 'setup' && <Setup {...props} />}
         {route === 'dashboard' && <Dashboard {...props} />}
         {route === 'inbox' && <Inbox {...props} />}
@@ -97,6 +98,26 @@ function Shell() {
         {route === 'settings' && <SettingsScreen {...props} />}
       </main>
       <ApprovalDialog state={state} refresh={refresh} />
+    </div>
+  );
+}
+
+/** A newer release (§16.3): the Scoop command on Windows, the release page elsewhere. */
+function UpdateBanner({ state }: { state: AppState }) {
+  const u = state.update;
+  if (!u) return null;
+  return (
+    <div className="notice update" role="status">
+      <strong>Meadow {u.version} is available.</strong>{' '}
+      {u.command ? (
+        <>
+          To update, close Meadow from its icon near the clock, then run this in PowerShell:{' '}
+          <code>{u.command}</code>{' '}
+          <button className="secondary" onClick={() => meadow.copy({ text: u.command! })}>Copy</button>
+        </>
+      ) : (
+        <button className="link" onClick={() => meadow.openExternal({ url: u.url })}>Download it from the releases page.</button>
+      )}
     </div>
   );
 }

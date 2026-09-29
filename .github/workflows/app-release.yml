@@ -1,0 +1,156 @@
+# Builds and releases the Meadow app (SPEC §16.3) from an app-v<version> tag.
+# The node's releases are tagged v<version> and never run this.
+#
+#   test     the node's conformance vectors and tests, then the app's
+#   build    Windows zip, macOS zips (arm64, x64; ad-hoc signed), Linux .deb and AppImage
+#   release  SHA256SUMS, notes from app/CHANGELOG.md, the GitHub release, the Scoop bucket
+#   scoop    installs the released version through the bucket, as a person would
+name: app-release
+on:
+  push:
+    tags: ['app-v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+# One run per tag at a time: a second run for the same tag finds the release
+# published and skips it, so the bucket never gets another build's hash.
+concurrency:
+  group: app-release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: 24, cache: npm, cache-dependency-path: app/package-lock.json }
+      - name: The tag matches app/package.json
+        if: startsWith(github.ref, 'refs/tags/app-v')
+        run: |
+          want="${GITHUB_REF_NAME#app-v}"
+          have="$(node -p "require('./app/package.json').version")"
+          [ "$want" = "$have" ] || { echo "::error::tag $GITHUB_REF_NAME but app/package.json says $have"; exit 1; }
+      - run: npm test
+      - run: npm ci
+        working-directory: app
+      - run: npm run typecheck && npm run typecheck:web
+        working-directory: app
+      - run: npm test
+        working-directory: app
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { os: windows-latest, target: --win }
+          - { os: macos-latest, target: --mac }
+          - { os: ubuntu-latest, target: --linux }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: app
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: 24, cache: npm, cache-dependency-path: app/package-lock.json }
+      - run: npm ci
+      - run: npm run build
+      - run: npx electron-builder ${{ matrix.target }} --publish never
+        env:
+          # Nothing is signed with Apple or Microsoft (§16.3); macOS is ad-hoc signed by the config.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+      - name: The macOS apps carry a valid ad-hoc signature
+        if: runner.os == 'macOS'
+        run: |
+          for app in release/mac*/Meadow.app; do
+            codesign --verify --deep --strict "$app"
+            codesign -dv "$app" 2>&1 | grep -q 'Signature=adhoc'
+          done
+      - name: The packaged app carries the crypto binding
+        run: |
+          n=$(find release -path '*resources/crypto/meadow_crypto_bg.wasm' | wc -l)
+          [ "$n" -ge 1 ] || { echo "::error::no resources/crypto in the package"; exit 1; }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: build-${{ runner.os }}
+          path: |
+            app/release/*.zip
+            app/release/*.deb
+            app/release/*.AppImage
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/app-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      published: ${{ steps.published.outputs.already != 'true' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: 24 }
+      - uses: actions/download-artifact@v8
+        with: { path: dist, pattern: build-*, merge-multiple: true }
+      - run: node app/scripts/release/checksums.mjs dist
+      - name: Release notes from the changelog
+        working-directory: app
+        run: node scripts/release/release-notes.mjs "${GITHUB_REF_NAME#app-v}" ../dist/NOTES.md "${{ github.repository }}"
+      # A release that already carries SHA256SUMS was published by an earlier
+      # run for this tag. Uploading again would replace its files with a build
+      # whose hashes differ from the bucket's. To rebuild on purpose, delete its assets first.
+      - name: Check whether the release is already published
+        id: published
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "${{ github.repository }}" --json assets --jq '.assets[].name' 2>/dev/null | grep -qx SHA256SUMS; then
+            echo "already=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::$GITHUB_REF_NAME already has its files; skipping the upload and the bucket update."
+          else
+            echo "already=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish the GitHub release
+        if: steps.published.outputs.already != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # --latest=false: the repository's "latest" release stays the node's.
+          gh release create "$GITHUB_REF_NAME" --repo "${{ github.repository }}" --verify-tag --latest=false \
+            --title "Meadow app ${GITHUB_REF_NAME#app-v}" --notes-file dist/NOTES.md \
+            dist/*.zip dist/*.deb dist/*.AppImage dist/SHA256SUMS
+      - name: Update the Scoop bucket
+        if: steps.published.outputs.already != 'true'
+        run: |
+          VERSION="${GITHUB_REF_NAME#app-v}"
+          git fetch origin main
+          git checkout main
+          node app/scripts/release/update-bucket.mjs "$VERSION" dist/SHA256SUMS "${{ github.repository }}" bucket/meadow.json
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add bucket/meadow.json
+          git commit -m "Bucket: Meadow app $VERSION" || echo "no bucket change"
+          git push origin main
+
+  scoop:
+    needs: release
+    if: needs.release.outputs.published == 'true'
+    runs-on: windows-latest
+    steps:
+      - name: Install through the bucket, as the README says
+        shell: pwsh
+        run: |
+          iex "& {$(irm get.scoop.sh)} -RunAsAdmin"
+          $env:PATH = "$env:USERPROFILE\scoop\shims;$env:PATH"
+          scoop install git
+          scoop bucket add meadow https://github.com/${{ github.repository }}
+          scoop install meadow
+          $want = "${{ github.ref_name }}".Substring(5)
+          $have = (scoop list meadow 6>$null | Where-Object Name -eq 'meadow').Version
+          if ($have -ne $want) { throw "scoop installed '$have', expected '$want'" }
+          if (-not (Test-Path "$env:USERPROFILE\scoop\apps\meadow\current\Meadow.exe")) { throw 'Meadow.exe missing under current' }
+          if (-not (Test-Path "$env:USERPROFILE\scoop\apps\meadow\current\resources\crypto\meadow_crypto_bg.wasm")) { throw 'crypto binding missing' }

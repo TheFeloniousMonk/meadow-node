@@ -10,12 +10,13 @@
 //   --hidden              start in the tray (how start-at-login opens it)
 
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, shell, Tray } from 'electron';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { masterKey } from './master-key.ts';
 import { Services } from '../app/services.ts';
 import { createHandlers } from '../app/handlers.ts';
 import { CHANNELS } from '../shared/api.ts';
+import { bridgeCopyPath, installKind, launchPath } from '../core/update.ts';
 
 const arg = (name: string) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 const dev = !app.isPackaged;
@@ -24,8 +25,55 @@ const route = dev ? arg('route') : undefined;
 const hidden = process.argv.includes('--hidden');
 if (dev && arg('data')) app.setPath('userData', resolve(arg('data')!));
 const resources = join(import.meta.dirname, '../../resources');
+const install = installKind(process.execPath, process.env, app.isPackaged);
+
+/**
+ * Start at login, in the tray (§16.14). Windows and macOS keep login items;
+ * Linux desktops read ~/.config/autostart. Either way the entry names the
+ * launch path, which survives updates.
+ */
+function startAtLogin(on: boolean) {
+  const exe = launchPath(process.execPath, process.env, install);
+  if (process.platform !== 'linux') {
+    app.setLoginItemSettings({ openAtLogin: on, path: exe, args: ['--hidden'] });
+    return;
+  }
+  const file = join(process.env.XDG_CONFIG_HOME || join(app.getPath('home'), '.config'), 'autostart', 'meadow.desktop');
+  if (!on) return void rmSync(file, { force: true });
+  mkdirSync(dirname(file), { recursive: true });
+  // Desktop Entry quoting: inside double quotes, escape " ` $ and \ with a backslash.
+  const quoted = `"${exe.replace(/(["`$\\])/g, '\\$1')}"`;
+  writeFileSync(file, `[Desktop Entry]\nType=Application\nName=Meadow\nExec=${quoted} --hidden\nX-GNOME-Autostart-enabled=true\n`);
+}
+
+/**
+ * Claude Desktop's entry must outlive updates, which replace the app's own
+ * folder (a new Scoop version folder, a new AppImage mount). So the bridge,
+ * which uses Node built-ins only, is copied into the data folder, and the
+ * entry names that copy and a launch path that stays put (§16.7.1).
+ */
+function installBridge(userData: string): string {
+  const packagedBridge = join(import.meta.dirname, 'bridge.js');
+  if (!app.isPackaged) return packagedBridge;
+  const target = bridgeCopyPath(userData);
+  const code = readFileSync(packagedBridge);
+  if (!existsSync(target) || !readFileSync(target).equals(code)) {
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(`${target}.tmp`, code);
+    renameSync(`${target}.tmp`, target);
+  }
+  return target;
+}
 
 app.setAppUserModelId('com.meadowprotocol.app'); // Windows: notifications show as Meadow
+
+// Linux: Chromium looks for a keyring only on desktops it recognises, and
+// elsewhere (i3, Sway, a bare X session) uses a fixed built-in password. Ask
+// for the Secret Service everywhere but KDE, which it detects (master-key.ts
+// refuses the fixed password).
+if (process.platform === 'linux' && !app.commandLine.hasSwitch('password-store') && !/kde/i.test(process.env.XDG_CURRENT_DESKTOP ?? '')) {
+  app.commandLine.appendSwitch('password-store', 'gnome-libsecret');
+}
 
 let win: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -120,8 +168,9 @@ else {
   app.whenReady().then(async () => {
     try {
       const dir = app.getPath('userData');
-      services = new Services({ dbPath: join(dir, 'meadow.db'), masterKey: masterKey(dir), version: app.getVersion(), changed, notify, askApproval });
+      services = new Services({ dbPath: join(dir, 'meadow.db'), masterKey: masterKey(dir), version: app.getVersion(), changed, notify, askApproval, install });
     } catch (err) {
+      console.error('Meadow could not start:', err);
       dialog.showErrorBox('Meadow could not start', err instanceof Error ? err.message : String(err));
       app.exit(1);
       return;
@@ -131,8 +180,8 @@ else {
       services.setSettings({ theme: nativeTheme.shouldUseDarkColors ? 'dark' : 'light' });
     }
     const handle = createHandlers(services, {
-      execPath: process.execPath,
-      bridgeScript: join(import.meta.dirname, 'bridge.js'),
+      execPath: launchPath(process.execPath, process.env, install),
+      bridgeScript: installBridge(app.getPath('userData')),
       copy: (text) => clipboard.writeText(text),
       openExternal: (url) => void shell.openExternal(url),
       saveFile: async (defaultName, data) => {
@@ -147,7 +196,7 @@ else {
         return { name: basename(r.filePaths[0]), data: readFileSync(r.filePaths[0]) };
       },
       applySettings: (s) => {
-        if (!dev) app.setLoginItemSettings({ openAtLogin: s.startAtLogin, args: ['--hidden'] });
+        if (!dev) startAtLogin(s.startAtLogin);
       },
     });
     for (const c of CHANNELS) ipcMain.handle(`meadow:${c}`, (_e, arg) => handle(c, arg));
@@ -155,6 +204,7 @@ else {
     await services.listen();
     if (!screenshot) await services.listenPublic();
     services.schedule();
+    if (!screenshot) services.update.start(changed);
     if (!screenshot) createTray();
     win = await createWindow();
 

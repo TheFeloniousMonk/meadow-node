@@ -4,7 +4,69 @@ The reference Meadow client (SPEC §16): an Electron app that holds an agent's
 keys, runs end-to-end encryption, pays for every call from a local wallet
 within a daily budget, and lets the person's AI use Meadow through tools.
 
-Not released. Node 24 or later.
+Not released yet. Building it needs Node 24 or later.
+
+## Install
+
+Releases are on the [releases page](https://github.com/TheFeloniousMonk/meadow-node/releases),
+tagged `app-v<version>` (the node's own releases are tagged `v<version>`).
+Nothing is signed with Apple or Microsoft, so each platform has its own path.
+Every release lists `SHA256SUMS` for its files.
+
+### Windows
+
+Install through [Scoop](https://scoop.sh) only. Windows blocks unsigned
+programs a browser downloads, and Scoop downloads and checks the app itself,
+so nothing is blocked. The zip on the releases page is what Scoop installs, not
+a manual install. In PowerShell, not as administrator:
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+```powershell
+irm get.scoop.sh | iex
+```
+
+```powershell
+scoop install git
+```
+
+```powershell
+scoop bucket add meadow https://github.com/TheFeloniousMonk/meadow-node
+```
+
+```powershell
+scoop install meadow
+```
+
+The first three lines are needed once, and only if Scoop is not installed.
+Meadow appears in the Start menu under Scoop Apps. When the app says a new
+version is out, quit Meadow from its icon near the clock, then run
+`scoop update meadow`.
+
+### macOS
+
+1. Download the zip for your Mac: `mac-arm64` for Apple silicon (M1 and
+   later), `mac-x64` for Intel.
+2. Open the zip, and drag Meadow to Applications before opening it.
+3. Open Meadow once. macOS says it cannot check it; choose Done.
+4. Open System Settings, then Privacy & Security, scroll down, and choose
+   Open Anyway next to Meadow. Confirm with your password.
+
+After that it opens normally.
+
+### Linux
+
+- **Ubuntu and Debian:** download the `.deb` and install it with
+  `sudo apt install ./meadow_<version>_amd64.deb`. It brings its
+  dependencies and the AppArmor profile Ubuntu 24.04 needs.
+- **Other distributions:** the AppImage. Make it executable
+  (`chmod +x Meadow-*.AppImage`) and run it. It needs `libfuse2`
+  (`sudo apt install libfuse2t64` on Ubuntu 24.04, `libfuse2` elsewhere).
+
+Meadow keeps its key in your desktop keyring (GNOME Keyring or KWallet), and
+will not start without one.
 
 ## Layout
 
@@ -25,7 +87,14 @@ npm test                 # conformance vectors, flows against a node, payments, 
 npm run mutate           # proves the e2e vectors catch every broken §8 rule
 npm run dev              # the app, with hot reload
 npm run build            # out/
+npx electron-builder --win   # or --mac, --linux: release/ (CI does this from a tag)
 ```
+
+Releasing: set `version` in `package.json`, add its section to
+`CHANGELOG.md`, commit, and push the tag `app-v<version>`.
+`.github/workflows/app-release.yml` tests, builds every platform, publishes
+the release with `SHA256SUMS`, updates the Scoop manifest in `bucket/`, and
+installs it through Scoop to check.
 
 Development only:
 

@@ -100,6 +100,8 @@ export interface RoomView {
 
 export interface AppState {
   version: string;
+  /** A newer release, when the daily check found one (§16.3). */
+  update: { version: string; url: string; command: string | null } | null;
   settings: Settings;
   agents: AgentView[];
   wallets: WalletView[];

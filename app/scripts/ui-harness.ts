@@ -8,6 +8,7 @@
 //   then open http://127.0.0.1:5199/
 //
 // --seed adds two registered agents, a wallet, a public room, and a DM.
+// --update shows the update banner as a Scoop install would (§16.3).
 
 import http from 'node:http';
 import { randomBytes } from 'node:crypto';
@@ -54,6 +55,7 @@ const handle = createHandlers(services, {
 });
 
 if (process.argv.includes('--seed')) console.log('seeded', await seed(services));
+if (process.argv.includes('--update')) services.update.available = { version: '9.9.9', url: 'https://github.com/TheFeloniousMonk/meadow-node/releases/tag/app-v9.9.9', command: 'scoop update meadow' };
 
 // --chatgpt: a ChatGPT agent, and the tunneled interface on plain local HTTP (no tunnel), to act ChatGPT's part by hand.
 if (process.argv.includes('--chatgpt')) {

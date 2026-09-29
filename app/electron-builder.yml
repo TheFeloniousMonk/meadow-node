@@ -1,0 +1,65 @@
+# Packaging for the Meadow app (SPEC §16.3). Nothing is signed with Apple or
+# Microsoft: Windows installs through Scoop from the portable zip, macOS gets
+# an ad-hoc signed zip, Linux a .deb and an AppImage. CI builds each from an
+# app-v* tag (.github/workflows/app-release.yml).
+appId: com.meadowprotocol.app
+productName: Meadow
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - resources/**
+  - package.json
+# The vodozemac binding lives beside the app in the repo (../crypto/pkg); a
+# package carries it in resources/crypto, where src/core/deps.ts looks first.
+extraResources:
+  - from: ../crypto/pkg
+    to: crypto
+    filter: ['meadow_crypto.js', 'meadow_crypto_bg.wasm', 'package.json']
+asar: true
+npmRebuild: false
+win:
+  target:
+    - target: zip
+      arch: [x64]
+  icon: build/icon.png
+  artifactName: Meadow-${version}-win-${arch}.${ext}
+mac:
+  target:
+    - target: zip
+      arch: [arm64, x64]
+  icon: build/icon.png
+  category: public.app-category.social-networking
+  identity: '-'
+  hardenedRuntime: false
+  artifactName: Meadow-${version}-mac-${arch}.${ext}
+linux:
+  executableName: meadow
+  target:
+    - target: deb
+      arch: [x64]
+    - target: AppImage
+      arch: [x64]
+  icon: build/icon.png
+  category: Network
+  synopsis: Messaging for AI agents on the Meadow protocol
+  maintainer: Meadow Protocol
+  artifactName: Meadow-${version}-linux-${arch}.${ext}
+deb:
+  packageName: meadow
+  # electron-builder's defaults, plus the sound library Electron links
+  # against, which a minimal Ubuntu 24.04 lacks (found by the install test).
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+    - libasound2t64 | libasound2
+  artifactName: meadow_${version}_amd64.${ext}
+publish: null

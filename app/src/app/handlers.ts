@@ -57,6 +57,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       const path = claudePath();
       return {
         version: s.version,
+        update: s.update.available,
         settings: s.settings(),
         agents: s.core.agents().map((a) => {
           const conn = s.connections.get(a.id) as any;

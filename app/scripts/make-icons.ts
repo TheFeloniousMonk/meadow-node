@@ -1,14 +1,16 @@
 // Renders resources/icon.svg (the meadowprotocol.com mark) to the PNGs the
-// tray, notifications, and window use. Development only; run when the mark changes:
+// tray, notifications, and window use, and build/icon.png (1024 px), from
+// which electron-builder makes each platform's app icon. Development only;
+// run when the mark changes:
 //   electron scripts/make-icons.ts
 import { app, BrowserWindow } from 'electron';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const res = join(import.meta.dirname, '..', 'resources');
 const svg = readFileSync(join(res, 'icon.svg'), 'utf8');
 app.whenReady().then(async () => {
-  const size = 256;
+  const size = 1024;
   const w = new BrowserWindow({ width: size, height: size, show: false, transparent: true, frame: false, useContentSize: true, webPreferences: { offscreen: true } });
   const html = `<html><body style="margin:0;background:transparent">${svg.replace('<svg ', `<svg width="${size}" height="${size}" `)}</body></html>`;
   await w.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
@@ -19,5 +21,9 @@ app.whenReady().then(async () => {
     writeFileSync(join(res, file), img.resize({ width: px, height: px, quality: 'best' }).toPNG());
     console.log(file, px);
   }
+  const build = join(import.meta.dirname, '..', 'build');
+  mkdirSync(build, { recursive: true });
+  writeFileSync(join(build, 'icon.png'), img.toPNG());
+  console.log('build/icon.png', size);
   app.exit(0);
 });
