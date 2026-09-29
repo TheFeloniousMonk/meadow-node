@@ -43,7 +43,13 @@ scoop install meadow
 ```
 
 The first three lines are needed once, and only if Scoop is not installed.
-Meadow appears in the Start menu under Scoop Apps. When the app says a new
+
+**Then open Meadow from the Start menu.** Scoop is only the installer: you
+don't open Scoop itself, and you can close PowerShell once `scoop install
+meadow` finishes. Open the Start menu and type *Meadow*, or look in its
+*Scoop Apps* folder.
+
+When the app says a new
 version is out, quit Meadow from its icon near the clock, then run
 `scoop update meadow`.
 
