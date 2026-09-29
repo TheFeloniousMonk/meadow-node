@@ -1,0 +1,126 @@
+// The fixed set of messages between the window and the core (SPEC §16.1).
+// The window asks; only the core acts. Nothing here carries a key or a seed,
+// except a new wallet's recovery phrase, returned once to be shown, and a
+// phrase the person types to import a wallet.
+
+export type Theme = 'light' | 'dark';
+export type ConnectionType = 'claude' | 'chatgpt' | 'other';
+
+export interface Settings {
+  theme: Theme;
+  textScale: number; // 1 = 16 px body text
+  syncEnabled: boolean;
+  syncMinutes: number;
+  localPort: number;
+  perCallMaxUsd: string;
+}
+
+export interface AgentView {
+  id: string;
+  displayName: string;
+  name: string;
+  handle: string;
+  registered: boolean;
+  connection: { type: ConnectionType; name: string } | null;
+  claude: { installed: boolean; upToDate: boolean; unreadable: boolean; path: string } | null;
+  walletId: string | null;
+  unread: number;
+  queued: number;
+  lastSync: number | null;
+}
+
+export interface WalletView {
+  id: string;
+  name: string;
+  address: string;
+  dailyBudgetUsd: string;
+  spent24hUsd: string;
+  agents: string[];
+}
+
+export interface PaymentView {
+  at: number;
+  service: string;
+  path: string;
+  usd: string;
+  agent: string | null;
+  status: string;
+  tx: string | null;
+}
+
+export interface MessageView {
+  id: string;
+  room: string;
+  author: string;
+  authorHandle: string | null;
+  mine: boolean;
+  ts: number;
+  status: string;
+  statusWords: string | null;
+  text?: string;
+  replyTo?: string;
+  unreadByAgent: boolean;
+  queued: boolean;
+  report?: { valid: boolean; reason?: string; text?: string; note?: string; why?: string };
+}
+
+export interface RoomView {
+  room: string;
+  type: string | null;
+  status: string;
+  name?: string;
+  /** In a DM, the other agent: its handle when known, else its ID. */
+  with?: string;
+  members: string[];
+  unread: number;
+  last: number;
+}
+
+export interface AppState {
+  version: string;
+  settings: Settings;
+  agents: AgentView[];
+  wallets: WalletView[];
+  payments: PaymentView[];
+  problems: { at: number; kind: string; text: string }[];
+  pricePerCallUsd: string | null;
+  catalogError: string | null;
+}
+
+/** Everything the window may ask, and what each returns. */
+export interface Api {
+  state(): AppState;
+  balances(): Record<string, string | null>;
+  createAgent(a: { displayName: string; type: ConnectionType; walletId: string }): { id: string; handle: string };
+  claudePreview(a: { agent: string }): { path: string; name: string; entry: unknown; unreadable: boolean };
+  connectClaude(a: { agent: string }): { ok: boolean; error?: string };
+  disconnectClaude(a: { agent: string }): { ok: boolean; error?: string };
+  localInterface(a: { agent: string }): { mcpUrl: string; restUrl: string; openApiUrl: string; token: string };
+  rotateToken(a: { agent: string }): { ok: true };
+  assignWallet(a: { agent: string; walletId: string }): { ok: true };
+  createWallet(a: { name: string; dailyBudgetUsd: string }): { id: string; address: string; mnemonic: string };
+  importWallet(a: { name: string; phrase: string; dailyBudgetUsd: string }): { id: string; address: string };
+  setBudget(a: { walletId: string; dailyBudgetUsd: string }): { ok: true };
+  walletQr(a: { walletId: string }): { svg: string; address: string };
+  syncNow(a: { agent: string }): { ok: boolean; message: string };
+  rooms(a: { agent: string }): RoomView[];
+  messages(a: { agent: string; room: string }): MessageView[];
+  setSettings(a: Partial<Settings>): Settings;
+  copy(a: { text: string }): { ok: true };
+  openExternal(a: { url: string }): { ok: boolean };
+}
+
+export type Channel = keyof Api;
+export const CHANNELS: Channel[] = [
+  'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'disconnectClaude', 'localInterface', 'rotateToken',
+  'assignWallet', 'createWallet', 'importWallet', 'setBudget', 'walletQr', 'syncNow', 'rooms', 'messages', 'setSettings',
+  'copy', 'openExternal',
+];
+
+/** Links the window may open in the browser. */
+export const EXTERNAL_LINKS = ['https://github.com/TheFeloniousMonk/meadow-node', 'https://meadowprotocol.com', 'https://basescan.org/'];
+
+/** An answer the core refused, in plain words, carried across the bridge as a value. */
+export interface Failure {
+  error: string;
+}

@@ -4,3 +4,4 @@ SECURITY-SANDBOX-PLAN.md
 sandbox/
 crypto/target/
 node_modules/
+app/out/

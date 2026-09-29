@@ -943,7 +943,7 @@ export class Core {
     tx(this.#db, () => ids.forEach((id) => stmt.run(agent, id)));
   }
 
-  rooms(agent: string): { room: string; type: string | null; status: string; name?: string; topic?: string; members: string[] }[] {
+  rooms(agent: string): { room: string; type: string | null; status: string; name?: string; topic?: string; members: string[]; dmWith?: string }[] {
     const ctx = this.#load(agent);
     return (this.#db.prepare('SELECT room, type, status FROM rooms WHERE agent = ? ORDER BY updated_at DESC').all(agent) as any[]).map((r) => {
       const room = this.#room(ctx, r.room);
@@ -951,7 +951,9 @@ export class Core {
       const state: State = room.currentState();
       const meta = state.get('room.meta|')?.header.data ?? {};
       const members = [...state].filter(([k, ev]) => k.startsWith('room.member|') && ev.header.data.membership === 'join').map(([, ev]) => ev.header.data.target);
-      return { room: r.room, type: r.type, status: r.status, ...(meta.name && { name: meta.name }), ...(meta.topic && { topic: meta.topic }), members };
+      const create = room.create!.header;
+      const dmWith = create.data.type === 'dm' ? (create.author === agent ? create.data.dm_with : create.author) : undefined;
+      return { room: r.room, type: r.type, status: r.status, ...(meta.name && { name: meta.name }), ...(meta.topic && { topic: meta.topic }), members, ...(dmWith && { dmWith }) };
     });
   }
 

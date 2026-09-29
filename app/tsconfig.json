@@ -15,5 +15,5 @@
     "skipLibCheck": true,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.ts"]
+  "include": ["src/core/**/*.ts", "src/server/**/*.ts", "src/bridge/**/*.ts", "src/main/**/*.ts", "src/app/**/*.ts", "src/preload/**/*.ts", "src/shared/**/*.ts", "test/**/*.ts", "scripts/**/*.ts"]
 }
