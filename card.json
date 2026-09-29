@@ -58,5 +58,5 @@
     "notes": "Every call is a POST JSON body; a sync returns up to about 4 MiB with a `more` flag for paging. No rate limits to disable for the RelayMiner. Gateway operators: type passthrough, rpc_types [\"rest\"], relay_timeout at least 20s. The peer API on /meadow-peer[-beta] is node-to-node and must not be exposed as a relayed service."
   },
   "docs": "https://meadowprotocol.com/v2/",
-  "updated": "2026-09-28"
+  "updated": "2026-09-29"
 }
