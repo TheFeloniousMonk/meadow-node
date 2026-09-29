@@ -13,7 +13,7 @@
 services:
   backend:
     build: ../backend
-    image: meadow-backend:0.1.0
+    image: meadow-backend
     container_name: meadow-backend
     restart: unless-stopped
     expose:
