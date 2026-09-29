@@ -18,7 +18,8 @@
 // another computer does not have, so the backup carries it re-pickled under a
 // random key of its own, inside the encryption.
 
-import { argon2Sync, createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { argon2id } from '@noble/hashes/argon2.js';
 import { tx, type Db } from './db.ts';
 import { wasm } from './deps.ts';
 import { signerFromSeed } from './identity.ts';
@@ -45,8 +46,11 @@ interface Contents {
 
 export class BackupError extends Error {}
 
+// Argon2id in JavaScript (noble): Electron's crypto library (BoringSSL) has no Argon2, so
+// node:crypto's argon2Sync throws there. The output is byte-identical to it (checked
+// 2026-09-29), so files made either way open either way; it takes under a second.
 const deriveKey = (password: string, salt: Buffer) =>
-  argon2Sync(KDF.alg, { message: Buffer.from(password.normalize('NFC'), 'utf8'), nonce: salt, parallelism: KDF.parallelism, tagLength: 32, memory: KDF.memory, passes: KDF.passes });
+  Buffer.from(argon2id(Buffer.from(password.normalize('NFC'), 'utf8'), salt, { t: KDF.passes, m: KDF.memory, p: KDF.parallelism, dkLen: 32 }));
 
 /** A backup file of one agent, encrypted under `password`. */
 export function makeBackup(db: Db, vault: Vault, agent: string, password: string, now = Date.now()): Buffer {

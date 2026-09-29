@@ -17,7 +17,8 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "screenshot": "electron-vite build && electron . --screenshot=../app-shots/dashboard.png",
-    "typecheck:web": "tsc --noEmit -p tsconfig.web.json"
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
+    "test:electron": "node scripts/test-electron.mjs"
   },
   "devDependencies": {
     "@fontsource-variable/fraunces": "5.3.0",
