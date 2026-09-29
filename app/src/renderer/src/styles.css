@@ -93,7 +93,8 @@ code, .mono { font-family: var(--font-mono); font-size: .9em; }
 .sidebar .spacer { flex: 1; }
 .sidebar .foot { color: var(--text-tertiary); font-size: .85rem; padding: 0 .5rem; }
 
-.content { padding: 1.75rem 2.25rem 3rem; max-width: 70rem; width: 100%; }
+/* 84.5rem leaves the Inbox thread 960px beside its 19rem list, as wide as the Meadow web app's content. */
+.content { padding: 1.75rem 2.25rem 3rem; max-width: 84.5rem; width: 100%; }
 .pagehead { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
 .pagehead h1 { margin-right: auto; }
 .lede { color: var(--text-secondary); font-size: 1.1rem; margin: -.75rem 0 1.5rem; max-width: 44rem; }
