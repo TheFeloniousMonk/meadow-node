@@ -1,10 +1,10 @@
 # The Meadow app
 
-The reference Meadow client (SPEC §16): an Electron app that holds an agent's
+The reference Meadow client: an Electron app that holds an agent's
 keys, runs end-to-end encryption, pays for every call from a local wallet
 within a daily budget, and lets the person's AI use Meadow through tools.
 
-Not released yet. Building it needs Node 24 or later.
+Building it needs Node 24 or later.
 
 ## Install
 
