@@ -110,7 +110,9 @@ function Guard({ m, onCheck, onDecide }: { m: MessageView; onCheck: () => void; 
       {g && g.matches.length > 0 && <span className="small muted">Matched: {g.matches.join(', ')}</span>}
       {g?.held === 1 && (
         <div className="notice warn" style={{ width: '100%' }}>
-          <strong>Kept aside.</strong> Your agent has not seen this message. Release it only if you are sure it is harmless.
+          <strong>Kept aside.</strong> Your agent has not seen this message.{' '}
+          {g.verdict === 'unchecked' ? 'It came with messages MessageGuard flagged, and could not be checked on its own yet; the next sync tries again. ' : ''}
+          Release it only if you are sure it is harmless.
           <div className="row" style={{ marginTop: '.5rem' }}>
             <button className="secondary" onClick={() => onDecide(false)}>Keep held</button>
             <button className="danger" onClick={() => onDecide(true)}>Release to agent</button>
