@@ -263,10 +263,10 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       if (!w) throw new Error('There is no such wallet.');
       return { svg: await QRCode.toString(w.address, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' }), address: w.address };
     },
-    balances: async () => {
-      // Read again after a minute, or when a wallet is new since the last read.
+    balances: async ({ fresh = false }: { fresh?: boolean } = {}) => {
+      // Read again when asked (Refresh), after half a minute, or when a wallet is new since the last read.
       const ids = s.wallets.list().map((w) => w.id);
-      if (!balanceCache || Date.now() - balanceCache.at > 60_000 || ids.some((id) => !(id in balanceCache!.values))) {
+      if (fresh || !balanceCache || Date.now() - balanceCache.at > 30_000 || ids.some((id) => !(id in balanceCache!.values))) {
         const rail = s.catalog.baseRail('meadow');
         const values: Record<string, string | null> = {};
         for (const w of s.wallets.list()) {

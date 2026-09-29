@@ -5,7 +5,7 @@ import { meadow, shortAddress, time, useAction, useCopy, when } from '../lib.tsx
 import type { ScreenProps } from '../App.tsx';
 import { TopOff } from './Wallets.tsx';
 
-export function Dashboard({ state, go, balances }: ScreenProps) {
+export function Dashboard({ state, go, balances, reloadBalances }: ScreenProps) {
   const copy = useCopy();
   const { busy, run } = useAction();
   const [result, setResult] = useState<string | null>(null);
@@ -112,7 +112,7 @@ export function Dashboard({ state, go, balances }: ScreenProps) {
           </table>
         )}
       </div>
-      {topOff && <TopOff walletId={topOff} onClose={() => setTopOff(null)} />}
+      {topOff && <TopOff walletId={topOff} balance={balances[topOff]} check={() => reloadBalances(true)} onClose={() => setTopOff(null)} />}
     </div>
   );
 }

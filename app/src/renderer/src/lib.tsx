@@ -24,17 +24,26 @@ export function useAppState(): [AppState | null, () => Promise<void>, string | n
 }
 
 /** Wallet balances from Base, read by the core (cached for a minute). */
-export function useBalances(deps: unknown[] = []): Record<string, string | null> {
-  const [b, setB] = useState<Record<string, string | null>>({});
+/**
+ * Wallet balances, read from Base: when `deps` change, every minute while the
+ * app is open (a deposit changes nothing else the window watches), and at once
+ * on reload(true), the Wallets screen's Refresh.
+ */
+export function useBalances(deps: unknown[] = []): { values: Record<string, string | null>; at: number | null; reload: (fresh?: boolean) => Promise<void> } {
+  const [b, setB] = useState<{ values: Record<string, string | null>; at: number | null }>({ values: {}, at: null });
+  const reload = useCallback(async (fresh = false) => {
+    const values = await meadow.balances({ fresh });
+    setB({ values, at: Date.now() });
+  }, []);
   useEffect(() => {
-    let live = true;
-    meadow.balances().then((v) => live && setB(v)).catch(() => {});
-    return () => {
-      live = false;
-    };
+    void reload().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
-  return b;
+  useEffect(() => {
+    const t = window.setInterval(() => void reload().catch(() => {}), 60_000);
+    return () => window.clearInterval(t);
+  }, [reload]);
+  return { ...b, reload };
 }
 
 const ToastContext = createContext<(text: string) => void>(() => {});

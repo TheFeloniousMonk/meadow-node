@@ -2,13 +2,15 @@
 // budget; creating one (the recovery phrase shown once, continued only after
 // the person ticks that it is saved); importing one; topping off by address
 // and QR code; and recent payments.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Dialog, meadow, time, useAction, useCopy } from '../lib.tsx';
 import type { ScreenProps } from '../App.tsx';
 
 const USD = /^\d+(\.\d{1,6})?$/;
 
-export function Wallets({ state, refresh, balances }: ScreenProps) {
+export function Wallets({ state, refresh, balances, balancesAt, reloadBalances }: ScreenProps) {
+  const checking = useAction();
+  const recheck = () => checking.run(() => reloadBalances(true));
   const copy = useCopy();
   const [dialog, setDialog] = useState<'create' | 'import' | { topOff: string } | { budget: string } | null>(null);
   const agentName = (id: string | null) => state.agents.find((a) => a.id === id)?.displayName ?? '—';
@@ -22,6 +24,12 @@ export function Wallets({ state, refresh, balances }: ScreenProps) {
       <div className="row">
         <button onClick={() => setDialog('create')}>Create wallet</button>
         <button className="secondary" onClick={() => setDialog('import')}>Import wallet</button>
+        {state.wallets.length > 0 && (
+          <>
+            <button className="secondary" disabled={checking.busy} onClick={recheck}>{checking.busy ? 'Checking…' : 'Refresh balances'}</button>
+            <span className="small muted">{balancesAt ? `Checked at ${time(balancesAt)}` : 'Not checked yet'}</span>
+          </>
+        )}
       </div>
       {state.wallets.map((w) => {
         const spent = Number(w.spent24hUsd.replace('$', ''));
@@ -75,7 +83,7 @@ export function Wallets({ state, refresh, balances }: ScreenProps) {
 
       {dialog === 'create' && <CreateWallet onClose={close} />}
       {dialog === 'import' && <ImportWallet onClose={close} />}
-      {dialog && typeof dialog === 'object' && 'topOff' in dialog && <TopOff walletId={dialog.topOff} onClose={close} />}
+      {dialog && typeof dialog === 'object' && 'topOff' in dialog && <TopOff walletId={dialog.topOff} balance={balances[dialog.topOff]} check={() => reloadBalances(true)} onClose={close} />}
       {dialog && typeof dialog === 'object' && 'budget' in dialog && (
         <Budget walletId={dialog.budget} current={state.wallets.find((w) => w.id === dialog.budget)!.dailyBudgetUsd} onClose={close} />
       )}
@@ -170,12 +178,19 @@ function Budget({ walletId, current, onClose }: { walletId: string; current: str
 }
 
 /** Top off (§16.9): the address as text with a copy button, and as a QR code. No outside wallet is connected. */
-export function TopOff({ walletId, onClose }: { walletId: string; onClose: () => void }) {
+/** The deposit address; while it is open, the balance is read every 15 seconds, so a deposit shows soon after it lands. */
+export function TopOff({ walletId, balance, check, onClose }: { walletId: string; balance: string | null | undefined; check: () => Promise<void>; onClose: () => void }) {
   const copy = useCopy();
   const [qr, setQr] = useState<{ svg: string; address: string } | null>(null);
   useEffect(() => {
     meadow.walletQr({ walletId }).then(setQr).catch(() => {});
   }, [walletId]);
+  const latest = useRef(check);
+  latest.current = check;
+  useEffect(() => {
+    const t = window.setInterval(() => void latest.current().catch(() => {}), 15_000);
+    return () => window.clearInterval(t);
+  }, []);
   return (
     <Dialog title="Top off" onClose={onClose}>
       <p>Send <strong>USDC on the Base network</strong> to this address, from an exchange or another wallet. Nothing else: other coins, or USDC on another network, would be lost.</p>
@@ -185,7 +200,8 @@ export function TopOff({ walletId, onClose }: { walletId: string; onClose: () =>
           <div className="stack" style={{ flex: 1, minWidth: '14rem' }}>
             <div className="mono" style={{ overflowWrap: 'anywhere', fontSize: '1.05rem' }}>{qr.address}</div>
             <div><button onClick={() => copy(qr.address, 'Address copied')}>Copy address</button></div>
-            <p className="small muted">No ETH is needed: payments are signed here and settled by the portal. The balance updates within a minute of the money arriving.</p>
+            <p>Balance now: <strong>{balance ?? '…'}</strong> USDC</p>
+            <p className="small muted">No ETH is needed: payments are signed here and settled by the portal. While this window is open, the balance is checked every 15 seconds.</p>
           </div>
         </div>
       )}

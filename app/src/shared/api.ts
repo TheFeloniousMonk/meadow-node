@@ -119,7 +119,8 @@ export interface AppState {
 /** Everything the window may ask, and what each returns. */
 export interface Api {
   state(): AppState;
-  balances(): Record<string, string | null>;
+  /** USDC balances by wallet, read from Base; `fresh` skips the half-minute cache (the Refresh button). */
+  balances(a?: { fresh?: boolean }): Record<string, string | null>;
   createAgent(a: { displayName: string; type: ConnectionType; walletId: string }): { id: string; handle: string };
   claudePreview(a: { agent: string }): { path: string; name: string; entry: unknown; unreadable: boolean };
   connectClaude(a: { agent: string }): { ok: boolean; error?: string };

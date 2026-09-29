@@ -43,7 +43,8 @@ export function App() {
 
 function Shell() {
   const [state, refresh, error] = useAppState();
-  const balances = useBalances([state?.wallets.length, state?.payments[0]?.at]);
+  const bal = useBalances([state?.wallets.length, state?.payments[0]?.at]);
+  const balances = bal.values;
   const asked = new URLSearchParams(location.search).get('route') as Route | null;
   const [route, setRoute] = useState<Route | null>(asked);
   const status = useMemo(() => (state ? checks(state, balances) : null), [state, balances]);
@@ -65,7 +66,7 @@ function Shell() {
   const unread = state.agents.reduce((n, a) => n + a.unread, 0);
   const nav: Route[] = status.allDone ? ['dashboard', 'inbox', 'agents', 'wallets', 'settings'] : ['setup', 'dashboard', 'inbox', 'agents', 'wallets', 'settings'];
   const toggleTheme = () => meadow.setSettings({ theme: state.settings.theme === 'dark' ? 'light' : 'dark' }).then(refresh);
-  const props = { state, refresh, go: setRoute, balances };
+  const props = { state, refresh, go: setRoute, balances, balancesAt: bal.at, reloadBalances: bal.reload };
 
   return (
     <div className="app">
@@ -125,4 +126,7 @@ export interface ScreenProps {
   refresh: () => Promise<void>;
   go: Go;
   balances: Record<string, string | null>;
+  /** When the balances were last read, and a way to read them again now (§16.10.4). */
+  balancesAt: number | null;
+  reloadBalances: (fresh?: boolean) => Promise<void>;
 }
