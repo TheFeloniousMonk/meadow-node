@@ -11,9 +11,9 @@
 
 import http from 'node:http';
 import { randomBytes } from 'node:crypto';
-import { mkdtempSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { extname, join, normalize } from 'node:path';
+import { basename, extname, join, normalize } from 'node:path';
 import { Catalog } from '../src/core/catalog.ts';
 import { Services } from '../src/app/services.ts';
 import { createHandlers } from '../src/app/handlers.ts';
@@ -33,6 +33,8 @@ const services = new Services({
   catalog: new Catalog({ url: portal.catalogUrl }),
 });
 await services.catalog.refresh();
+const files = mkdtempSync(join(tmpdir(), 'meadow-ui-files-'));
+let lastSaved: string | null = null;
 const handle = createHandlers(services, {
   execPath: 'C:/Program Files/Meadow/Meadow.exe',
   bridgeScript: 'C:/Program Files/Meadow/resources/app/out/main/bridge.js',
@@ -40,6 +42,14 @@ const handle = createHandlers(services, {
   openExternal: (url) => console.log('open:', url),
   // Never the real Claude Desktop settings.
   claudeConfigPath: join(mkdtempSync(join(tmpdir(), 'meadow-ui-claude-')), 'claude_desktop_config.json'),
+  // Files go to a temporary folder; opening picks the last backup saved there.
+  saveFile: async (name, data) => {
+    lastSaved = join(files, name);
+    writeFileSync(lastSaved, data);
+    console.log('saved:', lastSaved);
+    return lastSaved;
+  },
+  openFile: async () => (lastSaved ? { name: basename(lastSaved), data: readFileSync(lastSaved) } : null),
 });
 
 if (process.argv.includes('--seed')) console.log('seeded', await seed(services));

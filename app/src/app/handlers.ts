@@ -4,6 +4,8 @@
 
 import QRCode from 'qrcode';
 import { formatUsd } from '../core/catalog.ts';
+import { GUARD_SERVICE } from '../core/guard.ts';
+import { backupDue, describeBackup, makeBackup, readBackup, restoreBackup } from '../core/backup.ts';
 import { tokenBalance } from '../core/balance.ts';
 import { add, bridgeEntry, claudeDesktopConfigPath, entryName, remove, status } from '../server/claude-desktop.ts';
 import { CHANNELS, EXTERNAL_LINKS, type Api, type AppState, type Channel, type MessageView } from '../shared/api.ts';
@@ -17,6 +19,12 @@ export interface HandlerEnv {
   openExternal(url: string): void;
   /** Claude Desktop's settings file; by default where Claude Desktop keeps it on this computer. */
   claudeConfigPath?: string;
+  /** Asks where to save a file (a system dialog); resolves to the path written, or null if cancelled. */
+  saveFile(defaultName: string, data: Buffer): Promise<string | null>;
+  /** Asks for a file to open; resolves to its name and bytes, or null. */
+  openFile(): Promise<{ name: string; data: Buffer } | null>;
+  /** Applies settings that belong to the operating system (start at login). */
+  applySettings?(s: ReturnType<Services['settings']>): void;
 }
 
 const STATUS_WORDS: Record<string, string> = {
@@ -30,6 +38,8 @@ const STATUS_WORDS: Record<string, string> = {
 };
 
 export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel, arg: unknown) => Promise<unknown> {
+  // The backup chosen for a restore, held in memory between the person's steps.
+  let restoring: { name: string; data: Buffer } | null = null;
   let balanceCache: { at: number; values: Record<string, string | null> } | null = null;
 
   const claudeEntry = (agent: string) => {
@@ -43,6 +53,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
   const handlers: Api = {
     state(): AppState {
       const price = s.catalog.priceAtomic('meadow');
+      const guardPrice = s.catalog.priceAtomic(GUARD_SERVICE);
       const path = claudePath();
       return {
         version: s.version,
@@ -55,7 +66,10 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
             connection: conn,
             claude: conn?.type === 'claude' ? (() => { const st = status(path, entryName(a.name), claudeEntry(a.id)); return { installed: st.installed, upToDate: st.upToDate, unreadable: st.unreadable, path }; })() : null,
             walletId: s.wallets.walletOf(a.id),
-            unread: messages.length,
+            unread: messages.filter((m) => !m.guard?.held).length,
+            held: s.core.messages(a.id).filter((m) => m.guard?.held === 1).length,
+            lastBackup: (s.db.prepare('SELECT last_backup_at FROM agents WHERE id = ?').get(a.id) as any)?.last_backup_at ?? null,
+            backupDue: backupDue(s.db, a.id),
             queued: s.core.outbox(a.id).filter((e) => e.kind === 'msg.post').length,
             lastSync: s.lastSync.get(a.id) ?? null,
           };
@@ -64,6 +78,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
         payments: s.wallets.payments(30).map((p) => ({ at: p.signed_at, service: p.service, path: p.path, usd: formatUsd(BigInt(p.amount)), agent: p.agent, status: p.status, tx: p.tx })),
         problems: s.core.problems().slice(-20).reverse(),
         pricePerCallUsd: price ? formatUsd(price.atomic, price.decimals) : null,
+        guardPriceUsd: guardPrice ? formatUsd(guardPrice.atomic, guardPrice.decimals) : null,
         catalogError: s.catalog.fetchedAt ? null : 'The app has not read the portal\'s price list yet.',
       };
     },
@@ -152,12 +167,42 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
         ts: m.ts, status: m.status, statusWords: m.status === 'shown' ? null : STATUS_WORDS[m.status] ?? m.status,
         ...(m.text !== undefined && { text: m.text }), ...(m.reply_to && { replyTo: m.reply_to }),
         unreadByAgent: !m.delivered && m.author !== agent, queued: queued.has(m.id),
+        ...(m.guard && { guard: { verdict: m.guard.verdict, matches: m.guard.matches.map((x) => x.label), held: m.guard.held } }),
         ...(m.report && { report: m.report.valid ? { valid: true, reason: m.report.reason, text: m.report.text, note: m.report.note } : { valid: false, why: m.report.why } }),
       }));
     },
 
     setSettings(changes) {
-      return s.setSettings(changes);
+      const out = s.setSettings(changes);
+      env.applySettings?.(out);
+      return out;
+    },
+
+    guardCheck: undefined as any, // async, below
+
+    guardDecide({ agent, message, release }) {
+      s.guard.decide(agent, message, release);
+      return { ok: true };
+    },
+
+    backup: undefined as any,
+    restoreOpen: undefined as any,
+
+    restorePreview({ password }) {
+      if (!restoring) throw new Error('Choose a backup file first.');
+      const d = describeBackup(readBackup(restoring.data, password));
+      return { ...d, alreadyHere: s.core.agents().some((a) => a.id === d.agent) };
+    },
+
+    restoreApply({ password, replace }) {
+      if (!restoring) throw new Error('Choose a backup file first.');
+      const { agent } = restoreBackup(s.db, s.vault, readBackup(restoring.data, password), { replace });
+      s.core.forget(agent);
+      // A new connection token; a Claude connection must be connected again from the Agents screen.
+      const conn = s.connections.get(agent);
+      s.connections.set(agent, (conn?.type ?? 'claude') as any, conn?.name ?? agent);
+      restoring = null;
+      return { agent };
     },
 
     copy({ text }) {
@@ -174,6 +219,19 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
 
   const asyncHandlers: Partial<Record<keyof Api, (a: any) => Promise<unknown>>> = {
     syncNow: ({ agent }) => s.syncOne(agent),
+    guardCheck: async ({ agent, message }) => {
+      const r = await s.guard.checkOne(agent, message);
+      return { verdict: r?.verdict ?? null, matches: r?.matches.map((m) => m.label) ?? [] };
+    },
+    backup: async ({ agent, password }) => {
+      const name = s.core.agents().find((a) => a.id === agent)?.name ?? 'agent';
+      const file = makeBackup(s.db, s.vault, agent, password);
+      return { saved: await env.saveFile(`${name}.meadow-backup`, file) };
+    },
+    restoreOpen: async () => {
+      restoring = await env.openFile();
+      return restoring && { file: restoring.name };
+    },
     walletQr: async ({ walletId }) => {
       const w = s.wallets.list().find((x) => x.id === walletId);
       if (!w) throw new Error('There is no such wallet.');

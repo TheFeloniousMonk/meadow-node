@@ -166,10 +166,28 @@ CREATE TABLE IF NOT EXISTS problems (
 );
 `;
 
+/**
+ * Columns added after a table was first created: added to existing databases
+ * on open, so a data folder from an earlier build keeps working.
+ */
+const COLUMNS: [table: string, column: string, definition: string][] = [
+  // MessageGuard (§16.11): the verdict, the patterns that matched, and whether the message is held for the person.
+  ['messages', 'guard', 'TEXT'],
+  ['messages', 'guard_matches', 'TEXT'],
+  ['messages', 'held', 'INTEGER NOT NULL DEFAULT 0'],
+  // Backups (§16.12) and the backup nudge (§8.9).
+  ['agents', 'last_backup_at', 'INTEGER'],
+  ['group_in', 'received_at', 'INTEGER NOT NULL DEFAULT 0'],
+];
+
 export function openDb(path = ':memory:'): Db {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000;');
   db.exec(SCHEMA);
+  for (const [table, column, definition] of COLUMNS) {
+    const have = (db.prepare(`PRAGMA table_info(${table})`).all() as any[]).some((c) => c.name === column);
+    if (!have) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
   return db;
 }
 

@@ -13,12 +13,20 @@ import { PortalTransport } from '../core/portal.ts';
 import { Core } from '../core/core.ts';
 import { Connections } from '../core/connections.ts';
 import { ToolHost } from '../core/tools.ts';
+import { GUARD_PATH, GUARD_SERVICE, MessageGuard, readScreen } from '../core/guard.ts';
 import { createLocalServer } from '../server/local.ts';
 import type { Settings } from '../shared/api.ts';
 
 export const DEFAULT_SETTINGS: Omit<Settings, 'perCallMaxUsd'> = {
   theme: 'light', textScale: 1, syncEnabled: true, syncMinutes: 15, localPort: 47733,
+  // Anything that costs money is off until the person turns it on (§16.11).
+  guardPublic: false, guardPrivate: false, guardLimit: 10,
+  notifications: true,
+  startAtLogin: false,
 };
+
+/** How the app tells the person about new messages; the main process shows a system notification. */
+export type Notify = (agent: string, displayName: string, count: number, held: number) => void;
 
 export class Services {
   readonly db: Db;
@@ -28,6 +36,9 @@ export class Services {
   readonly core: Core;
   readonly connections: Connections;
   readonly tools: ToolHost;
+  readonly transport: PortalTransport;
+  readonly guard: MessageGuard;
+  #notify: Notify;
   server: Server | null = null;
   serverError: string | null = null;
   lastSync = new Map<string, number>();
@@ -36,16 +47,43 @@ export class Services {
 
   readonly version: string;
 
-  constructor({ dbPath, masterKey, version, changed, catalog = new Catalog() }: { dbPath: string; masterKey: Uint8Array; version: string; changed: () => void; catalog?: Catalog }) {
+  constructor({ dbPath, masterKey, version, changed, catalog = new Catalog(), notify = () => {} }: {
+    dbPath: string; masterKey: Uint8Array; version: string; changed: () => void; catalog?: Catalog; notify?: Notify;
+  }) {
+    this.#notify = notify;
     this.#changed = changed;
     this.version = version;
     this.db = openDb(dbPath);
     this.vault = new Vault(masterKey);
     this.catalog = catalog;
     this.wallets = new Wallets({ db: this.db, vault: this.vault, catalog: this.catalog });
-    this.core = new Core({ db: this.db, vault: this.vault, transport: new PortalTransport({ catalog: this.catalog, wallets: this.wallets }) });
+    this.transport = new PortalTransport({ catalog: this.catalog, wallets: this.wallets });
+    const guardSettings = () => {
+      const s = this.settings();
+      return { public: s.guardPublic, private: s.guardPrivate, perSyncLimit: s.guardLimit };
+    };
+    this.guard = new MessageGuard({
+      db: this.db, vault: this.vault, settings: guardSettings,
+      screener: async (text, agent) => {
+        const r = await this.transport.callService(GUARD_SERVICE, GUARD_PATH, { text }, agent);
+        return r.status === 200 ? readScreen(r.data) : null;
+      },
+    });
+    // After every sync, from any path (background, Sync Now, a tool): screen what arrived, then tell the person.
+    this.core = new Core({
+      db: this.db, vault: this.vault, transport: this.transport,
+      afterSync: async (agent, report) => {
+        const screened = await this.guard.screenNew(agent);
+        if (screened.stopped) this.db.prepare('INSERT INTO problems (agent, at, kind, text) VALUES (?, ?, ?, ?)').run(agent, Date.now(), 'messageguard', `MessageGuard could not check every new message: ${screened.stopped}`);
+        if (report.messages && this.settings().notifications) {
+          const a = this.core.agents().find((x) => x.id === agent);
+          this.#notify(agent, a?.display_name ?? 'Your agent', report.messages, screened.held);
+        }
+        this.#changed();
+      },
+    });
     this.connections = new Connections({ db: this.db, vault: this.vault });
-    this.tools = new ToolHost({ core: this.core, wallets: this.wallets, catalog: this.catalog });
+    this.tools = new ToolHost({ core: this.core, wallets: this.wallets, catalog: this.catalog, guard: guardSettings });
   }
 
   settings(): Settings {

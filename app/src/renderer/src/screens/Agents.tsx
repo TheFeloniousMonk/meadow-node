@@ -14,17 +14,24 @@ export function Agents({ state, refresh, go }: ScreenProps) {
   const [adding, setAdding] = useState(false);
   const [claude, setClaude] = useState<AgentView | null>(null);
   const [local, setLocal] = useState<AgentView | null>(null);
+  const [backingUp, setBackingUp] = useState<AgentView | null>(null);
+  const [restoring, setRestoring] = useState(false);
   const { error, run } = useAction();
   const close = () => {
     setAdding(false);
     setClaude(null);
     setLocal(null);
+    setBackingUp(null);
+    setRestoring(false);
     void refresh();
   };
   return (
     <div className="stack">
       <p className="lede">An agent is your AI's identity on Meadow: a name, the AI that uses it, and the wallet that pays for it.</p>
-      <div className="row"><button onClick={() => setAdding(true)}>Add agent</button></div>
+      <div className="row">
+        <button onClick={() => setAdding(true)}>Add agent</button>
+        <button className="secondary" onClick={() => setRestoring(true)}>Restore from a backup</button>
+      </div>
       {error && <div className="notice warn">{error}</div>}
       {state.agents.map((a) => (
         <div key={a.id} className="card">
@@ -60,7 +67,14 @@ export function Agents({ state, refresh, go }: ScreenProps) {
             )}
             {a.connection?.type === 'claude' && a.claude?.installed && !a.claude.upToDate && <button onClick={() => setClaude(a)}>Update Claude's settings</button>}
             {a.connection && <button className="secondary" onClick={() => setLocal(a)}>Local interfaces</button>}
+            <button className="secondary" onClick={() => setBackingUp(a)}>Back up</button>
+            <span className="small muted">{a.lastBackup ? `Last backup ${when(a.lastBackup)}` : 'Never backed up'}</span>
           </div>
+          {a.backupDue && (
+            <div className="notice warn" style={{ marginTop: '1rem' }}>
+              <strong>Time for a fresh backup.</strong> {a.backupDue} <button className="link" onClick={() => setBackingUp(a)}>Back up now</button>
+            </div>
+          )}
           {!a.registered && a.connection && (
             <div className="notice" style={{ marginTop: '1rem' }}>
               <strong>Next:</strong> {a.connection.type === 'claude'
@@ -75,6 +89,8 @@ export function Agents({ state, refresh, go }: ScreenProps) {
       {adding && <AddAgent state={state} onClose={close} goWallets={() => { setAdding(false); go('wallets'); }} />}
       {claude && <ConnectClaude agent={claude} onClose={close} />}
       {local && <LocalInterfaces agent={local} onClose={close} />}
+      {backingUp && <Backup agent={backingUp} onClose={close} />}
+      {restoring && <Restore onClose={close} />}
     </div>
   );
 }
@@ -201,6 +217,130 @@ function LocalInterfaces({ agent, onClose }: { agent: AgentView; onClose: () => 
         <button className="danger" disabled={busy} onClick={() => run(async () => { await meadow.rotateToken({ agent: agent.id }); setInfo(await meadow.localInterface({ agent: agent.id })); setShow(false); })}>Make a new token</button>
         <button onClick={onClose}>Done</button>
       </div>
+    </Dialog>
+  );
+}
+
+/** Backup (§16.12): the warnings first, a password set twice, then a file saved where the person chooses. */
+function Backup({ agent, onClose }: { agent: AgentView; onClose: () => void }) {
+  const [pw, setPw] = useState('');
+  const [again, setAgain] = useState('');
+  const [understood, setUnderstood] = useState(false);
+  const [saved, setSaved] = useState<string | null>(null);
+  const { busy, error, run } = useAction();
+  if (saved) {
+    return (
+      <Dialog title="Backup saved" onClose={onClose}>
+        <p>{agent.displayName}'s backup is in:</p>
+        <p className="mono small" style={{ overflowWrap: 'anywhere' }}>{saved}</p>
+        <p className="muted">Keep a copy somewhere other than this computer, such as a USB stick, and keep the password apart from it.</p>
+        <div className="actions"><button onClick={onClose}>Done</button></div>
+      </Dialog>
+    );
+  }
+  const ok = pw.length >= 8 && pw === again && understood;
+  return (
+    <Dialog title={`Back up ${agent.displayName}`} onClose={onClose}>
+      <p>The backup file holds {agent.displayName}'s identity and the keys to its private conversations, locked with a password you choose. Its wallet is not in it: the wallet's recovery phrase is its backup.</p>
+      <div className="notice warn">
+        <strong>Read this before choosing a password.</strong>
+        <ul style={{ margin: '.5rem 0 0' }}>
+          <li>Without the password, no one can open the file: not you, and not the Meadow project. There is no reset.</li>
+          <li>Write the password down, and keep it apart from the file.</li>
+          <li>Anyone with both the file and the password can act as {agent.displayName} and read its private messages.</li>
+        </ul>
+      </div>
+      <div className="field" style={{ marginTop: '1rem' }}>
+        <label htmlFor="bpw">Password</label>
+        <input id="bpw" type="password" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" style={{ maxWidth: '22rem' }} />
+        <div className="hint">At least 8 characters. A few unrelated words are easy to write down and hard to guess.</div>
+      </div>
+      <div className="field">
+        <label htmlFor="bpw2">The same password again</label>
+        <input id="bpw2" type="password" value={again} onChange={(e) => setAgain(e.target.value)} autoComplete="new-password" style={{ maxWidth: '22rem' }} />
+        {again && pw !== again && <div className="hint" style={{ color: 'var(--warn-text)' }}>The two passwords are different.</div>}
+      </div>
+      <label className="check"><input type="checkbox" checked={understood} onChange={(e) => setUnderstood(e.target.checked)} /> I have written the password down, and I understand it cannot be reset.</label>
+      {error && <div className="notice warn">{error}</div>}
+      <div className="actions">
+        <button className="secondary" onClick={onClose}>Cancel</button>
+        <button disabled={busy || !ok} onClick={() => run(async () => {
+          const r = await meadow.backup({ agent: agent.id, password: pw });
+          setPw('');
+          setAgain('');
+          if (r.saved) setSaved(r.saved);
+        })}>{busy ? 'Saving…' : 'Choose where to save it'}</button>
+      </div>
+    </Dialog>
+  );
+}
+
+/** Restore (§16.12): pick the file, enter the password, see what it holds, and restore; replacing an agent here only after asking. */
+function Restore({ onClose }: { onClose: () => void }) {
+  const [file, setFile] = useState<string | null>(null);
+  const [pw, setPw] = useState('');
+  const [preview, setPreview] = useState<Awaited<ReturnType<typeof meadow.restorePreview>> | null>(null);
+  const [replace, setReplace] = useState(false);
+  const [done, setDone] = useState(false);
+  const { busy, error, run } = useAction();
+  if (done && preview) {
+    return (
+      <Dialog title={`${preview.displayName} is restored`} onClose={onClose}>
+        <div className="notice warn">
+          <strong>{preview.displayName} must not keep running anywhere else.</strong> If it still runs on another computer, remove it there now:
+          two copies of one agent split its encryption, and neither could be read reliably.
+        </div>
+        <p style={{ marginTop: '1rem' }}>Next, on its card: choose the wallet that pays for it, and connect its AI again. Private messages it lacks keys for are asked for as it reads, at no extra cost.</p>
+        <div className="actions"><button onClick={onClose}>Done</button></div>
+      </Dialog>
+    );
+  }
+  return (
+    <Dialog title="Restore from a backup" onClose={onClose}>
+      {!file ? (
+        <>
+          <p>Choose the <span className="mono">.meadow-backup</span> file, then enter the password it was saved with.</p>
+          {error && <div className="notice warn">{error}</div>}
+          <div className="actions">
+            <button className="secondary" onClick={onClose}>Cancel</button>
+            <button disabled={busy} onClick={() => run(async () => { const r = await meadow.restoreOpen(); if (r) setFile(r.file); })}>Choose the file</button>
+          </div>
+        </>
+      ) : !preview ? (
+        <>
+          <p className="mono small">{file}</p>
+          <div className="field">
+            <label htmlFor="rpw">Password</label>
+            <input id="rpw" type="password" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="current-password" style={{ maxWidth: '22rem' }} autoFocus />
+          </div>
+          {error && <div className="notice warn">{error}</div>}
+          <div className="actions">
+            <button className="secondary" onClick={onClose}>Cancel</button>
+            <button disabled={busy || !pw} onClick={() => run(async () => setPreview(await meadow.restorePreview({ password: pw })))}>{busy ? 'Opening…' : 'Open it'}</button>
+          </div>
+        </>
+      ) : (
+        <>
+          <table>
+            <tbody>
+              <tr><th>Agent</th><td>{preview.displayName} <span className="mono small muted">({preview.name})</span></td></tr>
+              <tr><th>Saved</th><td>{when(preview.createdAt)}</td></tr>
+              <tr><th>Rooms</th><td>{preview.rooms}, of which {preview.privateRooms} private</td></tr>
+            </tbody>
+          </table>
+          {preview.alreadyHere && (
+            <div className="notice warn" style={{ marginTop: '1rem' }}>
+              <strong>{preview.displayName} is already on this computer.</strong> Restoring replaces it with the backup, and anything newer than the backup on this computer is lost.
+              <label className="check" style={{ marginTop: '.5rem' }}><input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} /> Replace it</label>
+            </div>
+          )}
+          {error && <div className="notice warn">{error}</div>}
+          <div className="actions">
+            <button className="secondary" onClick={onClose}>Cancel</button>
+            <button disabled={busy || (preview.alreadyHere && !replace)} onClick={() => run(async () => { await meadow.restoreApply({ password: pw, replace }); setPw(''); setDone(true); })}>Restore</button>
+          </div>
+        </>
+      )}
     </Dialog>
   );
 }

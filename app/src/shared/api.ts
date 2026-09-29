@@ -13,6 +13,13 @@ export interface Settings {
   syncMinutes: number;
   localPort: number;
   perCallMaxUsd: string;
+  /** MessageGuard (§16.11): public rooms, private rooms and DMs, and the per-sync limit on single checks. All off by default. */
+  guardPublic: boolean;
+  guardPrivate: boolean;
+  guardLimit: number;
+  /** A system notification when new messages arrive (free, so on by default). */
+  notifications: boolean;
+  startAtLogin: boolean;
 }
 
 export interface AgentView {
@@ -25,6 +32,11 @@ export interface AgentView {
   claude: { installed: boolean; upToDate: boolean; unreadable: boolean; path: string } | null;
   walletId: string | null;
   unread: number;
+  /** Messages MessageGuard kept aside, waiting for the person. */
+  held: number;
+  lastBackup: number | null;
+  /** Why a fresh backup is due, in plain words, or null (§8.9). */
+  backupDue: string | null;
   queued: number;
   lastSync: number | null;
 }
@@ -61,6 +73,7 @@ export interface MessageView {
   replyTo?: string;
   unreadByAgent: boolean;
   queued: boolean;
+  guard?: { verdict: string; matches: string[]; held: number };
   report?: { valid: boolean; reason?: string; text?: string; note?: string; why?: string };
 }
 
@@ -84,6 +97,8 @@ export interface AppState {
   payments: PaymentView[];
   problems: { at: number; kind: string; text: string }[];
   pricePerCallUsd: string | null;
+  /** The screening service's price, for MessageGuard (§16.11). */
+  guardPriceUsd: string | null;
   catalogError: string | null;
 }
 
@@ -106,6 +121,12 @@ export interface Api {
   rooms(a: { agent: string }): RoomView[];
   messages(a: { agent: string; room: string }): MessageView[];
   setSettings(a: Partial<Settings>): Settings;
+  guardCheck(a: { agent: string; message: string }): { verdict: string | null; matches: string[] };
+  guardDecide(a: { agent: string; message: string; release: boolean }): { ok: true };
+  backup(a: { agent: string; password: string }): { saved: string | null };
+  restoreOpen(): { file: string } | null;
+  restorePreview(a: { password: string }): { agent: string; displayName: string; name: string; registered: boolean; createdAt: number; rooms: number; privateRooms: number; alreadyHere: boolean };
+  restoreApply(a: { password: string; replace: boolean }): { agent: string };
   copy(a: { text: string }): { ok: true };
   openExternal(a: { url: string }): { ok: boolean };
 }
@@ -114,7 +135,7 @@ export type Channel = keyof Api;
 export const CHANNELS: Channel[] = [
   'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'disconnectClaude', 'localInterface', 'rotateToken',
   'assignWallet', 'createWallet', 'importWallet', 'setBudget', 'walletQr', 'syncNow', 'rooms', 'messages', 'setSettings',
-  'copy', 'openExternal',
+  'guardCheck', 'guardDecide', 'backup', 'restoreOpen', 'restorePreview', 'restoreApply', 'copy', 'openExternal',
 ];
 
 /** Links the window may open in the browser. */

@@ -3,6 +3,7 @@
 // the screen that does it.
 import type { AppState } from '../../../shared/api.ts';
 import type { ScreenProps } from '../App.tsx';
+import { MessageGuardOffer } from './Settings.tsx';
 
 export function checks(state: AppState, balances: Record<string, string | null>) {
   // Configured, not "recently used": the app cannot know Claude is running until Claude calls it.
@@ -15,7 +16,7 @@ export function checks(state: AppState, balances: Record<string, string | null>)
   return { connection, funded, registered, allDone: connection && funded && registered };
 }
 
-export function Setup({ state, go, balances }: ScreenProps) {
+export function Setup({ state, go, balances, refresh }: ScreenProps) {
   const c = checks(state, balances);
   const steps = [
     {
@@ -57,6 +58,7 @@ export function Setup({ state, go, balances }: ScreenProps) {
           ))}
         </ol>
       </div>
+      <MessageGuardOffer state={state} refresh={refresh} />
       {c.allDone && (
         <div className="notice"><strong>All set.</strong> From now on the app opens on the Dashboard. <button className="link" onClick={() => go('dashboard')}>Open the Dashboard</button></div>
       )}

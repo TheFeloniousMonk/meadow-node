@@ -29,6 +29,8 @@ export interface CoreOptions {
   vault: Vault;
   transport: Transport;
   now?: () => number;
+  /** Runs after every sync, inside the agent's lock: MessageGuard screening, notifications (§16.11). */
+  afterSync?: (agent: string, report: SyncReport) => Promise<void>;
 }
 
 export interface SyncReport {
@@ -61,6 +63,8 @@ export interface MessageView {
   /** A report to this agent as a moderator (§9.2), verified here. */
   report?: { valid: true; reason: string; event: string; author: string; room: string; text?: string; note?: string } | { valid: false; why: string };
   delivered: boolean;
+  /** MessageGuard's verdict (§16.11): held 1 while kept aside, 2 once the person chose to keep it held. */
+  guard?: { verdict: string; matches: { label: string; match: string }[]; held: number };
 }
 
 interface Ctx {
@@ -82,11 +86,13 @@ export class Core {
   #db: Db;
   #vault: Vault;
   #transport: Transport;
+  #afterSync?: (agent: string, report: SyncReport) => Promise<void>;
   #now: () => number;
   #ctx = new Map<string, Ctx>();
   #locks = new Map<string, Promise<unknown>>();
 
-  constructor({ db, vault, transport, now = Date.now }: CoreOptions) {
+  constructor({ db, vault, transport, now = Date.now, afterSync }: CoreOptions) {
+    this.#afterSync = afterSync;
     this.#db = db;
     this.#vault = vault;
     this.#transport = transport;
@@ -106,6 +112,11 @@ export class Core {
                       VALUES (?, ?, ?, ?, ?, ?, ?)`)
       .run(id, displayName, name, this.#vault.sealJson(`agent:${id}:secret`, { seed: seed.toString('base64') }), account, bundle.fallback, this.#now());
     return { id, name };
+  }
+
+  /** Drops what the core holds in memory for an agent, after its database rows were replaced (a restore). */
+  forget(agent: string) {
+    this.#ctx.delete(agent);
   }
 
   agents(): { id: string; display_name: string; name: string; handle: string; registered: boolean }[] {
@@ -491,6 +502,7 @@ export class Core {
       if (!data.more && !createLimited && total <= rows.length) break;
     }
     tx(this.#db, () => this.#housekeeping(ctx));
+    if (this.#afterSync) await this.#afterSync(ctx.id, report);
     return report;
   }
 
@@ -911,7 +923,7 @@ export class Core {
   // --- Reading ------------------------------------------------------------------------------
 
   /** Messages from the local store, oldest first. Only shown messages carry text. */
-  messages(agent: string, opts: { room?: string; undelivered?: boolean } = {}): MessageView[] {
+  messages(agent: string, opts: { room?: string; undelivered?: boolean; deliverable?: boolean } = {}): MessageView[] {
     let sql = 'SELECT * FROM messages WHERE agent = ?';
     const args: any[] = [agent];
     if (opts.room) {
@@ -919,9 +931,12 @@ export class Core {
       args.push(opts.room);
     }
     if (opts.undelivered) sql += ' AND delivered = 0';
+    // Messages MessageGuard kept aside reach the agent only when the person releases them (§16.11).
+    if (opts.deliverable) sql += ' AND held = 0';
     sql += ' ORDER BY ts, id';
     return (this.#db.prepare(sql).all(...args) as any[]).map((m) => {
       const view: MessageView = { id: m.id, room: m.room, author: m.author, ts: m.ts, status: m.status, delivered: !!m.delivered };
+      if (m.guard) view.guard = { verdict: m.guard, matches: m.guard_matches ? JSON.parse(m.guard_matches) : [], held: m.held };
       if (m.status === 'shown' && m.body_sealed) {
         const { body } = this.#vault.openJson(`message:${agent}:${m.id}`, m.body_sealed);
         view.text = body.text;

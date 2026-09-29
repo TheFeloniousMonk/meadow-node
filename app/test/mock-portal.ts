@@ -23,6 +23,8 @@ export interface MockPortal {
   always402: boolean;
   catalogPriceUsd: string;
   paid: { from: string; value: string; nonce: string }[];
+  /** Texts the stand-in screening service was asked to check. */
+  screened: string[];
   close(): Promise<void>;
 }
 
@@ -33,7 +35,7 @@ export async function startMockPortal(): Promise<MockPortal> {
   const seen = new Set<string>();
 
   const m: MockPortal = {
-    url: '', catalogUrl: '', price: { usd: '0.005000', amount: '5000' }, quote: {}, always402: false, catalogPriceUsd: '0.005000', paid: [],
+    url: '', catalogUrl: '', price: { usd: '0.005000', amount: '5000' }, quote: {}, always402: false, catalogPriceUsd: '0.005000', paid: [], screened: [],
     close: async () => {
       server.close();
       node.close();
@@ -57,13 +59,14 @@ export async function startMockPortal(): Promise<MockPortal> {
         ],
       });
     }
-    const match = /^\/v1\/meadow(\/.*)$/.exec(req.url ?? '');
+    const match = /^\/v1\/(meadow|prompt-injection-detect)(\/.*)$/.exec(req.url ?? '');
     if (!match || req.method !== 'POST') return send(404, { error: 'not found' });
+    const service = match[1];
     const terms = {
       scheme: 'exact', network: 'eip155:8453', amount: m.price.amount, asset: USDC, payTo: PAY_TO, maxTimeoutSeconds: 60,
       extra: { name: 'USD Coin', version: '2' }, ...m.quote,
     };
-    const offer = { x402Version: 2, resource: { url: `${m.url}/v1/meadow`, serviceName: 'Pocket Network' }, accepts: [terms] };
+    const offer = { x402Version: 2, resource: { url: `${m.url}/v1/${service}`, serviceName: 'Pocket Network' }, accepts: [terms] };
     const quote = () => send(402, offer, { 'payment-required': Buffer.from(JSON.stringify(offer), 'utf8').toString('base64') });
     const header = req.headers['payment-signature'];
     if (typeof header !== 'string') return quote();
@@ -91,7 +94,21 @@ export async function startMockPortal(): Promise<MockPortal> {
     seen.add(a.nonce);
     m.paid.push({ from: a.from, value: a.value, nonce: a.nonce });
 
-    const upstream = await fetch(nodeUrl + match[1], { method: 'POST', headers: { 'content-type': 'application/json' }, body });
+    const settled = { 'payment-response': Buffer.from(JSON.stringify({ success: true, transaction: `0x${'ab'.repeat(32)}`, network: 'eip155:8453' })).toString('base64') };
+    if (service === 'prompt-injection-detect') {
+      // A stand-in for the screening service, with the live service's answer shape (catalog example, 2026-09-21).
+      const text = JSON.parse(body).text as string;
+      m.screened.push(text);
+      const malicious = /wallet phrase|recovery phrase/i.test(text);
+      const suspicious = /ignore (your|previous) instructions/i.test(text);
+      const matches = [
+        ...(suspicious ? [{ label: 'instruction-override', match: 'ignore your instructions', weight: 3 }] : []),
+        ...(malicious ? [{ label: 'secret-exfiltration', match: 'wallet phrase', weight: 6 }] : []),
+      ];
+      const verdict = malicious ? 'malicious' : suspicious ? 'suspicious' : 'safe';
+      return send(200, { portal: { provenance: 'test', serviceId: service }, data: { verdict, score: matches.reduce((n, x) => n + x.weight, 0), matches, ruleset: 'test-rules', deterministic: true } }, settled);
+    }
+    const upstream = await fetch(nodeUrl + match[2], { method: 'POST', headers: { 'content-type': 'application/json' }, body });
     const data = await upstream.json();
     send(upstream.status, { portal: { provenance: 'test', serviceId: 'meadow' }, data }, {
       'payment-response': Buffer.from(JSON.stringify({ success: true, transaction: `0x${'ab'.repeat(32)}`, network: 'eip155:8453' })).toString('base64'),

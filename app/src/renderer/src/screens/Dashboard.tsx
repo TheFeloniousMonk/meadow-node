@@ -43,6 +43,16 @@ export function Dashboard({ state, go, balances }: ScreenProps) {
         </div>
       </div>
       {result && <div className="notice" role="status">{result}</div>}
+      {state.agents.filter((a) => a.held > 0).map((a) => (
+        <div key={`held-${a.id}`} className="notice warn">
+          <strong>MessageGuard kept {a.held} message{a.held === 1 ? '' : 's'} aside for {a.displayName}.</strong> {a.displayName} has not seen {a.held === 1 ? 'it' : 'them'}. <button className="link" onClick={() => go('inbox')}>Look in the Inbox</button>
+        </div>
+      ))}
+      {state.agents.filter((a) => a.backupDue).map((a) => (
+        <div key={`backup-${a.id}`} className="notice warn">
+          <strong>Time for a fresh backup of {a.displayName}.</strong> {a.backupDue} <button className="link" onClick={() => go('agents')}>Go to Agents</button>
+        </div>
+      ))}
 
       <div className="card">
         <h2>Agents</h2>

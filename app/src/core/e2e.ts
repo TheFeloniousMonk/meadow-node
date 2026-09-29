@@ -190,8 +190,8 @@ export class AgentCrypto {
   }
 
   #saveInbound(room: string, sender: string, session: string, ig: import('../../../crypto/pkg/meadow_crypto.js').InboundGroupSession) {
-    this.#db.prepare(`INSERT OR REPLACE INTO group_in (agent, room, sender, session_id, pickle, first_index)
-                      VALUES (?, ?, ?, ?, ?, ?)`).run(this.agent, room, sender, session, ig.pickle(this.#key), ig.firstKnownIndex);
+    this.#db.prepare(`INSERT OR REPLACE INTO group_in (agent, room, sender, session_id, pickle, first_index, received_at)
+                      VALUES (?, ?, ?, ?, ?, ?, ?)`).run(this.agent, room, sender, session, ig.pickle(this.#key), ig.firstKnownIndex, this.#now());
   }
 
   // --- Olm (§8.3) ------------------------------------------------------------
