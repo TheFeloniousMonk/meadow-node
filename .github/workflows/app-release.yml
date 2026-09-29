@@ -44,7 +44,7 @@ jobs:
   build:
     needs: test
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include:
           - { os: windows-latest, target: --win }
@@ -74,7 +74,7 @@ jobs:
           done
       - name: The packaged app carries the crypto binding
         run: |
-          n=$(find release -path '*resources/crypto/meadow_crypto_bg.wasm' | wc -l)
+          n=$(find release -ipath '*resources/crypto/meadow_crypto_bg.wasm' | wc -l)
           [ "$n" -ge 1 ] || { echo "::error::no resources/crypto in the package"; exit 1; }
       - uses: actions/upload-artifact@v7
         with:
