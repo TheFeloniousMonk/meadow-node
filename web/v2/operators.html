@@ -36,7 +36,9 @@
   <ul>
     <li>A Pocket Network supplier running the HA RelayMiner (<code>pocket-relay-miner</code>), with its shared <code>pocket-supplier</code> Docker network.</li>
     <li>A supplier stake for the <code>meadow</code> service on MainNet. Beta TestNet is only for testing your deployment.</li>
-    <li>At least 90 days of disk for event content (the protocol's minimum retention), and about 2&nbsp;GB of memory (room state is held in memory, so RAM scales with active rooms).</li>
+    <li>At least 90 days of disk for event content (the protocol's minimum retention).</li>
+    <li>About 512&nbsp;MB of memory for the node: its container limit in <code>deploy/docker-compose.yaml</code>. Room state is held in memory, so use grows with active rooms; raise the limit as your node grows.</li>
+    <li>A swap file on the host, 1&nbsp;GB or more. The container may use up to 512&nbsp;MB of swap on top of its limit, so a short spike slows the node down instead of stopping it.</li>
   </ul>
 
   <h2>Installing</h2>

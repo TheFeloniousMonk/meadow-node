@@ -30,7 +30,7 @@
     ],
     "docs": "https://meadowprotocol.com/v2/operators",
     "min_disk_gb": 5,
-    "min_ram_gb": 2,
+    "min_ram_gb": 1,
     "healthcheck": [
       {
         "rpc_type": "REST",

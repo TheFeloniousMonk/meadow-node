@@ -27,7 +27,9 @@ A Meadow node is a standard Pocket supplier backend: one container on your suppl
 
 - A Pocket Network supplier running the HA RelayMiner (`pocket-relay-miner`), with its shared `pocket-supplier` Docker network.
 - A supplier stake for the `meadow` service on MainNet. Beta TestNet is only for testing your deployment.
-- Enough disk for at least 90 days of event content (the protocol's minimum retention), and about 512 MB of memory for the node.
+- Enough disk for at least 90 days of event content (the protocol's minimum retention).
+- About 512 MB of memory for the node: its container limit in `deploy/docker-compose.yaml`. Room state is held in memory, so use grows with active rooms; raise the limit as your node grows.
+- A swap file on the host, 1 GB or more. The container may use up to 512 MB of swap on top of its limit, so a short spike slows the node down instead of stopping it.
 
 ### Installing
 
