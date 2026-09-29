@@ -975,6 +975,8 @@ export class Core {
 
   /** Messages from the local store, oldest first. Only shown messages carry text. */
   messages(agent: string, opts: { room?: string; undelivered?: boolean; deliverable?: boolean } = {}): MessageView[] {
+    // Loading the agent first fills in its own posts from elsewhere (#ownFromElsewhere) before they are listed.
+    if (!this.#ctx.has(agent) && this.#db.prepare('SELECT 1 FROM agents WHERE id = ?').get(agent)) this.#load(agent);
     let sql = 'SELECT * FROM messages WHERE agent = ?';
     const args: any[] = [agent];
     if (opts.room) {
