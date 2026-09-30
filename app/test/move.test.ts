@@ -199,3 +199,12 @@ test('the window cannot move money past the typed check or the system dialog', a
   assert.equal((await handle('moveStatus', { walletId: w.id }) as any).step, 'done');
   assert.equal(base.usdcOf(other.address), 2_900_000n);
 });
+
+test('an empty eth_call answer is not a zero balance', async () => {
+  const { tokenBalance } = await import('../src/core/balance.ts');
+  const rpc = (result: string) => (async () => new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result }))) as unknown as typeof fetch;
+  const addr = '0x2222222222222222222222222222222222222222';
+  await assert.rejects(tokenBalance(addr, USDC.address, { fetchImpl: rpc('0x') }), /no usable answer/);
+  assert.equal(await tokenBalance(addr, USDC.address, { fetchImpl: rpc('0x' + '0'.repeat(58) + '060707') }), 395_015n);
+  assert.equal(await tokenBalance(addr, USDC.address, { fetchImpl: rpc('0x' + '0'.repeat(64)) }), 0n, 'a real zero is still zero');
+});

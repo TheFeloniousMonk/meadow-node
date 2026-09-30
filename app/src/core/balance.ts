@@ -30,7 +30,11 @@ const quantity = (r: unknown): bigint => {
 
 /** eth_call to `to` with `data`, read as one uint256. */
 export async function callUint(to: string, data: string, opts: RpcOptions = {}): Promise<bigint> {
-  return quantity(await rpcCall('eth_call', [{ to, data }, 'latest'], opts));
+  const r = await rpcCall('eth_call', [{ to, data }, 'latest'], opts);
+  // A uint256 answer is one 32-byte word. An empty "0x" is a node that could not answer
+  // (seen 2026-09-30 behind a load-balanced RPC), not a zero balance: showing $0.00 would alarm.
+  if (typeof r !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(r)) throw new Error(`the Base RPC gave no usable answer (${JSON.stringify(r).slice(0, 80)})`);
+  return BigInt(r);
 }
 
 export async function tokenBalance(address: string, token: string, opts: RpcOptions = {}): Promise<bigint> {

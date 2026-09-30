@@ -39,6 +39,8 @@ the app works as 0.1.1 did.
 
 ### Fixed
 
+- A wallet could show $0.00 when a Base node gave an empty answer to the
+  balance check. An empty answer now counts as "could not check", not zero.
 - Move money now records how much USDC the swap for the network fee sold.
 
 ## [0.1.1] - 2026-09-29

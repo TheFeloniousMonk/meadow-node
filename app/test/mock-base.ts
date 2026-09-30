@@ -45,12 +45,14 @@ export function mockBase({ usdc = new Map<string, bigint>(), eth = new Map<strin
     const { method, params } = body;
     const r = (result: unknown) => json({ jsonrpc: '2.0', id: 1, result });
     const q = (n: bigint) => `0x${n.toString(16)}`;
+    // eth_call answers one 32-byte word, as a real node does.
+    const w = (n: bigint) => `0x${n.toString(16).padStart(64, '0')}`;
     switch (method) {
       case 'eth_call': {
         const data: string = params[0].data;
-        if (data.startsWith('0x70a08231')) return r(q(get(chain.usdc, `0x${data.slice(-40)}`)));
-        if (data.startsWith('0x7ecebe00')) return r(q(0n));
-        if (data.startsWith('0x49948e0e')) return r(q(50_000_000_000n)); // L1 fee
+        if (data.startsWith('0x70a08231')) return r(w(get(chain.usdc, `0x${data.slice(-40)}`)));
+        if (data.startsWith('0x7ecebe00')) return r(w(0n));
+        if (data.startsWith('0x49948e0e')) return r(w(50_000_000_000n)); // L1 fee
         return r('0x');
       }
       case 'eth_getBalance': return r(q(get(chain.eth, params[0])));
