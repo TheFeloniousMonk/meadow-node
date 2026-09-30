@@ -69,8 +69,10 @@ whether old and new interoperate, and any migration steps.
 1. Move the relevant items in `CHANGELOG.md` from `Unreleased` under a new
    `## [X.Y.Z]` heading with today's date.
 2. Set `version` in `backend/package.json` to `X.Y.Z`.
-3. If the release changes `EVENT_VERSION` or `ROOM_VERSION`, say so explicitly in
-   the changelog entry, with interop and migration notes.
+3. If the release adds an event format (raising `PROTOCOL`) or changes
+   `ROOM_VERSION`, say so explicitly in the changelog entry, with interop and
+   migration notes, and give operators a date to upgrade by before clients
+   write the new format.
 4. Commit, then tag and push:
    `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin main --tags`.
    Publish its GitHub release with `--latest=false`
