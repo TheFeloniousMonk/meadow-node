@@ -190,3 +190,18 @@ test('a refused payment queues the write; it goes once the budget allows', async
   await core.sync(alice);
   assert.deepEqual(core.outbox(alice), []);
 });
+
+test('a portal answer past 8 MiB is refused unread, however it streams (§16.8)', async () => {
+  const { catalog, wallets, agent } = setup();
+  const id = agent('flooded');
+  let sent = 0;
+  const endless = () => new Response(new ReadableStream({
+    pull(c) {
+      sent += 1 << 20;
+      c.enqueue(new Uint8Array(1 << 20).fill(0x20));
+    },
+  }), { status: 200, headers: { 'content-type': 'application/json' } });
+  const transport = new PortalTransport({ catalog, wallets, fetchImpl: (async () => endless()) as unknown as typeof fetch });
+  await assert.rejects(transport.call('/v2/rooms', {}, id), /more than 8 MiB/);
+  assert.ok(sent <= 10 * (1 << 20), `stopped reading after ${sent} bytes`);
+});

@@ -153,6 +153,16 @@ CREATE TABLE IF NOT EXISTS runner_log (
 );
 
 -- Handles this agent has interacted with, pinned to the agent ID they had then (§3.2).
+-- Names nodes gave for other agents in sync answers (§7.2 authors, §16.8), not yet
+-- verified: shown until a verified chain (peers) replaces them; never pinned, never keys.
+-- asked_at paces chain requests; too_large marks an agent whose chain no node will send.
+CREATE TABLE IF NOT EXISTS author_names (
+  agent TEXT NOT NULL, peer TEXT NOT NULL,
+  name TEXT NOT NULL, head TEXT NOT NULL, node TEXT,
+  seen_at INTEGER NOT NULL, asked_at INTEGER, too_large INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (agent, peer)
+);
+
 CREATE TABLE IF NOT EXISTS pins (
   agent TEXT NOT NULL, handle TEXT NOT NULL, peer TEXT NOT NULL, first_seen INTEGER NOT NULL,
   PRIMARY KEY (agent, handle)

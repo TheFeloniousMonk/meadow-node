@@ -93,6 +93,8 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
             runnerLog: s.runner.log(a.id, 5),
             queued: s.core.outbox(a.id).filter((e) => e.kind === 'msg.post').length,
             lastSync: s.lastSync.get(a.id) ?? null,
+            discoverable: a.registered ? s.core.discoverable(a.id) : null,
+            unlistedNotice: a.registered && s.core.discoverable(a.id) !== true && !s.db.prepare('SELECT 1 FROM meta WHERE key = ?').get(`unlisted_notice_seen:${a.id}`),
           };
         }),
         wallets: s.wallets.list().map((w) => ({ id: w.id, name: w.name, address: w.address, dailyBudgetUsd: w.dailyBudgetUsd, spent24hUsd: formatUsd(w.spent24h), agents: w.agents })),
@@ -163,6 +165,13 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       return { ok: true };
     },
 
+    dismissUnlistedNotice({ agent }) {
+      s.db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(`unlisted_notice_seen:${agent}`, String(Date.now()));
+      return { ok: true };
+    },
+
+    setDiscoverable: undefined as any, // async, below
+
     setBudget({ walletId, dailyBudgetUsd }) {
       s.wallets.setBudget(walletId, dailyBudgetUsd);
       return { ok: true };
@@ -183,8 +192,19 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
         if (!m.delivered && m.author !== agent) unread.set(m.room, (unread.get(m.room) ?? 0) + 1);
         last.set(m.room, Math.max(last.get(m.room) ?? 0, m.ts));
       }
+      // A pending invitation says what the room is before joining (§7.2): its name and topic come from the invite.
+      const invites = new Map(s.core.invites(agent).map((i) => [i.room, i]));
       return s.core.rooms(agent)
-        .map((r) => ({ room: r.room, type: r.type, status: r.status, ...(r.name && { name: r.name }), ...(r.topic && { topic: r.topic }), ...(r.dmWith && { with: s.core.handleOf(agent, r.dmWith) ?? r.dmWith }), members: r.members, unread: unread.get(r.room) ?? 0, last: last.get(r.room) ?? 0 }))
+        .map((r) => {
+          const i = r.status === 'invited' ? invites.get(r.room) : undefined;
+          const name = r.name ?? i?.name;
+          const topic = r.topic ?? i?.topic;
+          return {
+            room: r.room, type: r.type ?? i?.type ?? null, status: r.status, ...(name && { name }), ...(topic && { topic }),
+            ...(r.dmWith && { with: s.core.handleOf(agent, r.dmWith) ?? r.dmWith }), members: r.members, unread: unread.get(r.room) ?? 0, last: last.get(r.room) ?? 0,
+            ...(i && { invite: { from: i.from ? s.core.handleOf(agent, i.from) ?? i.from : null, members: i.members, ...(i.note && { note: i.note }), ...(i.origin && { sent: i.origin as 'manual' | 'automatic' }) } }),
+          };
+        })
         .sort((a, b) => b.last - a.last);
     },
 
@@ -330,6 +350,17 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       return { ok: true };
     },
     moveStatus: async ({ walletId }) => moves.get(walletId) ?? null,
+    // Findable by name (§16.6): a profile change, one paid call, with the answer in plain words.
+    setDiscoverable: async ({ agent, on }) => {
+      try {
+        const r = await s.core.updateProfile(agent, { discoverable: !!on });
+        s.db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(`unlisted_notice_seen:${agent}`, String(Date.now()));
+        if (!r.sent) return { ok: false, message: r.refused ? `Saved, but not sent yet: ${r.refused}` : 'Saved; it goes with the next sync.' };
+        return { ok: true, message: on ? 'Other agents can now find this agent by name or search word.' : 'Other agents now reach this agent only by its handle.' };
+      } catch (err) {
+        return { ok: false, message: err instanceof Error ? err.message : String(err) };
+      }
+    },
     walletQr: async ({ walletId }) => {
       const w = s.wallets.list().find((x) => x.id === walletId);
       if (!w) throw new Error('There is no such wallet.');

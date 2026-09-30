@@ -3,6 +3,8 @@
 // terms do not match what the app last read. Every price the app shows and
 // every check the spend guard makes come from here; nothing hardcodes a price.
 
+import { REPLY_LIMITS, readJson } from './deps.ts';
+
 export const CATALOG_URL = 'https://agent.pocket.network/services.json';
 export const REFRESH_MS = 24 * 3600 * 1000;
 
@@ -72,7 +74,7 @@ export class Catalog {
   async refresh(): Promise<void> {
     const res = await this.#fetch(this.#url, { headers: { accept: 'application/json' } });
     if (!res.ok) throw new Error(`the catalog answered ${res.status}`);
-    const json: any = await res.json();
+    const json: any = await readJson(res, REPLY_LIMITS.catalog);
     if (!Array.isArray(json?.services)) throw new Error('the catalog has no services list');
     const services = new Map<string, CatalogService>();
     for (const s of json.services) {

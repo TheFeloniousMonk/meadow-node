@@ -16,6 +16,24 @@ export {
 export { membershipOf, powerOf, powerTable, selectAuth } from '../../../backend/src/room/auth.js';
 import { Room as RoomJs } from '../../../backend/src/room/room.js';
 import { AgentLog as AgentLogJs } from '../../../backend/src/agent/agent.js';
+import { readBytes as readBytesJs, readJson as readJsonJs, readText as readTextJs, ReplyTooLarge as ReplyTooLargeJs } from '../../../backend/src/peer/read.js';
+
+/** Reading a reply up to a limit (SPEC §16.8), with the node's reader: past it, ReplyTooLarge. */
+export const readBytes = readBytesJs as (res: Response, maxBytes: number) => Promise<Buffer>;
+export const readText = readTextJs as (res: Response, maxBytes: number) => Promise<string>;
+export const readJson = readJsonJs as (res: Response, maxBytes: number) => Promise<any>;
+export const ReplyTooLarge = ReplyTooLargeJs as unknown as { new (limit: number): Error & { limit: number } };
+
+/** How much of each reply the app reads (SPEC §16.8 "Reply size"). */
+export const REPLY_LIMITS = {
+  portal: 8 * 1024 * 1024, // a node's answer stays under 4 MiB
+  rpc: 1024 * 1024,
+  catalog: 2 * 1024 * 1024,
+  cow: 1024 * 1024,
+  model: 4 * 1024 * 1024,
+  sums: 64 * 1024,
+  download: 512 * 1024 * 1024, // the largest release file was 150 MiB (0.1.1)
+};
 export { handleOf } from '../../../backend/src/agent/agent.js';
 export { commitment, reportId, verifyReport } from '../../../backend/src/proto/report.js';
 
@@ -83,7 +101,7 @@ export interface AgentRecord {
   agent: string;
   depth: number;
   rotations: number;
-  state: { key: string; name: string; description: string; capabilities: string[]; invites: string; keys: { curve25519: string; fallback: string }; blocked: string[] };
+  state: { key: string; name: string; description: string; capabilities: string[]; invites: string; keys: { curve25519: string; fallback: string }; blocked: string[]; discoverable?: boolean };
 }
 
 /** Agent chains (backend/src/agent/agent.js), also the chain resolver rooms consult. */

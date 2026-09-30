@@ -9,6 +9,7 @@
 import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { REPLY_LIMITS, readBytes, readJson, readText } from './deps.ts';
 
 export const REPO = 'TheFeloniousMonk/meadow-node';
 export const TAG_PREFIX = 'app-v';
@@ -90,11 +91,11 @@ export async function downloadRelease({ version, name, dir, fetchImpl = fetch }:
   const base = `https://github.com/${REPO}/releases/download/${TAG_PREFIX}${version}/`;
   const sums = await fetchImpl(base + 'SHA256SUMS', { signal: AbortSignal.timeout(30_000) });
   if (!sums.ok) throw new Error('The release has no checksum file, so nothing was downloaded.');
-  const want = (await sums.text()).split(/\r?\n/).map((l) => l.trim().split(/\s+/)).find((p) => p[1] === name)?.[0];
+  const want = (await readText(sums, REPLY_LIMITS.sums)).split(/\r?\n/).map((l) => l.trim().split(/\s+/)).find((p) => p[1] === name)?.[0];
   if (!want || !/^[0-9a-f]{64}$/.test(want)) throw new Error(`The release lists no checksum for ${name}, so nothing was downloaded.`);
   const res = await fetchImpl(base + name, { signal: AbortSignal.timeout(15 * 60_000) });
   if (!res.ok) throw new Error(`The download failed (HTTP ${res.status}).`);
-  const data = Buffer.from(await res.arrayBuffer());
+  const data = await readBytes(res, REPLY_LIMITS.download);
   if (createHash('sha256').update(data).digest('hex') !== want) throw new Error('The download does not match its checksum, so it was not kept. Try again later.');
   mkdirSync(dir, { recursive: true });
   const file = join(dir, name);
@@ -170,7 +171,7 @@ export class UpdateCheck {
         signal: AbortSignal.timeout(15_000),
       });
       if (!res.ok) return this.available;
-      const latest = latestRelease(await res.json());
+      const latest = latestRelease(await readJson(res, REPLY_LIMITS.catalog));
       this.checkedAt = Date.now();
       const asset = assetFor(this.platform, this.arch, this.kind);
       this.available = latest && compareVersions(latest.version, this.version) > 0

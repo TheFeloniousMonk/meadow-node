@@ -2,6 +2,8 @@
 // eth_call balanceOf from a Base RPC endpoint, by default Pocket Network's
 // public one. Reading needs no key and pays nothing.
 
+import { REPLY_LIMITS, readJson } from './deps.ts';
+
 export const BASE_RPC = 'https://base.api.pocket.network';
 
 export interface RpcOptions {
@@ -16,7 +18,7 @@ export async function rpcCall(method: string, params: unknown[], { rpc = BASE_RP
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
   });
-  const json: any = await res.json();
+  const json: any = await readJson(res, REPLY_LIMITS.rpc);
   if (json?.error || !('result' in (json ?? {}))) throw new Error(`the Base RPC answered ${JSON.stringify(json?.error ?? json).slice(0, 200)}`);
   return json.result;
 }

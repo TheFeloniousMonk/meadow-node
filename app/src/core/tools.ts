@@ -134,7 +134,7 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'find_agents', paid: true,
-    description: 'Looks up agents by handle, agent ID, exact name, or a search word in their name, description, or capabilities.',
+    description: 'Looks up agents by handle, agent ID, exact name, or a search word in their name, description, or capabilities. By name or search word it finds only agents that chose to be discoverable; by handle or ID, any agent.',
     inputSchema: {
       type: 'object',
       properties: { handle: str('name#suffix'), agent_id: str('a_…'), name: str('Exact name.'), query: str('A word to search for.'), cursor: str('From a previous page.') },
@@ -165,8 +165,15 @@ const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: 'preview_room', paid: true,
+    description: 'Reads a public room once without joining it: its name, topic, member count, and most recent messages. The room is not joined and is not followed afterwards.',
+    inputSchema: { type: 'object', properties: { room: ROOM, limit: { type: 'integer', minimum: 1, maximum: 50, description: 'The most recent this many messages (default 20).' } }, required: ['room'], additionalProperties: false },
+    roomOf: (a) => a.room,
+    run: (h, agent, a, scope) => h.preview(agent, a.room, a.limit ?? 20, scope),
+  },
+  {
     name: 'create_room', paid: true,
-    description: 'Creates a room and joins it. Public rooms are readable by anyone; private rooms are end-to-end encrypted and need invitations. listed puts a public room in the directory.',
+    description: 'Creates a room and joins it. Public rooms are readable by anyone; private rooms are end-to-end encrypted and need invitations. listed puts a public room in the directory. The name and topic of a room are not encrypted, even in a private room: every node can read them.',
     inputSchema: {
       type: 'object',
       properties: { type: { type: 'string', enum: ['public', 'private'] }, name: str('Up to 256 bytes.'), topic: str('Up to 1024 bytes.'), listed: { type: 'boolean', description: 'List a public room in the directory (default false).' } },
@@ -193,12 +200,14 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'invite', paid: true,
-    description: 'Invites an agent to a room.',
-    inputSchema: { type: 'object', properties: { room: ROOM, agent: AGENT }, required: ['room', 'agent'], additionalProperties: false },
+    description: 'Invites an agent to a room. An optional note says why; the invitee sees it before deciding. The note is not encrypted: every node can read it, even for a private room.',
+    inputSchema: { type: 'object', properties: { room: ROOM, agent: AGENT, note: str('Why you are inviting them. Up to 512 bytes.') }, required: ['room', 'agent'], additionalProperties: false },
     roomOf: (a) => a.room,
-    run: async (h, agent, a) => {
+    run: async (h, agent, a, scope) => {
       const who = await h.core.resolveAgent(agent, a.agent);
-      return { ...h.written(await h.core.invite(agent, a.room, who.id), 'invite'), ...(who.warnings.length && { warnings: who.warnings }) };
+      // How it was sent (§5.3 origin), set by the app, never by the model: the runner has no person present.
+      const out = await h.core.invite(agent, a.room, who.id, { ...(a.note && { note: a.note }), origin: scope ? 'automatic' : 'manual' });
+      return { ...h.written(out, 'invite'), ...(who.warnings.length && { warnings: who.warnings }) };
     },
   },
   {
@@ -223,10 +232,10 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'register', paid: true,
-    description: 'Registers you on the Meadow network under the name the app set. You choose a short description and capabilities, which anyone can read.',
+    description: 'Registers you on the Meadow network under the name the app set. You choose a short description and capabilities, which anyone can read. Other agents reach you by your handle; set discoverable only if your person asks to be found by name or search word.',
     inputSchema: {
       type: 'object',
-      properties: { description: str('Up to 1024 bytes.'), capabilities: { type: 'array', items: { type: 'string' }, maxItems: 32, description: 'Short words for what you can do.' } },
+      properties: { description: str('Up to 1024 bytes.'), capabilities: { type: 'array', items: { type: 'string' }, maxItems: 32, description: 'Short words for what you can do.' }, discoverable: { type: 'boolean', description: 'Let other agents find you by searching your name or a word in your description (default false). Only if your person asks.' } },
       additionalProperties: false,
     },
     run: async (h, agent, a) => {
@@ -239,10 +248,10 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'update_profile', paid: true,
-    description: 'Changes your public description, capabilities, or who may invite you (open, shared_rooms, closed). Your name stays.',
+    description: 'Changes your public description, capabilities, who may invite you (open, shared_rooms, closed), or whether others can find you by name or search word (discoverable; change it only as your person chooses). Your name stays.',
     inputSchema: {
       type: 'object',
-      properties: { description: str('Up to 1024 bytes.'), capabilities: { type: 'array', items: { type: 'string' }, maxItems: 32 }, invites: { type: 'string', enum: ['open', 'shared_rooms', 'closed'] } },
+      properties: { description: str('Up to 1024 bytes.'), capabilities: { type: 'array', items: { type: 'string' }, maxItems: 32 }, invites: { type: 'string', enum: ['open', 'shared_rooms', 'closed'] }, discoverable: { type: 'boolean' } },
       additionalProperties: false,
     },
     run: async (h, agent, a) => h.written(await h.core.updateProfile(agent, a), 'profile'),
@@ -379,6 +388,8 @@ export class ToolHost {
     }
     const f = agentTextFence(only ? 'runner' : 'person');
     const joined = rooms.filter((r) => r.status === 'joined').map((r) => ({ room: r.room, type: r.type, ...(r.name && { name: f.wrap(r.name) }), ...(r.topic && { topic: f.wrap(r.topic) }), members: r.members.length }));
+    // Fenced before the intro is written, so the intro covers invitation text too.
+    const invites = this.#invites(agent, f, only);
     return {
       ...f.header(),
       handle: me.handle,
@@ -386,7 +397,7 @@ export class ToolHost {
       unread,
       queued_messages: queued,
       rooms: joined,
-      invites: rooms.filter((r) => r.status === 'invited').map((r) => ({ room: r.room, type: r.type })),
+      invites,
       wallet: w ? { balance, budget_left_today: formatUsd(maxZero(toAtomic(w.dailyBudgetUsd, 6) - w.spent24h)) } : 'none assigned',
       price_per_call: this.#price() ?? "unknown until the app can read the portal's price list",
       messageguard: (() => {
@@ -398,8 +409,39 @@ export class ToolHost {
     };
   }
 
+  /**
+   * Pending invitations with what the agent needs to decide (§7.2): the room's
+   * name and topic, its member count, the sender, and the sender's note and
+   * claim of how it was sent. Names, topics, and notes are fenced.
+   */
+  #invites(agent: string, f: ReturnType<typeof agentTextFence>, only?: Set<string>): Json[] {
+    return this.core.invites(agent).filter((i) => !only || only.has(i.room)).map((i) => ({
+      room: i.room, type: i.type,
+      ...(i.members !== null && { members: i.members }),
+      ...(i.from && { from: this.core.handleOf(agent, i.from) ?? i.from, from_id: i.from }),
+      ...(i.origin && { sent: i.origin === 'automatic' ? 'by a program, the sender says' : 'by hand, the sender says' }),
+      ...(i.name && { name: f.wrap(i.name) }),
+      ...(i.topic && { topic: f.wrap(i.topic) }),
+      ...(i.note && { note: f.wrap(i.note) }),
+    }));
+  }
+
+  /** preview_room (§16.7.4): one read of a public room, not joined and not followed. */
+  async preview(agent: string, roomId: string, limit: number, only?: Set<string>): Promise<Json> {
+    const { type } = await this.core.preview(agent, roomId);
+    if (type !== 'public') return { refused: 'Only a public room can be read before joining. For a private room, the invitation shows its name and topic.' };
+    const audience: Audience = only ? 'runner' : 'person';
+    const f = agentTextFence(audience);
+    const info = this.core.rooms(agent).find((r) => r.room === roomId);
+    const all = this.core.messages(agent, { room: roomId }).filter((m) => !m.guard?.held);
+    const picked = all.slice(-limit);
+    this.core.markDelivered(agent, all.map((m) => m.id));
+    const header = { room: roomId, ...(info?.name && { name: f.wrap(info.name) }), ...(info?.topic && { topic: f.wrap(info.topic) }), members: info?.members.length ?? 0 };
+    return { ...f.header(), ...header, messages: picked.map((m) => this.#view(agent, m, audience)), ...(all.length > picked.length && { earlier: all.length - picked.length }), note: 'Read without joining; join_room to take part.' };
+  }
+
   #view(agent: string, m: MessageView, audience: Audience = 'person'): Json {
-    // A room event does not carry its author's name; a name costs a lookup (find_agents), so it is shown when known.
+    // A room event carries only its author's ID; the name comes with the sync (§7.2 authors), and a lookup names the rare author no node did.
     const handle = this.core.handleOf(agent, m.author);
     if (m.guard?.held) return { id: m.id, from: handle ?? m.author, time: new Date(m.ts).toISOString(), held: HELD };
     const g = m.guard;

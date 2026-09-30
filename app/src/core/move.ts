@@ -15,6 +15,7 @@ import {
   checksumAddress, type CowOrder, type Hex, type Permit, type Tx1559,
 } from './evm.ts';
 import type { Wallets } from './wallets.ts';
+import { REPLY_LIMITS, readJson } from './deps.ts';
 
 export const COW_API = 'https://api.cow.fi/base';
 /** CoW Protocol's contracts on Base (the same on every chain), checked on-chain 2026-09-29. */
@@ -205,7 +206,7 @@ export class Mover {
 
   async #cow(path: string, init?: RequestInit): Promise<any> {
     const res = await this.#fetch(`${this.#cowApi}${path}`, { ...init, headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) } });
-    const body: any = await res.json().catch(() => null);
+    const body: any = await readJson(res, REPLY_LIMITS.cow).catch(() => null);
     if (!res.ok) throw new MoveError(`CoW Protocol refused the swap for the network fee: ${body?.description ?? body?.errorType ?? res.status}.`);
     return body;
   }

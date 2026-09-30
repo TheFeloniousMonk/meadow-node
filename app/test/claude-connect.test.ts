@@ -21,7 +21,7 @@ test('Claude Code is not Claude Desktop', () => {
 });
 
 test('the entry is added only while Claude Desktop is closed', async () => {
-  const catalog = new Catalog({ fetchImpl: (async () => ({ ok: true, json: async () => ({ services: [] }) })) as unknown as typeof fetch });
+  const catalog = new Catalog({ fetchImpl: (async () => new Response(JSON.stringify({ services: [] }))) as unknown as typeof fetch });
   const s = new Services({ dbPath: ':memory:', masterKey: randomBytes(32), version: 'test', changed: () => {}, catalog });
   const { id } = s.core.createAgent('Chappy');
   s.connections.set(id, 'claude', 'Chappy');

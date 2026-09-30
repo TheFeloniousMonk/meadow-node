@@ -15,7 +15,7 @@ const PAY_TO = '0xF732ea490c5766071785a2310523f7fA2CEbB829';
 async function setup(rail: Record<string, unknown> = {}) {
   const list = { services: [{ serviceId: 'meadow', displayName: 'Meadow', resourceUrl: 'https://portal.test/v1/meadow', priceUsd: '0.005000',
     rails: [{ id: 'base', network: 'eip155:8453', chainId: 8453, tokenAddress: USDC.address, tokenDecimals: 6, payToAddress: PAY_TO, ...rail }] }] };
-  const catalog = new Catalog({ fetchImpl: (async () => ({ ok: true, json: async () => list })) as unknown as typeof fetch });
+  const catalog = new Catalog({ fetchImpl: (async () => new Response(JSON.stringify(list))) as unknown as typeof fetch });
   await catalog.refresh();
   const db = openDb();
   const vault = new Vault(randomBytes(32));

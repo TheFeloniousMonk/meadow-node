@@ -258,3 +258,88 @@ test('state survives a restart: a new core on the same database keeps reading an
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// --- Author names in sync (SPEC §7.2, §16.8; node 0.3.1) ------------------------------------
+
+/** A transport that records every request, and may rewrite an answer or refuse a request. */
+function watched(opts: { edit?: (path: string, data: any) => any; refuse?: (body: any) => any } = {}) {
+  const calls: { path: string; body: any }[] = [];
+  const inner = nodeTransport(opts.edit);
+  const t: Transport = {
+    async call(path, body: any, as) {
+      calls.push({ path, body });
+      const refusal = opts.refuse?.(body);
+      if (refusal) return { status: 400, data: refusal };
+      return inner.call(path, body, as);
+    },
+  };
+  return { t, calls };
+}
+
+async function strangerPosts() {
+  const lucero = agent('lucero');
+  await lucero.core.register(lucero.id);
+  const { result: room } = await lucero.core.createRoom(lucero.id, { type: 'public', name: 'Porch' });
+  await lucero.core.send(lucero.id, room, 'evening, all');
+  return { lucero, room, handle: lucero.core.agents()[0].handle };
+}
+
+test('a stranger is named from the first answer, then verified and pinned in the next sync, with no lookup', async () => {
+  const { lucero, room, handle } = await strangerPosts();
+  const w = watched();
+  const ari = agent('ari', w.t);
+  await ari.core.read(ari.id, room);
+  assert.equal(ari.core.handleOf(ari.id, lucero.id), handle, 'named from the answer, before any chain');
+  assert.equal(ari.core.protocol3(ari.id), true);
+  const n = w.calls.length;
+  await ari.core.sync(ari.id);
+  const next = w.calls.slice(n);
+  assert.deepEqual(next.map((c) => c.path), ['/v2/sync'], 'one call, the sync it makes anyway');
+  assert.deepEqual(next[0].body.agents, [lucero.id], 'which asks for the chain');
+  assert.equal(w.calls.some((c) => c.path === '/v2/lookup'), false, 'no paid lookup');
+  assert.deepEqual((await ari.core.lookup(ari.id, { handle })).warnings, [], 'the handle is pinned to the verified ID');
+  // Asked once, not on every sync.
+  const m = w.calls.length;
+  await ari.core.sync(ari.id);
+  assert.equal(w.calls.slice(m).some((c) => c.body.agents), false);
+});
+
+test('a node that lies about a name is corrected by the signed chain, and the app says so', async () => {
+  const { lucero, room, handle } = await strangerPosts();
+  const liar = watched({
+    edit: (path, data) => {
+      for (const a of Object.values<any>(data?.authors ?? {})) if (a.name === 'lucero') a.name = 'official-support';
+      return data;
+    },
+  });
+  const ari = agent('ari', liar.t);
+  await ari.core.read(ari.id, room);
+  assert.match(ari.core.handleOf(ari.id, lucero.id)!, /^official-support#/, 'the node is believed at first');
+  await ari.core.sync(ari.id);
+  assert.equal(ari.core.handleOf(ari.id, lucero.id), handle, 'the verified name wins');
+  assert.ok(ari.core.problems(ari.id).some((p) => /official-support.*signed history says "lucero"/.test(p.text)));
+});
+
+test('an older node without authors: no agents are asked for, and names come only from lookups', async () => {
+  const { lucero, room } = await strangerPosts();
+  const old = watched({ edit: (path, data) => { if (data) delete data.authors; return data; } });
+  const ari = agent('ari', old.t);
+  await ari.core.read(ari.id, room);
+  await ari.core.sync(ari.id);
+  assert.equal(ari.core.handleOf(ari.id, lucero.id), null);
+  assert.equal(old.calls.some((c) => c.body.agents), false);
+  assert.equal(ari.core.protocol3(ari.id), false);
+});
+
+test('a node that refuses agents gets the same sync without it, and none for an hour', async () => {
+  const { lucero, room, handle } = await strangerPosts();
+  const picky = watched({ refuse: (b) => b.agents && { error: { code: 'bad_request', message: 'unknown fields: agents' } } });
+  const ari = agent('ari', picky.t);
+  await ari.core.read(ari.id, room);
+  const n = picky.calls.length;
+  const report = await ari.core.sync(ari.id);
+  assert.deepEqual(picky.calls.slice(n).map((c) => !!c.body.agents), [true, false], 'refused, then sent again without it');
+  assert.equal(report.calls, 2);
+  assert.equal(ari.core.protocol3(ari.id), false, 'no agents, and no format 3, for an hour');
+  assert.equal(ari.core.handleOf(ari.id, lucero.id), handle, 'the unverified name still shows');
+});

@@ -40,7 +40,7 @@ test('only published app releases count', () => {
   assert.equal(latestRelease({ message: 'rate limited' }), null);
 });
 
-const fake = (body: unknown, ok = true) => (async () => ({ ok, json: async () => body })) as unknown as typeof fetch;
+const fake = (body: unknown, ok = true) => (async () => new Response(JSON.stringify(body), { status: ok ? 200 : 500 })) as unknown as typeof fetch;
 
 test('the check says what to do per install', async () => {
   const scoop = new UpdateCheck({ version: '0.2.0', kind: 'scoop', fetchImpl: fake(releases) });
@@ -54,7 +54,7 @@ test('the check says what to do per install', async () => {
 test('a failed check keeps the last answer', async () => {
   let body: unknown = releases;
   let ok = true;
-  const u = new UpdateCheck({ version: '0.2.0', kind: 'scoop', fetchImpl: (async () => ({ ok, json: async () => body })) as unknown as typeof fetch });
+  const u = new UpdateCheck({ version: '0.2.0', kind: 'scoop', fetchImpl: (async () => new Response(JSON.stringify(body), { status: ok ? 200 : 500 })) as unknown as typeof fetch });
   await u.check();
   ok = false;
   assert.equal((await u.check())?.version, '0.10.0');
@@ -87,8 +87,8 @@ test('a download is kept only if it matches SHA256SUMS', async () => {
   const good = Buffer.from('the new app');
   const sums = `${createHash('sha256').update(good).digest('hex')}  Meadow-mac-arm64.zip\n`;
   const serve = (file: Buffer) => (async (url: string) => (url.endsWith('SHA256SUMS')
-    ? { ok: true, text: async () => sums }
-    : { ok: true, status: 200, arrayBuffer: async () => file })) as unknown as typeof fetch;
+    ? new Response(sums)
+    : new Response(file))) as unknown as typeof fetch;
   const dir = mkdtempSync(join(tmpdir(), 'meadow-update-'));
   const file = await downloadRelease({ version: '0.1.1', name: 'Meadow-mac-arm64.zip', dir, fetchImpl: serve(good) });
   assert.deepEqual(readFileSync(file), good);

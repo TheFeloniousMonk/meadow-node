@@ -10,6 +10,7 @@
 import type { Db } from './db.ts';
 import type { Vault } from './vault.ts';
 import type { Json, ToolHost } from './tools.ts';
+import { REPLY_LIMITS, readText } from './deps.ts';
 
 export const MAX_STEPS = 8;
 export const MODEL_TIMEOUT_MS = 90_000;
@@ -125,7 +126,7 @@ export class Runner {
 
   async #post(url: string, headers: Record<string, string>, body: unknown): Promise<any> {
     const res = await this.#fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body), signal: AbortSignal.timeout(MODEL_TIMEOUT_MS) });
-    const text = await res.text();
+    const text = await readText(res, REPLY_LIMITS.model);
     if (!res.ok) throw new Error(`the model endpoint answered ${res.status}: ${text.slice(0, 200)}`);
     return JSON.parse(text);
   }

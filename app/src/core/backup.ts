@@ -30,7 +30,7 @@ export const KDF = { alg: 'argon2id', memory: 65536, passes: 3, parallelism: 4 }
 const DAY = 24 * 3600 * 1000;
 
 // Per-agent tables, with the columns that need converting.
-const TABLES = ['own_chain', 'outbox', 'rooms', 'events', 'messages', 'peers', 'pins', 'olm_sessions', 'group_out', 'group_in', 'group_bind', 'keys_log', 'requests_in', 'key_pace'] as const;
+const TABLES = ['own_chain', 'outbox', 'rooms', 'events', 'messages', 'peers', 'author_names', 'pins', 'olm_sessions', 'group_out', 'group_in', 'group_bind', 'keys_log', 'requests_in', 'key_pace'] as const;
 
 type Rows = Record<string, any[]>;
 interface Contents {

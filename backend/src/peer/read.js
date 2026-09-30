@@ -1,7 +1,7 @@
-// Reading a remote reply with a size limit (SPEC §11.1, §11.2). `res.json()`
-// buffers a body of any size, so a hostile peer could make a node hold as
-// much as it can send before the timeout. This reads the stream and stops
-// past the limit.
+// Reading a remote reply with a size limit (SPEC §11.1, §11.2, §16.8).
+// `res.json()` buffers a body of any size, so a hostile peer could make a
+// node hold as much as it can send before the timeout. This reads the stream
+// and stops past the limit. The Meadow app reuses it for the replies it reads.
 
 export const REPLY_LIMITS = {
   hello: 64 * 1024,
@@ -16,14 +16,18 @@ export class ReplyTooLarge extends Error {
   }
 }
 
-/** The reply's JSON, read up to `maxBytes`; throws ReplyTooLarge past it, and a SyntaxError on bad JSON. */
-export async function readJson(res, maxBytes) {
+/** The reply's body, read up to `maxBytes`; throws ReplyTooLarge past it. */
+export async function readBytes(res, maxBytes) {
   const declared = Number(res.headers?.get?.('content-length'));
   if (Number.isFinite(declared) && declared > maxBytes) {
     await res.body?.cancel?.().catch(() => {});
     throw new ReplyTooLarge(maxBytes);
   }
-  if (!res.body) return JSON.parse(await res.text());
+  if (!res.body) {
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length > maxBytes) throw new ReplyTooLarge(maxBytes);
+    return buf;
+  }
   const reader = res.body.getReader();
   const chunks = [];
   let total = 0;
@@ -37,5 +41,15 @@ export async function readJson(res, maxBytes) {
     }
     chunks.push(value);
   }
-  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  return Buffer.concat(chunks);
+}
+
+/** The reply as text, read up to `maxBytes`. */
+export async function readText(res, maxBytes) {
+  return (await readBytes(res, maxBytes)).toString('utf8');
+}
+
+/** The reply's JSON, read up to `maxBytes`; throws ReplyTooLarge past it, and a SyntaxError on bad JSON. */
+export async function readJson(res, maxBytes) {
+  return JSON.parse(await readText(res, maxBytes));
 }

@@ -10,6 +10,7 @@ import type { Catalog } from './catalog.ts';
 import { formatUsd } from './catalog.ts';
 import { TransportError, type CallResult, type Transport } from './transport.ts';
 import type { Wallets } from './wallets.ts';
+import { REPLY_LIMITS, ReplyTooLarge, readJson } from './deps.ts';
 
 export const MEADOW_SERVICE = 'meadow';
 
@@ -51,7 +52,7 @@ export class PortalTransport implements Transport {
     let res = await this.#post(url, json);
     let cost: CallResult['cost'];
     if (res.status === 402) {
-      const offer = decode(res.headers.get('payment-required')) ?? (await res.json().catch(() => undefined));
+      const offer = decode(res.headers.get('payment-required')) ?? (await readJson(res, REPLY_LIMITS.portal).catch(() => undefined));
       let paid;
       try {
         paid = this.#wallets.authorize({ agent, serviceId, path, offer });
@@ -64,7 +65,7 @@ export class PortalTransport implements Transport {
       res = await this.#post(url, json, { 'payment-signature': paid.header });
       const settlement = decode(res.headers.get('payment-response'));
       if (res.status === 402) {
-        const why = ((await res.json().catch(() => undefined)) as any)?.error ?? 'no reason given';
+        const why = ((await readJson(res, REPLY_LIMITS.portal).catch(() => undefined)) as any)?.error ?? 'no reason given';
         this.#wallets.failed(paid.seq, typeof why === 'string' ? why : JSON.stringify(why));
         throw new TransportError('http', `The portal did not accept the payment (${typeof why === 'string' ? why : 'see the Wallets screen'}). Nothing more was signed for this call.`);
       }
@@ -75,8 +76,10 @@ export class PortalTransport implements Transport {
 
     let parsed: any;
     try {
-      parsed = await res.json();
-    } catch {
+      parsed = await readJson(res, REPLY_LIMITS.portal);
+    } catch (err) {
+      // An answer past the limit is refused unread (§16.8): no node answers more than 4 MiB.
+      if (err instanceof ReplyTooLarge) throw new TransportError('http', `The portal answered with more than ${REPLY_LIMITS.portal / 1048576} MiB, which no node sends. The answer was not read.`);
       throw new TransportError('http', `The portal answered ${res.status} with something that is not JSON.`);
     }
     const data = parsed && typeof parsed === 'object' && 'portal' in parsed && 'data' in parsed ? parsed.data : parsed;

@@ -19,12 +19,23 @@ export function signerFromSeed(seed: Uint8Array): Signer {
   return { id: agentIdFromKey(publicKey), privateKey };
 }
 
+/** The fields event format 3 adds (§15). */
+export const FORMAT_3_FIELDS = ['reason', 'origin', 'discoverable'] as const;
+
+/**
+ * The event format to write (§15): 3 only for an event whose data uses a field
+ * format 3 adds, so everything else stays readable by every node.
+ */
+export function formatFor(data: unknown): 2 | 3 {
+  return data !== null && typeof data === 'object' && FORMAT_3_FIELDS.some((k) => k in (data as object)) ? 3 : 2;
+}
+
 /**
  * Signs an event. `fields` is the header without v, author, and ts; content,
  * if given, adds content_hash and content_len (§5.1).
  */
 export function signEvent(signer: Signer, fields: Omit<Header, 'v' | 'author' | 'ts'> & { ts?: number }, content?: string): MeadowEvent {
-  const header: Header = { v: 2, author: signer.id, ts: Date.now(), ...fields } as Header;
+  const header: Header = { v: formatFor(fields.data), author: signer.id, ts: Date.now(), ...fields } as Header;
   if (content !== undefined) {
     header.content_hash = b64u(sha256(Buffer.from(content, 'utf8')));
     header.content_len = Buffer.byteLength(content, 'utf8');

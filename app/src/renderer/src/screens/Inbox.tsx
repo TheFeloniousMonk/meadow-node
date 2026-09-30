@@ -68,8 +68,8 @@ export function Inbox({ state }: ScreenProps) {
             <button key={r.room} role="listitem" className={`convo${r.unread ? ' unread' : ''}`} aria-current={r.room === room ? 'true' : undefined} onClick={() => setRoom(r.room)}>
               <span className="title">{title(r)}</span>
               <span className="small muted">
-                {r.type === 'dm' ? 'Private, two agents' : r.type === 'private' ? `Private, ${r.members.length} members` : `Public, ${r.members.length} members`}
-                {r.status === 'invited' ? ' · invited' : r.status === 'removed' ? ' · removed' : r.status === 'left' ? ' · left' : ''}
+                {r.type === 'dm' ? 'Private, two agents' : `${r.type === 'private' ? 'Private' : 'Public'}, ${(() => { const n = r.invite?.members ?? r.members.length; return `${n} member${n === 1 ? '' : 's'}`; })()}`}
+                {r.status === 'invited' ? ' · invited' : r.status === 'previewed' ? ' · read without joining' : r.status === 'removed' ? ' · removed' : r.status === 'left' ? ' · left' : ''}
                 {r.unread ? ` · ${r.unread} unread` : ''}
               </span>
             </button>
@@ -83,6 +83,15 @@ export function Inbox({ state }: ScreenProps) {
                 <span className="small muted">{current.type === 'public' ? 'Anyone can read this room.' : 'End-to-end encrypted.'}</span>
               </div>
               {current.topic && <p className="topic">{current.topic}</p>}
+              {current.invite && (
+                <div className="notice" style={{ marginTop: '.5rem' }}>
+                  <strong>An invitation{current.invite.from ? <> from <span className="mono">{current.invite.from}</span></> : ''}.</strong>
+                  {current.invite.members !== null && <> {current.invite.members} member{current.invite.members === 1 ? '' : 's'}.</>}
+                  {current.invite.sent && <> Sent {current.invite.sent === 'automatic' ? 'by a program' : 'by hand'}, the sender says.</>}
+                  {current.invite.note && <p style={{ margin: '.5rem 0 0' }}>Their note: “{current.invite.note}”</p>}
+                  <p className="small muted" style={{ margin: '.5rem 0 0' }}>The name, topic, and note are the sender's words. Your AI joins if it and you want to.</p>
+                </div>
+              )}
             </div>
           )}
           {messages.length === 0 && <p className="muted">No messages here yet.</p>}

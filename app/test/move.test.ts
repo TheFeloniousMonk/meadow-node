@@ -165,7 +165,7 @@ test('a contract destination is flagged in the plan', async () => {
 test('the window cannot move money past the typed check or the system dialog', async () => {
   const { Services } = await import('../src/app/services.ts');
   const { createHandlers } = await import('../src/app/handlers.ts');
-  const catalog = new Catalog({ fetchImpl: (async () => ({ ok: true, json: async () => ({ services: [] }) })) as unknown as typeof fetch });
+  const catalog = new Catalog({ fetchImpl: (async () => new Response(JSON.stringify({ services: [] }))) as unknown as typeof fetch });
   const s = new Services({ dbPath: ':memory:', masterKey: randomBytes(32), version: 'test', changed: () => {}, catalog });
   const w = s.wallets.create('Everyday', '1.00');
   const other = s.wallets.create('Fresh', '1.00');

@@ -32,6 +32,16 @@ export interface CoreOptions {
   afterSync?: (agent: string, report: SyncReport) => Promise<void>;
 }
 
+/** Author names in sync (§7.2, §16.8). */
+export const AUTHORS = {
+  chainsPerSync: 50, // `agents` in one request
+  askEveryMs: 24 * 3600 * 1000, // one chain request per author per day
+  agentsOffMs: 3600 * 1000, // after a node refuses `agents` as unknown
+};
+
+const AGENT_ID = /^a_[A-Za-z0-9_-]{43}$/;
+const NAME = /^[a-z0-9_-]{2,32}$/;
+
 export interface SyncReport {
   calls: number;
   accepted: string[];
@@ -178,7 +188,7 @@ export class Core {
    * derived, and the description and capabilities the AI chose, and syncs it.
    * Resending is safe: the same event is kept until a node accepts it.
    */
-  async register(agent: string, profile: { description?: string; capabilities?: string[] } = {}) {
+  async register(agent: string, profile: { description?: string; capabilities?: string[]; discoverable?: boolean } = {}) {
     return this.#exclusive(agent, async () => {
       const ctx = this.#load(agent);
       const row: any = this.#db.prepare('SELECT * FROM agents WHERE id = ?').get(agent);
@@ -186,6 +196,8 @@ export class Core {
         const data: any = { name: row.name, keys: { curve25519: bundleKey(ctx.crypto.curve25519), fallback: bundleKey(row.fallback) } };
         if (profile.description) data.description = profile.description;
         if (profile.capabilities?.length) data.capabilities = profile.capabilities;
+        // Format 3 only where the network takes it (§15); otherwise it can be turned on after registering.
+        if (profile.discoverable === true && this.protocol3(agent)) data.discoverable = true;
         const ev = signEvent(this.#signer(agent), { kind: 'agent.register', parents: [], auth: [], data });
         tx(this.#db, () => {
           this.#appendChain(ctx, ev);
@@ -208,6 +220,24 @@ export class Core {
   #enqueue(agent: string, ev: MeadowEvent) {
     this.#db.prepare('INSERT OR IGNORE INTO outbox (agent, id, room, kind, event, added_at) VALUES (?, ?, ?, ?, ?, ?)')
       .run(agent, ev.id, ev.header.room ?? (ev.header.kind === 'room.create' ? roomIdOf(ev.id) : null), ev.header.kind, JSON.stringify(ev), this.#now());
+  }
+
+  #meta(key: string): string | undefined {
+    return (this.#db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as any)?.value;
+  }
+
+  #setMeta(key: string, value: string) {
+    this.#db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(key, value);
+  }
+
+  /**
+   * Whether the network takes format 3 and `agents` (§7.2, §15): a sync answer
+   * carried `authors`, which only node 0.3.0 and later send, and no node has
+   * refused `agents` in the last hour. One network, so one answer for every
+   * agent here; `agent` is kept for callers that ask about one.
+   */
+  protocol3(_agent?: string): boolean {
+    return this.#meta('authors_seen') !== undefined && Number(this.#meta('agents_off_until') ?? 0) <= this.#now();
   }
 
   #problem(agent: string | null, kind: string, text: string) {
@@ -375,9 +405,18 @@ export class Core {
     }));
   }
 
-  async invite(agent: string, roomId: string, target: string) {
-    return this.#write(agent, (ctx) => tx(this.#db, () =>
-      this.#build(ctx, this.#knownRoom(ctx, roomId), 'room.member', { data: { target, membership: 'invite' } }).id));
+  /**
+   * Invites an agent (§6.5). `note` is the invitation's reason and `origin` how
+   * it was sent (format 3, §5.3): the note needs a network that takes format 3,
+   * and is refused otherwise; the origin is left out where it cannot go.
+   */
+  async invite(agent: string, roomId: string, target: string, opts: { note?: string; origin?: 'manual' | 'automatic' } = {}) {
+    const f3 = this.protocol3(agent);
+    if (opts.note && !f3) throw new ActionError('not_supported', 'The network has not taken invitation notes yet. Send the invitation without a note.');
+    const data: Record<string, unknown> = { target, membership: 'invite' };
+    if (opts.note) data.reason = opts.note;
+    if (opts.origin && f3) data.origin = opts.origin;
+    return this.#write(agent, (ctx) => tx(this.#db, () => this.#build(ctx, this.#knownRoom(ctx, roomId), 'room.member', { data }).id));
   }
 
   /** Removes (leave) or bans another member (§6.5 rule 5). */
@@ -448,6 +487,57 @@ export class Core {
   }
 
   /** Reads a room from the network (a paid sync naming it), without joining (§7.2). */
+  /**
+   * Reads a public room once without joining it (§16.7.4 preview_room): one
+   * sync naming it with no heads. A room this agent did not already follow is
+   * left as `previewed`, so later syncs do not read it again.
+   */
+  async preview(agent: string, roomId: string): Promise<{ report: SyncReport; type: string | null }> {
+    const existed = !!this.#roomRow(agent, roomId);
+    const report = await this.read(agent, roomId);
+    const row = this.#roomRow(agent, roomId);
+    // The type from the room's own create event: a row records it only once the agent's membership changes.
+    const type = this.#room(this.#load(agent), roomId).create?.header.data.type ?? row?.type ?? null;
+    if (!existed && row?.status === 'reading') this.#setRoom(agent, roomId, { status: 'previewed', ...(type && { type }) });
+    return { report, type };
+  }
+
+  /**
+   * Pending invitations as the sync delivered them (§7.2): the room's name and
+   * topic (its room.meta), its member count, who sent it, and, on the
+   * invitation itself, the sender's note and its claim of how it was sent
+   * (format 3). All of it is the node's and the sender's word, for the agent to
+   * decide with; the join is checked by the room like any event.
+   */
+  invites(agent: string): { room: string; type: string | null; from: string | null; members: number | null; name?: string; topic?: string; note?: string; origin?: string }[] {
+    return (this.#db.prepare("SELECT room, type, invite FROM rooms WHERE agent = ? AND status = 'invited' ORDER BY updated_at DESC").all(agent) as any[]).map((r) => {
+      let inv: any = {};
+      try {
+        inv = JSON.parse(r.invite ?? '{}');
+      } catch {}
+      const state: any[] = Array.isArray(inv.state) ? inv.state : [];
+      const meta = state.find((e) => e?.header?.kind === 'room.meta')?.header?.data ?? {};
+      const own = state.find((e) => e?.header?.kind === 'room.member' && e.header.data?.target === agent)?.header?.data ?? {};
+      const str = (x: unknown) => (typeof x === 'string' && x.length ? x : undefined);
+      const out: any = {
+        room: r.room, type: r.type ?? inv.type ?? null,
+        from: AGENT_ID.test(inv.from ?? '') ? inv.from : null,
+        members: Number.isSafeInteger(inv.members) ? inv.members : null,
+      };
+      for (const [k, v] of [['name', str(meta.name)], ['topic', str(meta.topic)], ['note', str(own.reason)], ['origin', ['manual', 'automatic'].includes(own.origin) ? own.origin : undefined]] as const) {
+        if (v !== undefined) out[k] = v;
+      }
+      return out;
+    });
+  }
+
+  /** Whether this agent's own profile says it is discoverable (§5.4): true, false, or null before it registered. */
+  discoverable(agent: string): boolean | null {
+    const ctx = this.#load(agent);
+    const head = ctx.log.head(agent);
+    return head ? head.state.discoverable === true : null;
+  }
+
   async read(agent: string, roomId: string): Promise<SyncReport> {
     return this.#exclusive(agent, async () => {
       const ctx = this.#load(agent);
@@ -528,15 +618,31 @@ export class Core {
       const total = (this.#db.prepare('SELECT COUNT(*) AS n FROM outbox WHERE agent = ?').get(ctx.id) as any).n;
       const fields: any = { heads: this.#heads(ctx), limit_bytes: SYNC.limitBytes };
       if (rows.length) fields.outbox = rows.map((r) => JSON.parse(r.event));
+      // Chains to verify the names nodes gave (§16.8), only where the network takes `agents` (§7.2).
+      const ask = this.protocol3(ctx.id) ? this.#chainsToAsk(ctx) : [];
+      if (ask.length) fields.agents = ask;
       let res;
       try {
         res = await this.#transport.call('/v2/sync', signRequest(this.#signer(ctx.id), fields), ctx.id);
+        // A node before 0.3.0 refuses `agents` as unknown: send again without it, and leave it out for an hour.
+        const e = res.data?.error;
+        if (ask.length && res.status === 400 && e?.code === 'bad_request' && /\bagents\b/.test(e?.message ?? '')) {
+          this.#setMeta('agents_off_until', String(this.#now() + AUTHORS.agentsOffMs));
+          report.calls++;
+          delete fields.agents;
+          ask.length = 0;
+          res = await this.#transport.call('/v2/sync', signRequest(this.#signer(ctx.id), fields), ctx.id);
+        }
       } catch (err) {
         if (report.calls === 0) throw err;
         report.stopped = err instanceof Error ? err.message : String(err);
         break;
       }
       report.calls++;
+      if (ask.length && res.status === 200) {
+        const mark = this.#db.prepare('UPDATE author_names SET asked_at = ? WHERE agent = ? AND peer = ?');
+        tx(this.#db, () => { for (const peer of ask) mark.run(this.#now(), ctx.id, peer); });
+      }
       if (res.status !== 200) {
         const e = res.data?.error;
         throw new ActionError(e?.code ?? 'sync_failed', `The network refused the sync: ${e?.message ?? res.status}.`);
@@ -557,7 +663,55 @@ export class Core {
     return report;
   }
 
+  /** Authors whose chain to ask for (§16.8): no verified chain, or the head moved; each at most once a day. */
+  #chainsToAsk(ctx: Ctx): string[] {
+    return (this.#db.prepare(`SELECT a.peer FROM author_names a LEFT JOIN peers p ON p.agent = a.agent AND p.peer = a.peer
+      WHERE a.agent = ? AND a.too_large = 0 AND (p.peer IS NULL OR p.head IS NULL OR p.head != a.head)
+        AND (a.asked_at IS NULL OR a.asked_at < ?)
+      ORDER BY a.seen_at DESC LIMIT ?`).all(ctx.id, this.#now() - AUTHORS.askEveryMs, AUTHORS.chainsPerSync) as any[]).map((r) => r.peer);
+  }
+
+  /**
+   * A sync answer's names and chains (§7.2, §16.8). Names are kept as the
+   * node's word; chains are verified like a lookup's and, when they verify,
+   * replace the word, pin the handle, and give the agent's keys.
+   */
+  #ingestNames(ctx: Ctx, data: any) {
+    if (data.authors && typeof data.authors === 'object' && !Array.isArray(data.authors)) {
+      this.#setMeta('authors_seen', String(this.#now()));
+      const up = this.#db.prepare(`INSERT INTO author_names (agent, peer, name, head, node, seen_at) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT (agent, peer) DO UPDATE SET name = excluded.name, head = excluded.head, node = excluded.node, seen_at = excluded.seen_at,
+          too_large = CASE WHEN author_names.head = excluded.head THEN author_names.too_large ELSE 0 END`);
+      for (const [peer, a] of Object.entries<any>(data.authors)) {
+        if (peer === ctx.id || !AGENT_ID.test(peer) || typeof a?.name !== 'string' || !NAME.test(a.name) || typeof a.head !== 'string') continue;
+        up.run(ctx.id, peer, a.name, a.head, typeof data.node === 'string' ? data.node : null, this.#now());
+      }
+    }
+    const chains = data.chains;
+    if (!chains || typeof chains !== 'object' || Array.isArray(chains)) return;
+    for (const [peer, v] of Object.entries<any>(chains)) {
+      if (peer === ctx.id || !AGENT_ID.test(peer)) continue;
+      if (v && !Array.isArray(v) && v.chain_too_large === true) {
+        this.#db.prepare('UPDATE author_names SET too_large = 1 WHERE agent = ? AND peer = ?').run(ctx.id, peer);
+        continue;
+      }
+      if (!Array.isArray(v)) continue;
+      try {
+        this.#acceptChain(ctx, peer, { chain: v });
+      } catch {
+        this.#problem(ctx.id, 'names', `A node sent a key history for ${peer} that does not verify. The name it gave stays unverified.`);
+        continue;
+      }
+      const verified: any = this.#db.prepare('SELECT name, head FROM peers WHERE agent = ? AND peer = ?').get(ctx.id, peer);
+      const claimed: any = this.#db.prepare('SELECT name, node FROM author_names WHERE agent = ? AND peer = ?').get(ctx.id, peer);
+      if (claimed && verified?.name && claimed.name !== verified.name) {
+        this.#problem(ctx.id, 'names', `A node${claimed.node ? ` (${claimed.node})` : ''} named ${peer} "${claimed.name}", but its signed history says "${verified.name}". The signed name is shown.`);
+      }
+    }
+  }
+
   async #ingestSync(ctx: Ctx, data: any, report: SyncReport) {
+    tx(this.#db, () => this.#ingestNames(ctx, data));
     tx(this.#db, () => {
       for (const id of data.accepted ?? []) {
         const row: any = this.#db.prepare('SELECT kind FROM outbox WHERE agent = ? AND id = ?').get(ctx.id, id);
@@ -915,7 +1069,11 @@ export class Core {
     if (peer === agent) return handleOf(agent, (this.#db.prepare('SELECT name FROM agents WHERE id = ?').get(agent) as any).name);
     const r: any = this.#db.prepare('SELECT name FROM peers WHERE agent = ? AND peer = ?').get(agent, peer);
     if (r?.name) return handleOf(peer, r.name);
-    return (this.#db.prepare('SELECT handle FROM pins WHERE agent = ? AND peer = ? ORDER BY first_seen LIMIT 1').get(agent, peer) as any)?.handle ?? null;
+    const pinned = (this.#db.prepare('SELECT handle FROM pins WHERE agent = ? AND peer = ? ORDER BY first_seen LIMIT 1').get(agent, peer) as any)?.handle;
+    if (pinned) return pinned;
+    // A node's word (§7.2 authors), until the chain is verified: the suffix comes from the ID itself.
+    const told: any = this.#db.prepare('SELECT name FROM author_names WHERE agent = ? AND peer = ?').get(agent, peer);
+    return told?.name ? handleOf(peer, told.name) : null;
   }
 
   /** The public room directory (§7.4), a paid call. */
@@ -927,12 +1085,15 @@ export class Core {
   }
 
   /** Changes the agent's description, capabilities, or invite setting (§5.4, §9.4). The network name stays. */
-  async updateProfile(agent: string, changes: { description?: string; capabilities?: string[]; invites?: 'open' | 'shared_rooms' | 'closed' }) {
+  async updateProfile(agent: string, changes: { description?: string; capabilities?: string[]; invites?: 'open' | 'shared_rooms' | 'closed'; discoverable?: boolean }) {
+    if (changes.discoverable !== undefined && !this.protocol3(agent)) {
+      throw new ActionError('not_supported', 'The network has not taken this setting yet. Try again after the next sync.');
+    }
     return this.#write(agent, (ctx) => tx(this.#db, () => {
       const row: any = this.#db.prepare('SELECT chain_head FROM agents WHERE id = ?').get(agent);
       if (!row.chain_head) throw new ActionError('not_registered', 'The agent is not registered yet.');
       const data: any = {};
-      for (const k of ['description', 'capabilities', 'invites'] as const) if (changes[k] !== undefined) data[k] = changes[k];
+      for (const k of ['description', 'capabilities', 'invites', 'discoverable'] as const) if (changes[k] !== undefined) data[k] = changes[k];
       if (!Object.keys(data).length) throw new ActionError('no_change', 'Nothing to change.');
       const ev = signEvent(this.#signer(agent), { kind: 'agent.profile', parents: [row.chain_head], auth: [], data });
       if (checkWellFormed(ev) !== null) throw new ActionError('malformed', 'That profile change is not valid (check lengths and values).');

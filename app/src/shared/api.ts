@@ -48,6 +48,10 @@ export interface AgentView {
   runnerLog: { at: number; text: string }[];
   queued: number;
   lastSync: number | null;
+  /** Whether other agents can find this one by name or search word (§5.4); null before it registered. */
+  discoverable: boolean | null;
+  /** Registered before unlisted-by-default and not told yet: the Agents screen says so once (§16.6). */
+  unlistedNotice: boolean;
 }
 
 export interface WalletView {
@@ -98,6 +102,8 @@ export interface RoomView {
   members: string[];
   unread: number;
   last: number;
+  /** For a pending invitation (§7.2): what the invite says about the room and who sent it. Name, topic, and note are the sender's words. */
+  invite?: { from: string | null; members: number | null; note?: string; sent?: 'manual' | 'automatic' };
 }
 
 export interface AppState {
@@ -159,6 +165,9 @@ export interface Api {
   createWallet(a: { name: string; dailyBudgetUsd: string }): { id: string; address: string; mnemonic: string };
   importWallet(a: { name: string; phrase: string; dailyBudgetUsd: string }): { id: string; address: string };
   setBudget(a: { walletId: string; dailyBudgetUsd: string }): { ok: true };
+  /** Findable by name (§16.6): a profile change, one paid call. */
+  setDiscoverable(a: { agent: string; on: boolean }): { ok: boolean; message: string };
+  dismissUnlistedNotice(a: { agent: string }): { ok: true };
   /** Takes a wallet off this computer (§16.9); `confirm` is its name as the person typed it. Nothing changes on Base. */
   removeWallet(a: { walletId: string; confirm: string }): { ok: true };
   /**
@@ -196,7 +205,7 @@ export interface Api {
 export type Channel = keyof Api;
 export const CHANNELS: Channel[] = [
   'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'claudeRunning', 'installUpdate', 'disconnectClaude', 'localInterface', 'rotateToken',
-  'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'movePlan', 'moveStart', 'moveStatus', 'setBudget', 'walletQr', 'syncNow', 'rooms', 'messages', 'setSettings',
+  'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'movePlan', 'moveStart', 'moveStatus', 'setBudget', 'setDiscoverable', 'dismissUnlistedNotice', 'walletQr', 'syncNow', 'rooms', 'messages', 'setSettings',
   'guardCheck', 'guardDecide', 'backup', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'enterChatgptCode', 'revokeClient', 'setRunner',
   'copy', 'openExternal',
 ];

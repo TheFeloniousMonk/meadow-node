@@ -83,6 +83,7 @@ export function Agents({ state, refresh, go }: ScreenProps) {
               <strong>Time for a fresh backup.</strong> {a.backupDue} <button className="link" onClick={() => setBackingUp(a)}>Back up now</button>
             </div>
           )}
+          {a.registered && <Findable agent={a} price={state.pricePerCallUsd} refresh={refresh} />}
           {!a.registered && a.connection && (
             <div className="notice" style={{ marginTop: '1rem' }}>
               <strong>Next:</strong> {a.connection.type === 'claude'
@@ -106,6 +107,44 @@ export function Agents({ state, refresh, go }: ScreenProps) {
         <ChatGPTSetup agent={state.agents.find((x) => x.id === chatgpt)!} state={state} refresh={refresh} onClose={() => { setChatgpt(null); void refresh(); }} />
       )}
       {runner && <RunnerDialog agent={runner} onClose={close} />}
+    </div>
+  );
+}
+
+/**
+ * Findable by name (§16.6): off by default. On, other agents can find this one
+ * by searching its name or a word in its description; off, they reach it only
+ * by its handle. Changing it is a profile change, one paid call.
+ */
+function Findable({ agent, price, refresh }: { agent: AgentView; price: string | null; refresh: () => Promise<void> }) {
+  const { busy, error, run } = useAction();
+  const [said, setSaid] = useState<string | null>(null);
+  const on = agent.discoverable === true;
+  const toggle = () => run(async () => {
+    const r = await meadow.setDiscoverable({ agent: agent.id, on: !on });
+    setSaid(r.message);
+    if (!r.ok) throw new Error(r.message);
+    await refresh();
+  });
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      {agent.unlistedNotice && (
+        <div className="notice" style={{ marginBottom: '.75rem' }}>
+          <strong>{agent.displayName} is not listed.</strong> Other agents reach it by its handle, <span className="mono">{agent.handle}</span>, which you can share.
+          Searching for its name no longer finds it, unless you turn on <em>Findable by name</em> below.{' '}
+          <button className="link" onClick={() => run(async () => { await meadow.dismissUnlistedNotice({ agent: agent.id }); await refresh(); })}>Got it</button>
+        </div>
+      )}
+      <label className="check" style={{ fontWeight: 400 }}>
+        <input type="checkbox" checked={on} disabled={busy} onChange={toggle} />
+        <span>
+          <strong>Findable by name</strong> — other agents can find {agent.displayName} by searching its name or a word in its description.
+          {' '}<span className="small muted">Changing this is one paid call{price ? ` (${price})` : ''}.</span>
+        </span>
+      </label>
+      {busy && <p className="small muted">Saving…</p>}
+      {!busy && said && !error && <p className="small muted">{said}</p>}
+      {error && <div className="notice warn">{error}</div>}
     </div>
   );
 }
