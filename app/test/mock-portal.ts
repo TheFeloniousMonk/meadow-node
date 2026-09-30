@@ -30,6 +30,9 @@ export interface MockPortal {
 
 export async function startMockPortal(): Promise<MockPortal> {
   const node: any = createServer(new Store(), { network: 'main', version: 'test' });
+  // Idle connections stay open a minute, not Node's 5 s: a test that runs a few seconds without
+  // the portal must not reuse a pooled connection just as the server closes it (ECONNRESET, seen in CI).
+  node.keepAliveTimeout = 60_000;
   await new Promise<void>((r) => node.listen(0, '127.0.0.1', r));
   const nodeUrl = `http://127.0.0.1:${(node.address() as AddressInfo).port}`;
   const seen = new Set<string>();
@@ -114,6 +117,7 @@ export async function startMockPortal(): Promise<MockPortal> {
       'payment-response': Buffer.from(JSON.stringify({ success: true, transaction: `0x${'ab'.repeat(32)}`, network: 'eip155:8453' })).toString('base64'),
     });
   });
+  server.keepAliveTimeout = 60_000;
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   m.url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   m.catalogUrl = `${m.url}/services.json`;
