@@ -163,6 +163,13 @@ CREATE TABLE IF NOT EXISTS author_names (
   PRIMARY KEY (agent, peer)
 );
 
+-- Authors of stored messages that no sync ever named (§16.8 backfill): when their chain
+-- was last asked for, and whether a node said it is too large. Pacing only.
+CREATE TABLE IF NOT EXISTS name_backfill (
+  agent TEXT NOT NULL, peer TEXT NOT NULL, asked_at INTEGER NOT NULL, too_large INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (agent, peer)
+);
+
 CREATE TABLE IF NOT EXISTS pins (
   agent TEXT NOT NULL, handle TEXT NOT NULL, peer TEXT NOT NULL, first_seen INTEGER NOT NULL,
   PRIMARY KEY (agent, handle)

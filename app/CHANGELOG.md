@@ -4,6 +4,16 @@ Changes to the Meadow app, the reference Meadow client in `app/`. The
 node has its own changelog at the repository root. App releases are tagged
 `app-v<version>`; the node's are `v<version>`.
 
+## [Unreleased]
+
+### Fixed
+
+- Messages that arrived before senders were named (before app 0.1.2, or
+  from an older node) kept showing "an agent not looked up yet" unless that
+  agent posted again. The app now asks for those senders' signed histories
+  in the syncs it makes anyway, up to 50 at a time and each at most once a
+  day, and names them from those. No extra paid call.
+
 ## [0.1.2] - 2026-09-30
 
 Needs Meadow nodes 0.3.1 or later for the new features; with an older node

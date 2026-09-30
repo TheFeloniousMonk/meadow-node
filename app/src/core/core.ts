@@ -714,7 +714,15 @@ export class Core {
       report.calls++;
       if (ask.length && res.status === 200) {
         const mark = this.#db.prepare('UPDATE author_names SET asked_at = ? WHERE agent = ? AND peer = ?');
-        tx(this.#db, () => { for (const peer of ask) mark.run(this.#now(), ctx.id, peer); });
+        const backfilled = this.#db.prepare(`INSERT INTO name_backfill (agent, peer, asked_at) SELECT ?, ?, ?
+          WHERE NOT EXISTS (SELECT 1 FROM author_names WHERE agent = ? AND peer = ?)
+          ON CONFLICT (agent, peer) DO UPDATE SET asked_at = excluded.asked_at`);
+        tx(this.#db, () => {
+          for (const peer of ask) {
+            mark.run(this.#now(), ctx.id, peer);
+            backfilled.run(ctx.id, peer, this.#now(), ctx.id, peer);
+          }
+        });
       }
       if (res.status !== 200) {
         const e = res.data?.error;
@@ -738,10 +746,24 @@ export class Core {
 
   /** Authors whose chain to ask for (§16.8): no verified chain, or the head moved; each at most once a day. */
   #chainsToAsk(ctx: Ctx): string[] {
-    return (this.#db.prepare(`SELECT a.peer FROM author_names a LEFT JOIN peers p ON p.agent = a.agent AND p.peer = a.peer
+    const since = this.#now() - AUTHORS.askEveryMs;
+    const named = (this.#db.prepare(`SELECT a.peer FROM author_names a LEFT JOIN peers p ON p.agent = a.agent AND p.peer = a.peer
       WHERE a.agent = ? AND a.too_large = 0 AND (p.peer IS NULL OR p.head IS NULL OR p.head != a.head)
         AND (a.asked_at IS NULL OR a.asked_at < ?)
-      ORDER BY a.seen_at DESC LIMIT ?`).all(ctx.id, this.#now() - AUTHORS.askEveryMs, AUTHORS.chainsPerSync) as any[]).map((r) => r.peer);
+      ORDER BY a.seen_at DESC LIMIT ?`).all(ctx.id, since, AUTHORS.chainsPerSync) as any[]).map((r) => r.peer as string);
+    const room = AUTHORS.chainsPerSync - named.length;
+    if (room <= 0) return named;
+    // Backfill (§16.8): authors of stored messages no node ever named, newest first. Their
+    // messages never come back in a sync, so they would otherwise stay unnamed for good.
+    const nameless = (this.#db.prepare(`SELECT m.author AS peer, MAX(m.ts) AS last FROM messages m
+      LEFT JOIN peers p ON p.agent = m.agent AND p.peer = m.author
+      LEFT JOIN author_names a ON a.agent = m.agent AND a.peer = m.author
+      LEFT JOIN name_backfill b ON b.agent = m.agent AND b.peer = m.author
+      WHERE m.agent = ? AND m.author != ? AND p.peer IS NULL AND a.peer IS NULL
+        AND NOT EXISTS (SELECT 1 FROM pins x WHERE x.agent = m.agent AND x.peer = m.author)
+        AND (b.peer IS NULL OR (b.too_large = 0 AND b.asked_at < ?))
+      GROUP BY m.author ORDER BY last DESC LIMIT ?`).all(ctx.id, ctx.id, since, room) as any[]).map((r) => r.peer as string);
+    return [...named, ...nameless.filter((p) => AGENT_ID.test(p))];
   }
 
   /**
@@ -766,6 +788,7 @@ export class Core {
       if (peer === ctx.id || !AGENT_ID.test(peer)) continue;
       if (v && !Array.isArray(v) && v.chain_too_large === true) {
         this.#db.prepare('UPDATE author_names SET too_large = 1 WHERE agent = ? AND peer = ?').run(ctx.id, peer);
+        this.#db.prepare('UPDATE name_backfill SET too_large = 1 WHERE agent = ? AND peer = ?').run(ctx.id, peer);
         continue;
       }
       if (!Array.isArray(v)) continue;

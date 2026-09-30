@@ -42,9 +42,15 @@ function nodeTransport(edit?: (path: string, data: any) => any): Transport & { r
 }
 
 function agent(displayName: string, transport = nodeTransport()) {
-  const core = new Core({ db: openDb(), vault: new Vault(randomBytes(32)), transport });
+  const db = openDb();
+  const core = new Core({ db, vault: new Vault(randomBytes(32)), transport });
   const { id } = core.createAgent(displayName);
-  return { core, id, transport };
+  return { core, id, transport, db };
+}
+
+/** Moves a backfill request a day into the past, as if a day had gone by (§16.8). */
+function backdate(a: { db: ReturnType<typeof openDb> }, peer: string) {
+  a.db.prepare('UPDATE name_backfill SET asked_at = asked_at - 86400001 WHERE peer = ?').run(peer);
 }
 
 const shown = (core: Core, id: string, room: string) =>
@@ -329,6 +335,78 @@ test('an older node without authors: no agents are asked for, and names come onl
   assert.equal(ari.core.handleOf(ari.id, lucero.id), null);
   assert.equal(old.calls.some((c) => c.body.agents), false);
   assert.equal(ari.core.protocol3(ari.id), false);
+});
+
+test('backfill: an author stored before names existed is named by a later sync, with no lookup, asked once a day', async () => {
+  const { lucero, room, handle } = await strangerPosts();
+  // The message arrives from a node that sent no names, as before node 0.3.0.
+  let old = true;
+  let chains = true;
+  const w = watched({ edit: (path, data) => {
+    if (data && old) delete data.authors;
+    if (data && !chains) delete data.chains;
+    return data;
+  } });
+  const ari = agent('ari', w.t);
+  await ari.core.read(ari.id, room);
+  assert.equal(ari.core.handleOf(ari.id, lucero.id), null);
+
+  // The node is upgraded; the message is never sent again, so its author is never in `authors`.
+  old = false;
+  chains = false; // this node does not answer the chain yet
+  await ari.core.sync(ari.id); // the first answer with authors: agents may go from now on
+  let n = w.calls.length;
+  await ari.core.sync(ari.id);
+  assert.deepEqual(w.calls.slice(n).map((c) => c.body.agents), [[lucero.id]], 'asked in the sync it makes anyway');
+  n = w.calls.length;
+  await ari.core.sync(ari.id);
+  assert.equal(w.calls.slice(n).some((c) => c.body.agents), false, 'not asked again within a day');
+  assert.equal(ari.core.handleOf(ari.id, lucero.id), null);
+
+  // A day later it is asked again, and this time the chain comes and verifies.
+  chains = true;
+  n = w.calls.length;
+  backdate(ari, lucero.id);
+  await ari.core.sync(ari.id);
+  assert.deepEqual(w.calls.slice(n).map((c) => c.body.agents), [[lucero.id]]);
+  assert.equal(ari.core.handleOf(ari.id, lucero.id), handle, 'named from the verified chain');
+  assert.equal(w.calls.some((c) => c.path === '/v2/lookup'), false, 'no paid lookup');
+  n = w.calls.length;
+  backdate(ari, lucero.id);
+  await ari.core.sync(ari.id);
+  assert.equal(w.calls.slice(n).some((c) => c.body.agents), false, 'a verified author is not asked for again');
+});
+
+test('backfill skips an author already named by a pin, and stops asking for a chain too large to send', async () => {
+  const { lucero, room } = await strangerPosts();
+  let old = true;
+  let tooLarge = false;
+  const w = watched({ edit: (path, data) => {
+    if (data && old) delete data.authors;
+    if (data?.chains && tooLarge) for (const k of Object.keys(data.chains)) data.chains[k] = { chain_too_large: true };
+    return data;
+  } });
+  const ari = agent('ari', w.t);
+  await ari.core.read(ari.id, room);
+  old = false;
+  await ari.core.sync(ari.id);
+
+  // Pinned from an earlier conversation: it has a name, so nothing is asked.
+  ari.db.prepare('INSERT INTO pins (agent, handle, peer, first_seen) VALUES (?, ?, ?, ?)').run(ari.id, 'lucero#aaaaaaaa', lucero.id, Date.now());
+  let n = w.calls.length;
+  await ari.core.sync(ari.id);
+  assert.equal(w.calls.slice(n).some((c) => c.body.agents), false, 'a pinned author is not asked for');
+  ari.db.prepare('DELETE FROM pins WHERE agent = ?').run(ari.id);
+
+  // Too large: asked once, then never again, even after a day.
+  tooLarge = true;
+  n = w.calls.length;
+  await ari.core.sync(ari.id);
+  assert.deepEqual(w.calls.slice(n).map((c) => c.body.agents), [[lucero.id]]);
+  backdate(ari, lucero.id);
+  n = w.calls.length;
+  await ari.core.sync(ari.id);
+  assert.equal(w.calls.slice(n).some((c) => c.body.agents), false, 'a chain too large is not asked for again');
 });
 
 test('a node that refuses agents gets the same sync without it, and none for an hour', async () => {
