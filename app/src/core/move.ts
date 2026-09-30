@@ -145,9 +145,9 @@ export class Mover {
       if (usdc === 0n) refuse('This wallet is empty: there is nothing to move.');
       let need = await this.#transferCost(from, dest, usdc);
       if ((await ethBalance(from, this.#rpc)) < need) {
-        const uid = await this.#openSwap(from) ?? await this.#placeSwap(wallet, from, usdc, need);
+        const { uid, sell } = await this.#openSwap(from) ?? await this.#placeSwap(wallet, from, usdc, need);
         record({ step: 'swapping', to: dest, swapOrder: uid });
-        this.#db.prepare('UPDATE moves SET swap_order = ? WHERE seq = ?').run(uid, seq);
+        this.#db.prepare('UPDATE moves SET swap_order = ?, swap_sell = ? WHERE seq = ?').run(uid, formatUsd(sell), seq);
         await this.#waitForSwap(uid);
         // The swap is settled; wait for the node we read from to show the ETH.
         for (let i = 0; i < 30 && (await ethBalance(from, this.#rpc)) < need; i++) await this.#sleep(2000);
@@ -211,13 +211,13 @@ export class Mover {
   }
 
   /** An open USDC-to-ETH order from an earlier try that has not settled yet: wait on it rather than place another. */
-  async #openSwap(from: Hex): Promise<string | null> {
+  async #openSwap(from: Hex): Promise<{ uid: string; sell: bigint } | null> {
     const orders: any[] = await this.#cow(`/api/v1/account/${from}/orders?limit=10`).catch(() => []);
     const open = orders.find((o) => o?.status === 'open' && sameAddress(o.sellToken, USDC.address) && sameAddress(o.buyToken, COW.eth) && sameAddress(o.receiver ?? from, from));
-    return open?.uid ?? null;
+    return open ? { uid: open.uid, sell: BigInt(open.sellAmount) } : null;
   }
 
-  async #placeSwap(wallet: string, from: Hex, usdc: bigint, need: bigint): Promise<string> {
+  async #placeSwap(wallet: string, from: Hex, usdc: bigint, need: bigint): Promise<{ uid: string; sell: bigint }> {
     const validTo = Math.floor(this.#now() / 1000) + ORDER_LIFE_S;
     const nonce = await callUint(USDC.address, '0x7ecebe00' + from.slice(2).toLowerCase().padStart(64, '0'), this.#rpc); // nonces(owner)
     const usdcDomain = { name: USDC.name, version: USDC.version, chainId: BASE.chainId, verifyingContract: USDC.address as Hex };
@@ -268,7 +268,7 @@ export class Mover {
       body: JSON.stringify({ ...order, appData: p.appData, appDataHash: p.appDataHash, signingScheme: 'eip712', signature, from, quoteId: p.quoteId }),
     });
     if (typeof uid !== 'string' || !/^0x[0-9a-fA-F]{112}$/.test(uid)) throw new Error('CoW Protocol did not return an order ID');
-    return uid;
+    return { uid, sell };
   }
 
   async #waitForSwap(uid: string) {

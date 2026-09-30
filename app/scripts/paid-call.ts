@@ -9,6 +9,8 @@
 //   node scripts/paid-call.ts balance    its USDC balance on Base
 //   node scripts/paid-call.ts call       one paid POST /v2/rooms {} (the public directory)
 //   node scripts/paid-call.ts phrase     prints the recovery phrase: run it yourself, to move leftover funds
+//   node scripts/paid-call.ts move-plan  makes the next test wallet if needed; shows what moving to it would do
+//   node scripts/paid-call.ts move       moves everything to it with the app's Mover (SPEC §16.9.1); it becomes the test wallet
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
@@ -20,7 +22,8 @@ import { Catalog, formatUsd } from '../src/core/catalog.ts';
 import { Wallets } from '../src/core/wallets.ts';
 import { PortalTransport } from '../src/core/portal.ts';
 import { Core } from '../src/core/core.ts';
-import { tokenBalance } from '../src/core/balance.ts';
+import { ethBalance, tokenBalance } from '../src/core/balance.ts';
+import { Mover } from '../src/core/move.ts';
 
 const dir = join(homedir(), '.meadow-app-dev', 'paid-call');
 mkdirSync(dir, { recursive: true });
@@ -33,9 +36,11 @@ await catalog.refresh();
 const wallets = new Wallets({ db, vault, catalog });
 const core = new Core({ db, vault, transport: new PortalTransport({ catalog, wallets }) });
 
-const wallet = wallets.list()[0];
 const agent = core.agents()[0];
+// The test wallet is the one the harness's agent pays with (after a move, the newer one).
+const wallet = wallets.list().find((w) => w.id === wallets.walletOf(agent?.id ?? null)) ?? wallets.list()[0];
 const rail = catalog.baseRail('meadow')!;
+const nextWallet = () => wallets.list().find((w) => w.id !== wallet.id && w.name === 'Paid-call test (next)');
 
 switch (process.argv[2]) {
   case 'new': {
@@ -67,6 +72,33 @@ switch (process.argv[2]) {
     console.log(vault.openJson(`wallet:${row.id}:secret`, row.secret_sealed).mnemonic);
     break;
   }
+  case 'move-plan': {
+    let next = nextWallet();
+    if (!next) {
+      const w = wallets.create('Paid-call test (next)', '0.02');
+      next = wallets.list().find((x) => x.id === w.id)!;
+      console.log(`Made the next test wallet ${next.address}; its phrase is sealed in ${dir}.`);
+    }
+    const eth = await ethBalance(wallet.address);
+    const p = await new Mover({ wallets, db }).plan(wallet.id, next.address);
+    console.log(JSON.stringify({ from: p.from, to: p.to, usdc: formatUsd(p.usdc), ethWei: eth.toString(), swap: p.swap === null ? null : formatUsd(p.swap), arrives: formatUsd(p.arrives), contract: p.contract }, null, 2));
+    break;
+  }
+  case 'move': {
+    const next = nextWallet();
+    if (!next) throw new Error('run move-plan first');
+    const started = Date.now();
+    const end = await new Mover({ wallets, db }).run(wallet.id, next.address, (s) =>
+      console.log(`${((Date.now() - started) / 1000).toFixed(1)}s`, s.step, JSON.stringify({ ...s, to: undefined })));
+    const [a, b, ethA] = await Promise.all([tokenBalance(wallet.address, rail.tokenAddress), tokenBalance(next.address, rail.tokenAddress), ethBalance(wallet.address)]);
+    console.log(`after: ${wallet.address} ${formatUsd(a)} USDC and ${ethA} wei; ${next.address} ${formatUsd(b)} USDC`);
+    console.log('record', JSON.stringify(db.prepare('SELECT * FROM moves ORDER BY seq DESC LIMIT 1').get()));
+    if (end.step === 'done' || end.step === 'sent') {
+      wallets.assign(agent.id, next.id);
+      console.log(`The test wallet is now ${next.address}.`);
+    }
+    break;
+  }
   default:
-    console.log('usage: node scripts/paid-call.ts new | balance | call | phrase');
+    console.log('usage: node scripts/paid-call.ts new | balance | call | phrase | move-plan | move');
 }

@@ -4,6 +4,12 @@ Changes to the Meadow app, the reference Meadow client in `app/`. The
 node has its own changelog at the repository root. App releases are tagged
 `app-v<version>`; the node's are `v<version>`.
 
+## [Unreleased]
+
+### Fixed
+
+- Move money now records how much USDC the swap for the network fee sold.
+
 ## [0.1.1] - 2026-09-29
 
 ### Added

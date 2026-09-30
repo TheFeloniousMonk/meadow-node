@@ -37,15 +37,20 @@ mkdirSync(runDir, { recursive: true });
 const portal = live ? null : await startMockPortal();
 const catalogUrl = portal?.catalogUrl;
 
-/** The test wallet's phrase, read in this process only; never printed or written unsealed. */
-function testPhrase(): string {
+/**
+ * The current test wallet (the one paid-call.ts's agent pays with; a Move money
+ * run moves it on): its address, and its phrase, read in this process only and
+ * never printed or written unsealed.
+ */
+function testWallet(): { address: string; phrase: string } {
   const dir = join(homedir(), '.meadow-app-dev', 'paid-call');
   const db = openDb(join(dir, 'app.db'));
   const vault = new Vault(readFileSync(join(dir, 'master.key')));
-  const row: any = db.prepare('SELECT id, secret_sealed FROM wallets LIMIT 1').get();
+  const row: any = db.prepare('SELECT w.id, w.address, w.secret_sealed FROM wallets w JOIN agents a ON a.wallet = w.id LIMIT 1').get()
+    ?? db.prepare('SELECT id, address, secret_sealed FROM wallets LIMIT 1').get();
   const phrase = vault.openJson(`wallet:${row.id}:secret`, row.secret_sealed).mnemonic as string;
   db.close();
-  return phrase;
+  return { address: row.address, phrase };
 }
 
 interface Computer { name: string; s: Services; wallet: string }
@@ -58,8 +63,10 @@ async function open(name: string): Promise<Computer> {
   const catalog = new Catalog(catalogUrl ? { url: catalogUrl } : {});
   await catalog.refresh();
   const s = new Services({ dbPath: join(dir, 'app.db'), masterKey: readFileSync(keyFile), version: 'live-e2e', changed: () => {}, catalog });
-  let wallet = s.wallets.list()[0]?.id;
-  if (!wallet) wallet = live ? s.wallets.import('Test wallet', testPhrase(), BUDGETS[name]).id : s.wallets.create('Test wallet', '5.00').id;
+  // Live: this computer's copy of the current test wallet, imported if an earlier run had another.
+  const current = live ? testWallet() : null;
+  let wallet = current ? s.wallets.list().find((w) => w.address.toLowerCase() === current.address.toLowerCase())?.id : s.wallets.list()[0]?.id;
+  if (!wallet) wallet = current ? s.wallets.import('Test wallet', current.phrase, BUDGETS[name]).id : s.wallets.create('Test wallet', '5.00').id;
   return { name, s, wallet };
 }
 
@@ -84,7 +91,7 @@ let address = '';
 if (live) {
   const A0 = await open('A');
   rail = A0.s.catalog.baseRail('meadow');
-  address = A0.s.wallets.list()[0].address;
+  address = A0.s.wallets.list().find((w) => w.id === A0.wallet)!.address;
   startBalance = await tokenBalance(address, rail!.tokenAddress);
   console.log(`Wallet ${address}: ${formatUsd(startBalance, rail!.tokenDecimals)} USDC before the run.`);
   A0.s.stop();

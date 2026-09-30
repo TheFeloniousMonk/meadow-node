@@ -127,7 +127,7 @@ test('a wallet with no ETH swaps a little USDC for the fee through CoW, then sen
   assert.equal(t.to?.toLowerCase(), USDC.address.toLowerCase());
   assert.deepEqual(decodeFunctionData({ abi: ERC20, data: t.data! }).args, [DEST, 4_900_000n]);
   assert.equal((await recoverTransactionAddress({ serializedTransaction: chain.sent[0] as any })).toLowerCase(), w.address.toLowerCase());
-  assert.deepEqual({ ...db.prepare('SELECT status, amount, to_address FROM moves').get() }, { status: 'done', amount: '$4.90', to_address: DEST });
+  assert.deepEqual({ ...db.prepare('SELECT status, amount, to_address, swap_sell FROM moves').get() }, { status: 'done', amount: '$4.90', to_address: DEST, swap_sell: '$0.10' });
 });
 
 test('a wallet that already has enough ETH sends at once, with no swap', async () => {
