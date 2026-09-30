@@ -117,6 +117,18 @@ export interface MessageView {
   delivered: boolean;
   /** MessageGuard's verdict (§16.11): held 1 while kept aside, 2 once the person chose to keep it held. */
   guard?: { verdict: string; matches: { label: string; match: string }[]; held: number };
+  /** It mentions this agent (§16.20.3). */
+  mentioned?: true;
+}
+
+/** Full handles written as mentions in a text (§16.20.2): `@name#suffix`, not run on into a longer word. */
+export const MENTION = /(?<![A-Za-z0-9_#@-])@([a-z0-9_-]{2,32}#[a-z2-7]{8})(?![A-Za-z0-9_-])/g;
+export const MAX_MENTIONS = 64;
+
+/** Whether a text mentions this handle (§16.20.3). */
+export function mentionsHandle(text: string, handle: string): boolean {
+  for (const m of text.matchAll(MENTION)) if (m[1] === handle) return true;
+  return false;
 }
 
 interface Ctx {
@@ -334,12 +346,13 @@ export class Core {
    * heads, auth is selected from the state at them (§6.4). The room must
    * accept it, or the action is refused with the protocol's reason.
    */
-  #build(ctx: Ctx, room: Room, kind: string, opts: { data?: unknown; content?: string; commitment?: string } = {}): MeadowEvent {
+  #build(ctx: Ctx, room: Room, kind: string, opts: { data?: unknown; content?: string; commitment?: string; mentions?: string[] } = {}): MeadowEvent {
     const parents = room.heads().slice(-MAX_PARENTS);
     // The author is set before selecting auth: the author's own membership and binding are cited (§6.4).
     const header: any = { kind, author: ctx.id, room: room.id, parents, auth: [] };
     if (opts.data !== undefined) header.data = opts.data;
     if (opts.commitment) header.commitment = opts.commitment;
+    if (opts.mentions?.length) header.mentions = opts.mentions;
     header.auth = selectAuth(header, room.stateAt(parents));
     const ev = signEvent(this.#signer(ctx.id), header, opts.content);
     return this.#addOwn(ctx, room, ev);
@@ -496,14 +509,16 @@ export class Core {
   }
 
   /** Posts a message (§5.3, §8.7). In a private room or DM it is encrypted, sharing a new session first when §8.4 says so. */
-  async send(agent: string, roomId: string, text: string, opts: { replyTo?: string; report?: Record<string, unknown> } = {}) {
+  async send(agent: string, roomId: string, text: string, opts: { replyTo?: string; report?: Record<string, unknown>; mentions?: string[] } = {}) {
     return this.#write(agent, async (ctx) => {
       const room = this.#knownRoom(ctx, roomId);
       const type = room.create!.header.data.type;
       const body: InnerBody = { text, ...(opts.replyTo && { reply_to: opts.replyTo }), ...(opts.report && { report: opts.report }) };
       if (type === 'public') {
         return tx(this.#db, () => {
-          const ev = this.#build(ctx, room, 'msg.post', { content: JSON.stringify(body) });
+          // Mentions ride in the header only in public rooms (§5.2, §6.5 rule 3; §16.20.1).
+          const mentions = [...new Set(opts.mentions ?? [])].filter((id) => /^a_[A-Za-z0-9_-]{43}$/.test(id) && id !== ctx.id).slice(0, MAX_MENTIONS);
+          const ev = this.#build(ctx, room, 'msg.post', { content: JSON.stringify(body), ...(mentions.length && { mentions }) });
           this.#storeMessage(ctx, ev, { status: 'shown', body }, true);
           return ev.id;
         });
@@ -1070,12 +1085,30 @@ export class Core {
 
   #storeMessage(ctx: Ctx, ev: MeadowEvent, m: { status: string; body?: InnerBody; kf?: string; session?: string; index?: number; slot?: string; checked?: string }, delivered = false) {
     const sealed = m.body ? this.#vault.sealJson(`message:${ctx.id}:${ev.id}`, { body: m.body, ...(m.kf && { k_f: m.kf }) }) : null;
-    this.#db.prepare(`INSERT INTO messages (agent, id, room, author, ts, status, body_sealed, session, idx, slot, checked, delivered, received_at)
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    // A private message is 'decrypted' until its slot settles (§8.7); a mention there counts once it is shown.
+    const readable = m.status === 'shown' || (m.status === 'decrypted' && m.checked === 'ok');
+    const mentioned = this.#mentions(ctx, ev, readable ? m.body : undefined) ? 1 : 0;
+    this.#db.prepare(`INSERT INTO messages (agent, id, room, author, ts, status, body_sealed, session, idx, slot, checked, delivered, received_at, mentioned)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                       ON CONFLICT (agent, id) DO UPDATE SET status = excluded.status, body_sealed = excluded.body_sealed,
-                        session = excluded.session, idx = excluded.idx, slot = excluded.slot, checked = excluded.checked`)
+                        session = excluded.session, idx = excluded.idx, slot = excluded.slot, checked = excluded.checked, mentioned = excluded.mentioned`)
       .run(ctx.id, ev.id, ev.header.room!, ev.header.author, ev.header.ts, m.status, sealed, m.session ?? null, m.index ?? null,
-        m.slot ?? null, m.checked ?? null, delivered ? 1 : 0, this.#now());
+        m.slot ?? null, m.checked ?? null, delivered ? 1 : 0, this.#now(), mentioned);
+  }
+
+  /**
+   * Whether a message mentions this agent (§16.20.3): its ID in a public header's
+   * `mentions`, or its own full handle in the text it can read. Never its own
+   * messages, and not in DMs, where every message is addressed to it.
+   */
+  #mentions(ctx: Ctx, ev: MeadowEvent, body: InnerBody | undefined): boolean {
+    if (ev.header.author === ctx.id) return false;
+    const type = this.#roomRow(ctx.id, ev.header.room!)?.type;
+    if (type === 'dm') return false;
+    // Valid only in public rooms, which every node and the agent's own room already check (§6.5 rule 3).
+    if (Array.isArray(ev.header.mentions) && ev.header.mentions.includes(ctx.id)) return true;
+    const name = (this.#db.prepare('SELECT name FROM agents WHERE id = ?').get(ctx.id) as any)?.name;
+    return !!body && typeof body.text === 'string' && !!name && mentionsHandle(body.text, handleOf(ctx.id, name));
   }
 
   /**
@@ -1087,7 +1120,8 @@ export class Core {
       const rows = this.#db.prepare('SELECT id, checked FROM messages WHERE agent = ? AND slot = ? ORDER BY id').all(ctx.id, slot) as any[];
       rows.forEach((r, i) => {
         const status = i > 0 ? 'replayed' : r.checked === 'ok' ? 'shown' : 'bad_commitment';
-        this.#db.prepare('UPDATE messages SET status = ? WHERE agent = ? AND id = ?').run(status, ctx.id, r.id);
+        // Only a shown message can mention the agent (§16.20.3): a replay or a failed commitment never does.
+        this.#db.prepare(`UPDATE messages SET status = ?, mentioned = CASE WHEN ? = 'shown' THEN mentioned ELSE 0 END WHERE agent = ? AND id = ?`).run(status, status, ctx.id, r.id);
       });
     }
   }
@@ -1333,7 +1367,7 @@ export class Core {
     if (opts.deliverable) sql += ' AND held = 0';
     sql += ' ORDER BY ts, id';
     return (this.#db.prepare(sql).all(...args) as any[]).map((m) => {
-      const view: MessageView = { id: m.id, room: m.room, author: m.author, ts: m.ts, status: m.status, delivered: !!m.delivered };
+      const view: MessageView = { id: m.id, room: m.room, author: m.author, ts: m.ts, status: m.status, delivered: !!m.delivered, ...(m.mentioned && { mentioned: true as const }) };
       if (m.status === 'missing_key' && this.#preJoin(this.#ctx.get(agent)!, m.room, m.id)) view.preJoin = true;
       if (m.guard) view.guard = { verdict: m.guard, matches: m.guard_matches ? JSON.parse(m.guard_matches) : [], held: m.held };
       if (m.status === 'shown' && m.body_sealed) {

@@ -236,9 +236,11 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
 
     rooms({ agent }) {
       const unread = new Map<string, number>();
+      const mentions = new Map<string, number>();
       const last = new Map<string, number>();
       for (const m of s.core.messages(agent)) {
         if (!m.delivered && m.author !== agent) unread.set(m.room, (unread.get(m.room) ?? 0) + 1);
+        if (!m.delivered && m.mentioned) mentions.set(m.room, (mentions.get(m.room) ?? 0) + 1);
         last.set(m.room, Math.max(last.get(m.room) ?? 0, m.ts));
       }
       // A pending invitation says what the room is before joining (§7.2): its name and topic come from the invite.
@@ -251,7 +253,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
           return {
             room: r.room, type: r.type ?? i?.type ?? null, status: r.status, guard: r.guard, notify: r.notify, ...(name && { name }), ...(topic && { topic }),
             ...((n) => (n ? { note: { text: n.text, ai: n.who !== 'you' } } : {}))(s.notes.get(agent, 'room', r.room)),
-            ...(r.dmWith && { with: s.core.handleOf(agent, r.dmWith) ?? r.dmWith }), members: r.members, unread: unread.get(r.room) ?? 0, last: last.get(r.room) ?? 0,
+            ...(r.dmWith && { with: s.core.handleOf(agent, r.dmWith) ?? r.dmWith }), members: r.members, unread: unread.get(r.room) ?? 0, mentions: mentions.get(r.room) ?? 0, last: last.get(r.room) ?? 0,
             ...(i && { invite: { from: i.from ? s.core.handleOf(agent, i.from) ?? i.from : null, members: i.members, ...(i.note && { note: i.note }), ...(i.origin && { sent: i.origin as 'manual' | 'automatic' }) } }),
           };
         })
@@ -264,7 +266,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
         id: m.id, room: m.room, author: m.author, authorHandle: s.core.handleOf(agent, m.author), mine: m.author === agent,
         ts: m.ts, status: m.status, statusWords: m.status === 'shown' ? null : m.preJoin ? STATUS_WORDS.pre_join : STATUS_WORDS[m.status] ?? m.status,
         ...(m.text !== undefined && { text: m.text }), ...(m.reply_to && { replyTo: m.reply_to }),
-        unreadByAgent: !m.delivered && m.author !== agent, queued: queued.has(m.id),
+        unreadByAgent: !m.delivered && m.author !== agent, queued: queued.has(m.id), ...(m.mentioned && { mentioned: true }),
         ...(m.guard && { guard: { verdict: m.guard.verdict, matches: m.guard.matches.map((x) => x.label), held: m.guard.held } }),
         ...(m.report && { report: m.report.valid ? { valid: true, reason: m.report.reason, text: m.report.text, note: m.report.note } : { valid: false, why: m.report.why } }),
       }));

@@ -145,6 +145,8 @@ export interface MessageView {
   replyTo?: string;
   unreadByAgent: boolean;
   queued: boolean;
+  /** It mentions this agent (§16.20.3). */
+  mentioned?: boolean;
   guard?: { verdict: string; matches: string[]; held: number };
   report?: { valid: boolean; reason?: string; text?: string; note?: string; why?: string };
 }
@@ -160,6 +162,8 @@ export interface RoomView {
   with?: string;
   members: string[];
   unread: number;
+  /** Unread messages that mention this agent (§16.20.3). */
+  mentions: number;
   last: number;
   /** For a pending invitation (§7.2): what the invite says about the room and who sent it. Name, topic, and note are the sender's words. */
   invite?: { from: string | null; members: number | null; note?: string; sent?: 'manual' | 'automatic' };

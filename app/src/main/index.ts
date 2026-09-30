@@ -14,7 +14,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, watchFile, wri
 import { basename, dirname, join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { masterKey } from './master-key.ts';
-import { Services } from '../app/services.ts';
+import { Services, type MentionNote } from '../app/services.ts';
 import { createHandlers } from '../app/handlers.ts';
 import { CHANNELS } from '../shared/api.ts';
 import { bridgeCopyPath, downloadRelease, installKind, launchPath, scoopUpdateScript } from '../core/update.ts';
@@ -146,13 +146,16 @@ function createTray() {
 /** A system notification when new messages arrive (§16.14); clicking it opens the window. */
 // Normal rooms share one notification, skipped while the window is in front; a priority
 // room gets its own, naming it, even then; muted rooms raise none (§16.10.2).
-function notify(_agent: string, name: string, count: number, held: number, priority: { room: string; title: string; count: number }[] = []) {
+function notify(_agent: string, name: string, count: number, held: number, priority: { room: string; title: string; count: number }[] = [], mentions?: MentionNote) {
   if (!Notification.isSupported()) return;
   const show = (title: string, body: string) => {
     const n = new Notification({ title, body, icon: join(resources, 'icon.png') });
     n.on('click', showWindow);
     n.show();
   };
+  // Mentions: their own notifications, in every room, even with the window in front (§16.20.3).
+  for (const m of mentions?.rooms ?? []) show(`${name} was mentioned in ${m.title}`, `${m.by} mentioned ${name}${m.count > 1 ? `, with ${m.count} mentions there` : ''}.`);
+  if (mentions?.more) show(`${name} was mentioned in ${mentions.more} more room${mentions.more === 1 ? '' : 's'}`, 'Open the Inbox to see where.');
   for (const p of priority) show(`${name} on Meadow: ${p.title}`, `${p.count} new message${p.count === 1 ? '' : 's'}.`);
   if ((!count && !held) || (win?.isVisible() && win.isFocused())) return;
   const parts = [...(count ? [`${count} new message${count === 1 ? '' : 's'}`] : []), ...(held ? [`${held} kept aside by MessageGuard for you to look at`] : [])];

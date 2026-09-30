@@ -51,7 +51,11 @@ const SYNC_FAILURE_WORDS: Record<ReturnType<typeof syncFailureClass>, string> = 
   app: 'the app failed',
 };
 
-export type Notify = (agent: string, displayName: string, count: number, held: number, priority: { room: string; title: string; count: number }[]) => void;
+export type Notify = (agent: string, displayName: string, count: number, held: number, priority: { room: string; title: string; count: number }[], mentions?: MentionNote) => void;
+
+/** Mention notifications (§16.20.3): one per room, at most 5 a sync, and how many more rooms had mentions. */
+export type MentionNote = { rooms: { room: string; title: string; by: string; count: number }[]; more: number };
+export const MENTION_ROOMS_PER_SYNC = 5;
 
 export class Services {
   readonly db: Db;
@@ -77,6 +81,27 @@ export class Services {
   server: Server | null = null;
   serverError: string | null = null;
   lastSync = new Map<string, number>();
+
+  /**
+   * Mentions not yet notified (§16.20.3), by room, and marks them notified. A message
+   * MessageGuard holds waits until the person releases it; muted rooms count too.
+   */
+  #newMentions(agent: string): MentionNote {
+    const rows = this.db.prepare(`SELECT id, room, author FROM messages WHERE agent = ? AND mentioned = 1 AND mention_notified = 0 AND held = 0 AND author != ?
+      ORDER BY received_at, id`).all(agent, agent) as any[];
+    if (!rows.length) return { rooms: [], more: 0 };
+    const mark = this.db.prepare('UPDATE messages SET mention_notified = 1 WHERE agent = ? AND id = ?');
+    for (const r of rows) mark.run(agent, r.id);
+    const byRoom = new Map<string, { first: string; count: number }>();
+    for (const r of rows) {
+      const e = byRoom.get(r.room) ?? { first: r.author, count: 0 };
+      e.count++;
+      byRoom.set(r.room, e);
+    }
+    const info = new Map(this.core.rooms(agent).map((r) => [r.room, r]));
+    const all = [...byRoom].map(([room, e]) => ({ room, title: info.get(room)?.name ?? 'a room', by: this.core.handleOf(agent, e.first) ?? 'An agent', count: e.count }));
+    return { rooms: all.slice(0, MENTION_ROOMS_PER_SYNC), more: Math.max(0, all.length - MENTION_ROOMS_PER_SYNC) };
+  }
 
   /** What the network did to an agent, in the activity log (§16.18.1). */
   #received(agent: string, what: Received) {
@@ -152,22 +177,26 @@ export class Services {
         this.db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(`sync_ok:${agent}`, String(Date.now()));
         const screened = await this.guard.screenNew(agent);
         if (screened.stopped) this.db.prepare('INSERT INTO problems (agent, at, kind, text) VALUES (?, ?, ?, ?)').run(agent, Date.now(), 'messageguard', `MessageGuard could not check every new message: ${screened.stopped}`);
-        if (report.messages && this.settings().notifications) {
+        const mentions = this.#newMentions(agent);
+        if ((report.messages || mentions.rooms.length) && this.settings().notifications) {
           const a = this.core.agents().find((x) => x.id === agent);
           const rooms = new Map(this.core.rooms(agent).map((r) => [r.room, r]));
+          // A room with a mention notification is covered by it, whatever its setting.
+          const mentioned = new Set(mentions.rooms.map((m) => m.room));
           let normal = 0;
           const priority: { room: string; title: string; count: number }[] = [];
           for (const [room, n] of Object.entries(report.byRoom ?? {})) {
             const r = rooms.get(room);
-            if (r?.notify === 'muted') continue;
-            if (r?.notify !== 'priority') {
+            if (mentioned.has(room) || r?.notify === 'muted') continue;
+            // An unmuted DM is addressed to the agent: Priority (§16.20.4).
+            if (r?.notify !== 'priority' && r?.type !== 'dm') {
               normal += n;
               continue;
             }
             const title = r.type === 'dm' ? `DM with ${(r.dmWith && this.core.handleOf(agent, r.dmWith)) ?? 'another agent'}` : r.name ?? 'a room';
             priority.push({ room, title, count: n });
           }
-          if (normal || priority.length || screened.held) this.#notify(agent, a?.display_name ?? 'Your agent', normal, screened.held, priority);
+          if (normal || priority.length || screened.held || mentions.rooms.length) this.#notify(agent, a?.display_name ?? 'Your agent', normal, screened.held, priority, mentions);
         }
         // The runner acts outside the sync that woke it (the sync holds the agent's lock, and its own writes sync).
         if (this.runner.config(agent)?.enabled) setTimeout(() => void this.runner.run(agent).finally(() => this.#changed()), 0);

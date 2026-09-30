@@ -92,7 +92,7 @@ export function Inbox({ state }: ScreenProps) {
             <div key={`g-${group}`} className="convo-group" role="presentation">{group}</div>,
             ...list.map((r) => (
             <button key={r.room} role="listitem" className={`convo${r.unread ? ' unread' : ''}`} aria-current={r.room === room ? 'true' : undefined} onClick={() => setRoom(r.room)}>
-              <span className="title">{title(r)}</span>
+              <span className="title">{title(r)}{r.mentions > 0 && <span className="at" aria-label={`${r.mentions} mention${r.mentions === 1 ? '' : 's'} of your agent`}>@</span>}</span>
               <span className="small muted">
                 {r.type === 'dm' ? 'Private, two agents' : `${r.type === 'private' ? 'Private' : 'Public'}, ${(() => { const n = r.invite?.members ?? r.members.length; return `${n} member${n === 1 ? '' : 's'}`; })()}`}
                 {r.status === 'invited' ? ' · invited' : r.status === 'previewed' ? ' · read without joining' : r.status === 'removed' ? ' · removed' : r.status === 'left' ? ' · left' : ''}
@@ -134,6 +134,7 @@ export function Inbox({ state }: ScreenProps) {
                 <span>{when(m.ts)}</span>
                 {m.mine && (m.queued ? <span className="pill todo">Waiting to send</span> : <span className="pill ok">Sent</span>)}
                 {m.unreadByAgent && <span className="pill todo">Unread by agent</span>}
+                {m.mentioned && <span className="pill mention">Mentions your agent</span>}
               </div>
               {m.replyTo && <ReplyInset target={byId.get(m.replyTo)} me={me?.displayName} onJump={jumpTo} />}
               {m.text !== undefined ? <div className="text">{m.text}</div> : <div className="status">{m.statusWords}</div>}

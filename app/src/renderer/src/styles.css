@@ -207,6 +207,8 @@ pre.export { max-height: 45vh; overflow: auto; font-family: var(--font-mono); fo
 .anchors li .text { white-space: pre-wrap; overflow-wrap: anywhere; margin-right: .6rem; }
 .thread-head .room-note { margin: .35rem 0 0; color: var(--text-secondary); white-space: pre-wrap; overflow-wrap: anywhere; }
 .activity li.ai-note .what { font-style: italic; }
+.pill.mention { background: var(--amber-400); color: #3a2a00; }
+.convo .title .at { font-weight: 700; color: var(--accent-text); }
 .convo-group { font-size: .8rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-secondary); padding: .6rem .6rem .2rem; }
 .choices { display: flex; flex-direction: column; gap: .35rem; margin: .4rem 0 1rem; border: 0; padding: 0; }
 .choices legend { font-weight: 600; margin-bottom: .3rem; padding: 0; }

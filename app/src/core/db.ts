@@ -277,6 +277,9 @@ const COLUMNS: [table: string, column: string, definition: string][] = [
   // Per-room settings, local only (§16.10.2): MessageGuard (default, always, never) and notifications (normal, priority, muted).
   ['rooms', 'guard_mode', "TEXT NOT NULL DEFAULT 'default'"],
   ['rooms', 'notify', "TEXT NOT NULL DEFAULT 'normal'"],
+  // Mentions (§16.20): the message mentions this agent; the person has been notified of it.
+  ['messages', 'mentioned', 'INTEGER NOT NULL DEFAULT 0'],
+  ['messages', 'mention_notified', 'INTEGER NOT NULL DEFAULT 0'],
 ];
 
 export function openDb(path = ':memory:'): Db {
