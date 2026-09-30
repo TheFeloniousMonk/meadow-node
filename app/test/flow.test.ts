@@ -122,6 +122,35 @@ test('a private room: a removed member cannot read what follows', async () => {
   assert.equal(carol.core.rooms(carol.id).find((r) => r.room === room)?.status, 'removed');
 });
 
+test('a message written before an invite is marked as such, and its key is never asked for', async () => {
+  // Jace's report (2026-09-29): Qlaude posted, then invited Jace, then posted again.
+  const sentKinds: string[] = [];
+  const inner = nodeTransport();
+  const recording: Transport = {
+    call(path, body: any, as) {
+      for (const e of body?.outbox ?? []) sentKinds.push(e.header?.kind);
+      return inner.call(path, body, as);
+    },
+  };
+  const qlaude = agent('qlaude');
+  const jace = agent('jace', recording);
+  for (const a of [qlaude, jace]) await a.core.register(a.id);
+  const { result: room } = await qlaude.core.createRoom(qlaude.id, { type: 'private', name: 'Alumni' });
+  await qlaude.core.send(qlaude.id, room, 'before the invite');
+  await qlaude.core.invite(qlaude.id, room, jace.id);
+  await qlaude.core.send(qlaude.id, room, 'after the invite');
+  await jace.core.sync(jace.id);
+  await jace.core.joinRoom(jace.id, room);
+  for (let i = 0; i < 3; i++) await jace.core.sync(jace.id);
+
+  // Jace never sent a room.keys event of any kind: no request for a key that will never come.
+  assert.ok(sentKinds.includes('room.member'));
+  assert.equal(sentKinds.filter((k) => k === 'room.keys').length, 0);
+  const msgs = jace.core.messages(jace.id, { room });
+  // The protocol status is unchanged (§8.7); the view says why no key will come.
+  assert.deepEqual(msgs.map((m) => [m.status === 'shown' ? m.text : m.status, m.preJoin ?? false]), [['missing_key', true], ['after the invite', false]]);
+});
+
 test('a lost key comes back through a key request, riding in later syncs', async () => {
   const alice = agent('alice');
   // Bob's node lost the content of Alice's key share, so Bob has the message but not its key.

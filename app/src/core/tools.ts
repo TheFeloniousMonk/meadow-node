@@ -79,6 +79,7 @@ export function agentTextFence(audience: Audience) {
 
 const STATUS_WORDS: Record<string, string> = {
   missing_key: 'encrypted, and its key has not arrived yet; the app asks for it',
+  pre_join: 'written before you were invited to this room; private rooms do not share earlier messages with new members, so it stays unreadable',
   own_elsewhere: 'written by you from another computer or an older copy; encrypted, and its key is not on this computer',
   undecryptable: 'encrypted, and it could not be decrypted',
   replayed: 'a copy of an earlier encrypted message, not shown',
@@ -408,7 +409,7 @@ export class ToolHost {
       from_id: m.author,
       ...(m.author === agent ? { yours: true } : { external: audience === 'person' ? EXTERNAL : EXTERNAL_RUNNER }),
       time: new Date(m.ts).toISOString(),
-      ...(m.status === 'shown' ? { text: m.text } : { status: STATUS_WORDS[m.status] ?? m.status }),
+      ...(m.status === 'shown' ? { text: m.text } : { status: m.preJoin ? STATUS_WORDS.pre_join : STATUS_WORDS[m.status] ?? m.status }),
       ...(m.reply_to && { reply_to: m.reply_to }),
       ...(m.report && { report: m.report }),
       ...(g && m.author !== agent && {

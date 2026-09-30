@@ -57,6 +57,12 @@ export interface MessageView {
   author: string;
   ts: number;
   status: string;
+  /**
+   * A missing_key message written before this agent was a recipient (§8.4): no
+   * key will ever come for it (§8.6), so it is not asked for, and it is shown as
+   * written before the agent was invited. The status stays missing_key (§8.7).
+   */
+  preJoin?: true;
   text?: string;
   reply_to?: string;
   /** A report to this agent as a moderator (§9.2), verified here. */
@@ -209,6 +215,13 @@ export class Core {
   }
 
   // --- Rooms ------------------------------------------------------------------------
+
+  /** Whether the agent was not yet a recipient (member or invitee) in the state before this event (§8.4). */
+  #preJoin(ctx: Ctx, roomId: string, eventId: string): boolean {
+    const room = this.#room(ctx, roomId);
+    const ev = room.event(eventId);
+    return !!ev && !recipients(room.stateAt(ev.header.parents), ev.header.author).has(ctx.id);
+  }
 
   #room(ctx: Ctx, roomId: string): Room {
     let room = ctx.rooms.get(roomId);
@@ -813,13 +826,15 @@ export class Core {
     }
 
     // Requests (§8.6): for missing keys in joined rooms, once per session per 24 hours.
-    const missing = this.#db.prepare(`SELECT m.room, m.author, m.session, MIN(m.idx) AS idx FROM messages m
+    const missing = this.#db.prepare(`SELECT m.room, m.author, m.session, MIN(m.idx) AS idx, GROUP_CONCAT(m.id) AS ids FROM messages m
       JOIN rooms r ON r.agent = m.agent AND r.room = m.room AND r.status = 'joined'
       WHERE m.agent = ? AND m.status = 'missing_key' AND m.session IS NOT NULL
       GROUP BY m.room, m.author, m.session`).all(ctx.id) as any[];
     const byOwner = new Map<string, { room: string; owner: string; sessions: { session: string; from: number }[] }>();
     for (const m of missing) {
       if (paced('ask', m.room, m.session, m.author) || !canSendTo(m.author)) continue;
+      // All written before this agent was a recipient: the owner would give nothing (§8.6), so do not ask.
+      if (String(m.ids).split(',').every((id) => this.#preJoin(ctx, m.room, id))) continue;
       const k = `${m.room}|${m.author}`;
       const entry = byOwner.get(k) ?? { room: m.room as string, owner: m.author as string, sessions: [] as { session: string; from: number }[] };
       if (entry.sessions.length < E2E_LIMITS.sessionsPerRequest) entry.sessions.push({ session: m.session, from: m.idx ?? 0 });
@@ -1009,6 +1024,7 @@ export class Core {
     sql += ' ORDER BY ts, id';
     return (this.#db.prepare(sql).all(...args) as any[]).map((m) => {
       const view: MessageView = { id: m.id, room: m.room, author: m.author, ts: m.ts, status: m.status, delivered: !!m.delivered };
+      if (m.status === 'missing_key' && this.#preJoin(this.#ctx.get(agent)!, m.room, m.id)) view.preJoin = true;
       if (m.guard) view.guard = { verdict: m.guard, matches: m.guard_matches ? JSON.parse(m.guard_matches) : [], held: m.held };
       if (m.status === 'shown' && m.body_sealed) {
         const { body } = this.#vault.openJson(`message:${agent}:${m.id}`, m.body_sealed);

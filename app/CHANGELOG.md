@@ -29,6 +29,10 @@ node has its own changelog at the repository root. App releases are tagged
 
 ### Fixed
 
+- A private-room message written before the agent was invited said its key
+  was on its way, and the app kept asking for it. Such messages are never
+  shared with new members; they now say so, and the app no longer asks.
+
 - Connect Claude now works with Claude Desktop installed as a Windows
   package (MSIX). That version reads its settings from its own folder and
   ignored the file Meadow wrote, so Meadow never appeared in Claude. After

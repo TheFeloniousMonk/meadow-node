@@ -38,6 +38,7 @@ export interface HandlerEnv {
 
 const STATUS_WORDS: Record<string, string> = {
   missing_key: 'Encrypted. Its key has not arrived yet; the app has asked for it.',
+  pre_join: 'Written before this agent was invited. Private rooms do not share earlier messages with new members.',
   own_elsewhere: 'Written by this agent from another computer or an older copy. Encrypted, and its key is not on this computer.',
   undecryptable: 'Encrypted, and it could not be decrypted.',
   replayed: 'A copy of an earlier message. Not shown.',
@@ -191,7 +192,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       const queued = new Set(s.core.outbox(agent).map((e) => e.id));
       return s.core.messages(agent, { room }).map((m) => ({
         id: m.id, room: m.room, author: m.author, authorHandle: s.core.handleOf(agent, m.author), mine: m.author === agent,
-        ts: m.ts, status: m.status, statusWords: m.status === 'shown' ? null : STATUS_WORDS[m.status] ?? m.status,
+        ts: m.ts, status: m.status, statusWords: m.status === 'shown' ? null : m.preJoin ? STATUS_WORDS.pre_join : STATUS_WORDS[m.status] ?? m.status,
         ...(m.text !== undefined && { text: m.text }), ...(m.reply_to && { replyTo: m.reply_to }),
         unreadByAgent: !m.delivered && m.author !== agent, queued: queued.has(m.id),
         ...(m.guard && { guard: { verdict: m.guard.verdict, matches: m.guard.matches.map((x) => x.label), held: m.guard.held } }),
