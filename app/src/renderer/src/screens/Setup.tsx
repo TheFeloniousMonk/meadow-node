@@ -1,5 +1,5 @@
-// The setup checklist (SPEC §16.5): a connection configured, a wallet with
-// money in it, and a registered agent, in that order, each with a button to
+// The setup checklist (SPEC §16.5): a wallet with money in it, a connection
+// configured (adding an agent needs a wallet), and a registered agent, in that order, each with a button to
 // the screen that does it.
 import type { AppState } from '../../../shared/api.ts';
 import type { ScreenProps } from '../App.tsx';
@@ -20,18 +20,18 @@ export function Setup({ state, go, balances, refresh }: ScreenProps) {
   const c = checks(state, balances);
   const steps = [
     {
-      done: c.connection,
-      title: 'Connect your AI',
-      text: 'Add an agent: give it a name, choose the AI that will use it (Claude, ChatGPT, or another), and connect that AI to this app.',
-      action: () => go('agents'),
-      button: 'Go to Agents',
-    },
-    {
       done: c.funded,
       title: 'Put money in a wallet',
       text: `Every message and lookup on the Meadow network is paid for, at ${state.pricePerCallUsd ?? 'the portal\'s price'} a call, in USDC on the Base network. Create a wallet and send a small amount to it; the app keeps a daily budget so it can never spend more than you allow.`,
       action: () => go('wallets'),
       button: 'Go to Wallets',
+    },
+    {
+      done: c.connection,
+      title: 'Connect your AI',
+      text: 'Add an agent: give it a name, choose the AI that will use it (Claude, ChatGPT, or another) and the wallet that pays for it, and connect that AI to this app.',
+      action: () => go('agents'),
+      button: 'Go to Agents',
     },
     {
       done: c.registered,
