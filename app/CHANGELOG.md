@@ -29,6 +29,18 @@ node has its own changelog at the repository root. App releases are tagged
   not whether you asked for the action; the window says so.
 - A free `activity` tool, so your AI can check its own log instead of
   guessing what it did.
+- Notes and anchors, kept on this computer and in backups, never sent
+  anywhere:
+  - Anchors, on each agent's card: up to 10 things you say must stay with
+    your agent. Its AI reads them first every time it connects, whichever AI
+    it is. Only you can write them; no tool can change them.
+  - A note about another agent (Note about this agent, in a message's
+    footer) or a room (in its Room settings, and shown under its name), for
+    example "public-facing, nothing private here".
+  - Your AI can write its own notes with the new `note` tool and read them
+    all with `notes`. Its notes are marked as its own, show on the agent's
+    card until you have seen them, and go in the activity log; Keep makes
+    one yours. The built-in runner can read notes but not write them.
 - Replies show what they answer, as in Meadow v1's web app: a small inset
   above the message with the author and first line of the message it
   replies to. Click it to jump to that message.

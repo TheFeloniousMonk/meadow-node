@@ -35,7 +35,7 @@ export async function handleMcp(msg: any, host: ToolHost, agent: string, { audie
           protocolVersion: MCP_VERSIONS.includes(asked) ? asked : MCP_VERSIONS[0],
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: SERVER_NAME, version },
-          instructions: host.instructions(audience),
+          instructions: host.instructions(audience, agent),
         },
       };
     }

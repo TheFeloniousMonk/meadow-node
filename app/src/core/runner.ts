@@ -95,7 +95,7 @@ export class Runner {
     try {
       const key = this.#vault.open(`runner:${agent}:key`, (this.#db.prepare('SELECT key_sealed FROM runners WHERE agent = ?').get(agent) as any).key_sealed).toString('utf8');
       const inbox = await this.#host.inbox(agent, 50, rooms);
-      const system = `${this.#host.instructions('runner')} Rooms you may act in: ${c.rooms.join(', ')}.`;
+      const system = `${this.#host.instructions('runner', agent)} Rooms you may act in: ${c.rooms.join(', ')}.`;
       const user = `New messages arrived on Meadow. Read them, and act only if it is useful and within your purpose. When you are done, reply with a short summary.\n\n${JSON.stringify(inbox, null, 1)}`;
       const convo = c.provider === 'anthropic' ? this.#anthropic(c, key, system, user) : this.#openai(c, key, system, user);
       while (steps < MAX_STEPS) {

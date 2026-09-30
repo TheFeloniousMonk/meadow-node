@@ -214,6 +214,16 @@ CREATE TABLE IF NOT EXISTS key_pace (
   PRIMARY KEY (agent, kind, room, session_id, peer)
 );
 
+-- Notes and anchors (§16.19): local and private, sealed like message bodies. kind: anchor (the
+-- agent itself, the person's alone), agent (about another agent, by ID), room. who: as the
+-- activity log's. acked 0 marks a note the AI wrote that the person has not seen yet.
+CREATE TABLE IF NOT EXISTS notes (
+  agent TEXT NOT NULL, id TEXT NOT NULL, kind TEXT NOT NULL, about TEXT NOT NULL DEFAULT '',
+  text_sealed BLOB NOT NULL, who TEXT NOT NULL, at INTEGER NOT NULL, acked INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY (agent, id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS notes_about ON notes (agent, kind, about) WHERE kind != 'anchor';
+
 -- The activity log (§16.18): what changed, who caused it, in plain sentences; never message
 -- text. ext marks a sentence holding text other agents wrote (room names, notes), fenced for the AI.
 CREATE TABLE IF NOT EXISTS activity (

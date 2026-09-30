@@ -9,10 +9,11 @@ import { dirname } from 'node:path';
 import { backupChanges, backupDue, describeBackup, makeBackup, readBackup, restoreBackup } from '../core/backup.ts';
 import { tokenBalance } from '../core/balance.ts';
 import { add, bridgeEntry, claudeDesktopConfigPath, claudeDesktopRunning, entryName, remove, status } from '../server/claude-desktop.ts';
-import { CHANNELS, linkAllowed, type Api, type AppState, type Channel, type MessageView, type MovePlanView, type MoveStateView } from '../shared/api.ts';
+import { CHANNELS, linkAllowed, type Api, type AppState, type Channel, type MessageView, type MovePlanView, type MoveStateView, type NoteView } from '../shared/api.ts';
 import type { Services } from './services.ts';
 import { connectionCheck, diagnosticsText, testConnection, type ClaudeState } from './check.ts';
 import { WHO_WORDS, type ActivityKind } from '../core/activity.ts';
+import type { Note } from '../core/notes.ts';
 
 export interface HandlerEnv {
   /** The app's executable, which runs the Claude bridge as Node. */
@@ -134,6 +135,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
             runnerLog: s.runner.log(a.id, 5),
             queued: s.core.outbox(a.id).filter((e) => e.kind === 'msg.post').length,
             may: s.core.may(a.id),
+            newAiNotes: s.notes.unseen(a.id),
             check: connectionCheck(s, a.id, claudeState(a.id)),
             heldBySetting: s.core.heldBySetting(a.id),
             lastSync: s.lastSyncOk(a.id),
@@ -248,6 +250,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
           const topic = r.topic ?? i?.topic;
           return {
             room: r.room, type: r.type ?? i?.type ?? null, status: r.status, guard: r.guard, notify: r.notify, ...(name && { name }), ...(topic && { topic }),
+            ...((n) => (n ? { note: { text: n.text, ai: n.who !== 'you' } } : {}))(s.notes.get(agent, 'room', r.room)),
             ...(r.dmWith && { with: s.core.handleOf(agent, r.dmWith) ?? r.dmWith }), members: r.members, unread: unread.get(r.room) ?? 0, last: last.get(r.room) ?? 0,
             ...(i && { invite: { from: i.from ? s.core.handleOf(agent, i.from) ?? i.from : null, members: i.members, ...(i.note && { note: i.note }), ...(i.origin && { sent: i.origin as 'manual' | 'automatic' }) } }),
           };
@@ -299,6 +302,44 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       const was = s.runner.config(agent)?.enabled ?? false;
       s.runner.configure(agent, c);
       you(agent, 'settings', was === c.enabled ? 'Changed the built-in runner’s settings.' : `Turned the built-in runner ${c.enabled ? 'on' : 'off'}.`);
+      return { ok: true };
+    },
+
+    notes({ agent }) {
+      const view = (n: Note): NoteView => ({
+        id: n.id, kind: n.kind, about: n.about, text: n.text, whoWords: WHO_WORDS[n.who], ai: n.who !== 'you', unseen: n.unseen, at: n.at,
+        title: n.kind === 'anchor' ? '' : n.kind === 'agent' ? s.core.handleOf(agent, n.about) ?? n.about : roomTitle(agent, n.about).title,
+      });
+      return { anchors: s.notes.anchors(agent).map(view), notes: s.notes.list(agent).filter((n) => n.kind !== 'anchor').map(view) };
+    },
+
+    setAnchor({ agent, id, text }) {
+      const key = s.notes.setAnchor(agent, id ?? null, text);
+      you(agent, 'settings', id ? 'Changed an anchor.' : 'Added an anchor.');
+      return { id: key };
+    },
+
+    setNote({ agent, kind, about, text }) {
+      if (kind !== 'agent' && kind !== 'room') throw new Error('A note is about an agent or a room.');
+      const done = s.notes.set(agent, kind, about, text, 'you');
+      const what = kind === 'agent' ? s.core.handleOf(agent, about) ?? about : '{room}';
+      if (done !== 'unchanged') you(agent, 'settings', `${{ added: 'Wrote a note about', changed: 'Changed the note about', removed: 'Removed the note about' }[done]} ${what}.`, kind === 'room' ? about : undefined);
+      return { ok: true };
+    },
+
+    removeNote({ agent, id }) {
+      const n = s.notes.remove(agent, id);
+      if (n) you(agent, 'settings', n.kind === 'anchor' ? 'Removed an anchor.' : `Removed the note about ${n.kind === 'agent' ? s.core.handleOf(agent, n.about) ?? n.about : '{room}'}.`, n.kind === 'room' ? n.about : undefined);
+      return { ok: true };
+    },
+
+    keepNote({ agent, id }) {
+      s.notes.keep(agent, id);
+      return { ok: true };
+    },
+
+    notesSeen({ agent }) {
+      s.notes.seen(agent);
       return { ok: true };
     },
 

@@ -51,6 +51,8 @@ export interface AgentView {
   /** What this agent may do (§16.7.5), and how many queued events that setting holds back. */
   may: 'all' | 'no_new' | 'porch';
   heldBySetting: number;
+  /** Notes the AI wrote that the person has not seen yet (§16.19.2). */
+  newAiNotes: number;
   /** The connection check (§16.17.2); null for an agent with no connection. */
   check: ConnectionCheckView | null;
   /** Whether other agents can find this one by name or search word (§5.4); null before it registered. */
@@ -81,6 +83,23 @@ export interface ConnectionTestView {
   ok: boolean;
   steps: { label: string; ok: boolean; text: string }[];
   note: string;
+}
+
+/** A note or an anchor as the window shows it (§16.19). */
+export interface NoteView {
+  id: string;
+  kind: 'anchor' | 'agent' | 'room';
+  /** The agent ID or room ID it is about; '' for an anchor. */
+  about: string;
+  /** What it is about, as the window names it: a handle, a room's name, or the DM. */
+  title: string;
+  text: string;
+  whoWords: string;
+  /** Written by the AI, not the person. */
+  ai: boolean;
+  /** Written by the AI and not yet seen by the person. */
+  unseen: boolean;
+  at: number;
 }
 
 /** One entry of an agent's activity log (§16.18). */
@@ -147,6 +166,8 @@ export interface RoomView {
   /** This room's own settings, on this computer only (§16.10.2). */
   guard: 'default' | 'always' | 'never';
   notify: 'normal' | 'priority' | 'muted';
+  /** The room's note (§16.19), if it has one. */
+  note?: { text: string; ai: boolean };
 }
 
 export interface AppState {
@@ -239,6 +260,18 @@ export interface Api {
   setMay(a: { agent: string; may: 'all' | 'no_new' | 'porch' }): { ok: true };
   /** A room's own MessageGuard and notification settings (§16.10.2, §16.11). */
   setRoomSettings(a: { agent: string; room: string; guard?: 'default' | 'always' | 'never'; notify?: 'normal' | 'priority' | 'muted' }): { ok: true };
+  /** An agent's anchors (oldest first) and notes (newest first), §16.19.4. */
+  notes(a: { agent: string }): { anchors: NoteView[]; notes: NoteView[] };
+  /** Adds (no id) or changes an anchor. Only the window can. */
+  setAnchor(a: { agent: string; id?: string; text: string }): { id: string };
+  /** The person's note about an agent or a room; empty text removes it. */
+  setNote(a: { agent: string; kind: 'agent' | 'room'; about: string; text: string }): { ok: true };
+  /** Removes a note or an anchor. */
+  removeNote(a: { agent: string; id: string }): { ok: true };
+  /** Keeps a note the AI wrote: it becomes the person's. */
+  keepNote(a: { agent: string; id: string }): { ok: true };
+  /** The person has seen the AI's new notes. */
+  notesSeen(a: { agent: string }): { ok: true };
   /** An agent's activity log, newest first (§16.18.3). */
   activity(a: { agent: string }): ActivityView[];
   /** Saves the activity log as a text file; `days` limits it to the last so many days. */
@@ -265,7 +298,7 @@ export type Channel = keyof Api;
 export const CHANNELS: Channel[] = [
   'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'claudeRunning', 'installUpdate', 'disconnectClaude', 'localInterface', 'rotateToken',
   'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'movePlan', 'moveStart', 'moveStatus', 'setBudget', 'setDiscoverable', 'dismissUnlistedNotice', 'walletQr', 'syncNow', 'rooms', 'messages', 'setSettings',
-  'guardCheck', 'guardDecide', 'backup', 'backupChanges', 'setMay', 'setRoomSettings', 'testConnection', 'diagnosticsText', 'diagnosticsSave', 'activity', 'activitySave', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'enterChatgptCode', 'revokeClient', 'setRunner',
+  'guardCheck', 'guardDecide', 'backup', 'backupChanges', 'setMay', 'setRoomSettings', 'testConnection', 'diagnosticsText', 'diagnosticsSave', 'activity', 'activitySave', 'notes', 'setAnchor', 'setNote', 'removeNote', 'keepNote', 'notesSeen', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'enterChatgptCode', 'revokeClient', 'setRunner',
   'copy', 'openExternal',
 ];
 

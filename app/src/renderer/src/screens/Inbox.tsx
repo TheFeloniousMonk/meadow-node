@@ -7,6 +7,7 @@ import type { AppState, MessageView, RoomView } from '../../../shared/api.ts';
 import { Dialog, meadow, useAction, when } from '../lib.tsx';
 import type { ScreenProps } from '../App.tsx';
 import { guardCost } from './Settings.tsx';
+import { NoteEditor } from './Notes.tsx';
 
 /** A room to open when the Inbox next shows, from elsewhere (the activity log, §16.18.3). */
 let pending: { agent: string; room: string } | null = null;
@@ -26,6 +27,7 @@ export function Inbox({ state }: ScreenProps) {
   const [messages, setMessages] = useState<MessageView[]>([]);
   const [checking, setChecking] = useState<MessageView | null>(null);
   const [settingRoom, setSettingRoom] = useState(false);
+  const [noting, setNoting] = useState<{ about: string; title: string } | null>(null);
   // A reply's inset scrolls to the message it answers and highlights it briefly (§16.10.2).
   const [flash, setFlash] = useState<string | null>(null);
   const jumpTo = (id: string) => {
@@ -111,6 +113,7 @@ export function Inbox({ state }: ScreenProps) {
                 </div>
               </div>
               {current.topic && <p className="topic">{current.topic}</p>}
+              {current.note && <p className="room-note small"><strong>{current.note.ai ? 'Your AI’s note:' : 'Your note:'}</strong> {current.note.text}</p>}
               {current.invite && (
                 <div className="notice" style={{ marginTop: '.5rem' }}>
                   <strong>An invitation{current.invite.from ? <> from <span className="mono">{current.invite.from}</span></> : ''}.</strong>
@@ -142,12 +145,13 @@ export function Inbox({ state }: ScreenProps) {
                 </div>
               )}
               {!m.mine && (m.text !== undefined || m.guard) && (
-                <MessageTools m={m} onCheck={() => setChecking(m)} onDecide={async (release) => { await meadow.guardDecide({ agent, message: m.id, release }); await reload(); }} />
+                <MessageTools m={m} onNote={() => setNoting({ about: m.author, title: m.authorHandle ?? 'this agent' })} onCheck={() => setChecking(m)} onDecide={async (release) => { await meadow.guardDecide({ agent, message: m.id, release }); await reload(); }} />
               )}
             </article>
           ))}
         </div>
       </div>
+      {noting && <NoteEditor agent={agent} kind="agent" about={noting.about} title={noting.title} onClose={() => setNoting(null)} />}
       {settingRoom && current && (
         <RoomSettings room={current} rooms={rooms} agent={agent} state={state} title={title(current)} onClose={async () => { setSettingRoom(false); setRooms(await meadow.rooms({ agent })); }} />
       )}
@@ -185,7 +189,7 @@ const VERDICT_WORDS: Record<string, string> = {
  * nothing here reads as the message. MessageGuard's verdict, the person's check, and the
  * choices for a message kept aside; later per-message actions go here too.
  */
-function MessageTools({ m, onCheck, onDecide }: { m: MessageView; onCheck: () => void; onDecide: (release: boolean) => Promise<void> }) {
+function MessageTools({ m, onCheck, onDecide, onNote }: { m: MessageView; onCheck: () => void; onDecide: (release: boolean) => Promise<void>; onNote: () => void }) {
   const g = m.guard;
   return (
     <div className="tools" role="group" aria-label="Message tools">
@@ -205,6 +209,7 @@ function MessageTools({ m, onCheck, onDecide }: { m: MessageView; onCheck: () =>
       )}
       {g?.held === 2 && <span className="pill warn">Kept held</span>}
       {m.text !== undefined && <button className="link small" onClick={onCheck}>Check for prompt injection</button>}
+      <button className="link small" onClick={onNote}>Note about this agent</button>
       {g && g.verdict !== 'unchecked' && <span className="small muted">A filter for known tricks, not a guarantee.</span>}
     </div>
   );
@@ -255,6 +260,7 @@ function screened(r: RoomView, state: AppState): boolean {
 function RoomSettings({ room, rooms, agent, state, title, onClose }: { room: RoomView; rooms: RoomView[]; agent: string; state: AppState; title: string; onClose: () => void }) {
   const [guard, setGuard] = useState(room.guard);
   const [notify, setNotify] = useState(room.notify);
+  const [note, setNote] = useState(room.note?.text ?? '');
   const { busy, error, run } = useAction();
   const privateRoom = room.type !== 'public';
   const byDefault = privateRoom ? state.settings.guardPrivate : state.settings.guardPublic;
@@ -293,11 +299,17 @@ function RoomSettings({ room, rooms, agent, state, title, onClose }: { room: Roo
         {n('priority', 'Priority', 'A notification of its own, naming this room, even while Meadow is open in front.')}
         {n('muted', 'Muted', 'No notification. Its messages still arrive, count as unread, and reach your agent.')}
       </fieldset>
+      <div className="field">
+        <label htmlFor="room-note">Note for this room</label>
+        <textarea id="room-note" rows={3} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} placeholder="For example: public-facing, nothing private here." />
+        <div className="hint">Your AI sees it with this room{room.note?.ai ? '. Your AI wrote the note that is here now' : ''}. Kept on this computer only. Empty removes it.</div>
+      </div>
       {error && <div className="notice warn">{error}</div>}
       <div className="actions">
         <button className="secondary" onClick={onClose}>Cancel</button>
         <button disabled={busy} onClick={() => run(async () => {
           await meadow.setRoomSettings({ agent, room: room.room, guard, notify });
+          if (note !== (room.note?.text ?? '')) await meadow.setNote({ agent, kind: 'room', about: room.room, text: note });
           onClose();
         })}>Save</button>
       </div>

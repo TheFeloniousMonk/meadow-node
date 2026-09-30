@@ -203,6 +203,10 @@ pre.export { max-height: 45vh; overflow: auto; font-family: var(--font-mono); fo
 .activity li.problem .what { color: var(--warn-text); }
 .activity .who { font-weight: 600; }
 @media (max-width: 720px) { .activity li { grid-template-columns: 1fr; gap: .1rem; } }
+.anchors { margin: 0 0 .5rem; padding-left: 1.4rem; display: flex; flex-direction: column; gap: .4rem; }
+.anchors li .text { white-space: pre-wrap; overflow-wrap: anywhere; margin-right: .6rem; }
+.thread-head .room-note { margin: .35rem 0 0; color: var(--text-secondary); white-space: pre-wrap; overflow-wrap: anywhere; }
+.activity li.ai-note .what { font-style: italic; }
 .convo-group { font-size: .8rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-secondary); padding: .6rem .6rem .2rem; }
 .choices { display: flex; flex-direction: column; gap: .35rem; margin: .4rem 0 1rem; border: 0; padding: 0; }
 .choices legend { font-weight: 600; margin-bottom: .3rem; padding: 0; }

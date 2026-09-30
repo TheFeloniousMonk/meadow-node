@@ -22,6 +22,7 @@ import { Runner } from '../core/runner.ts';
 import { Tunnel } from './tunnel.ts';
 import { Diagnostics, syncFailureClass } from '../core/diagnostics.ts';
 import { Activity } from '../core/activity.ts';
+import { Notes } from '../core/notes.ts';
 import type { Received } from '../core/core.ts';
 import { UpdateCheck, type InstallKind } from '../core/update.ts';
 import type { Settings } from '../shared/api.ts';
@@ -69,6 +70,7 @@ export class Services {
   readonly update: UpdateCheck;
   readonly diagnostics: Diagnostics;
   readonly activity: Activity;
+  readonly notes: Notes;
   publicServer: Server | null = null;
   publicError: string | null = null;
   #notify: Notify;
@@ -133,6 +135,7 @@ export class Services {
     // After every sync, from any path (background, Sync Now, a tool): screen what arrived, then tell the person.
     this.diagnostics = new Diagnostics({ db: this.db });
     this.activity = new Activity({ db: this.db });
+    this.notes = new Notes({ db: this.db, vault: this.vault });
     this.core = new Core({
       db: this.db, vault: this.vault, transport: this.transport,
       // Every failed sync, from any path, with where it failed (§16.17.1).
@@ -172,7 +175,7 @@ export class Services {
       },
     });
     this.connections = new Connections({ db: this.db, vault: this.vault });
-    this.tools = new ToolHost({ core: this.core, wallets: this.wallets, catalog: this.catalog, guard: guardSettings, diagnostics: this.diagnostics, activity: this.activity });
+    this.tools = new ToolHost({ core: this.core, wallets: this.wallets, catalog: this.catalog, guard: guardSettings, diagnostics: this.diagnostics, activity: this.activity, notes: this.notes });
     this.oauth = new OAuth({ db: this.db, diagnostics: this.diagnostics });
     this.runner = new Runner({ db: this.db, vault: this.vault, host: this.tools });
     // Each change of the tunnel's state is recorded, with its error or address (§16.17.1).

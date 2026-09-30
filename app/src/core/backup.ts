@@ -31,7 +31,7 @@ export const KDF = { alg: 'argon2id', memory: 65536, passes: 3, parallelism: 4 }
 const DAY = 24 * 3600 * 1000;
 
 // Per-agent tables, with the columns that need converting.
-const TABLES = ['own_chain', 'outbox', 'rooms', 'events', 'messages', 'peers', 'author_names', 'pins', 'olm_sessions', 'group_out', 'group_in', 'group_bind', 'keys_log', 'requests_in', 'key_pace'] as const;
+const TABLES = ['own_chain', 'outbox', 'rooms', 'events', 'messages', 'peers', 'author_names', 'pins', 'olm_sessions', 'group_out', 'group_in', 'group_bind', 'keys_log', 'requests_in', 'key_pace', 'notes'] as const;
 
 type Rows = Record<string, any[]>;
 interface Contents {
@@ -71,6 +71,8 @@ export function makeBackup(db: Db, vault: Vault, agent: string, password: string
       delete row.seq; // outbox and own_chain sequence numbers are local; order is kept by position
       if (t === 'own_chain' || t === 'outbox' || t === 'events') row._order = r.seq;
       if (t === 'messages' && r.body_sealed) row.body_sealed = vault.openJson(`message:${agent}:${r.id}`, r.body_sealed);
+      // Notes and anchors (§16.19): sealed here under this computer's key, carried as text inside the encryption.
+      if (t === 'notes') row.text_sealed = vault.openJson(`note:${agent}:${r.id}`, r.text_sealed);
       if (t === 'olm_sessions') row.pickle = repickle(wasm.Session, r.pickle);
       if (t === 'group_out') {
         row.pickle = repickle(wasm.GroupSession, r.pickle);
@@ -174,6 +176,7 @@ export function restoreBackup(db: Db, vault: Vault, c: Contents, { replace = fal
         delete out._order;
         if (t === 'own_chain' || t === 'events' || t === 'group_out') out.seq = r._order;
         if (t === 'messages' && r.body_sealed) out.body_sealed = vault.sealJson(`message:${agent}:${r.id}`, r.body_sealed);
+        if (t === 'notes') out.text_sealed = vault.sealJson(`note:${agent}:${r.id}`, r.text_sealed);
         // The peers' copies may have moved past these (§8.9): receive on them, never send.
         if (t === 'olm_sessions') {
           out.pickle = repickle(wasm.Session, r.pickle);

@@ -685,13 +685,21 @@ export class Core {
     if (s.notify !== undefined) this.#db.prepare('UPDATE rooms SET notify = ? WHERE agent = ? AND room = ?').run(s.notify, agent, room);
   }
 
+  /** An agent ID, from an ID or a handle this computer already knows; null otherwise. Never a paid lookup. */
+  knownAgent(agent: string, who: string): string | null {
+    if (/^a_[A-Za-z0-9_-]{43}$/.test(who)) return who;
+    const pinned = this.#pinned(agent, who);
+    if (pinned) return pinned;
+    return (this.#db.prepare('SELECT peer FROM peers WHERE agent = ? UNION SELECT peer FROM author_names WHERE agent = ?').all(agent, agent) as any[])
+      .map((r) => r.peer as string).find((p) => this.handleOf(agent, p) === who) ?? null;
+  }
+
   /**
    * The DM this agent has already joined with `who` (an agent ID or a handle), found
    * on this computer only, with no paid lookup; null if there is none (§16.7.5).
    */
   joinedDmWith(agent: string, who: string): string | null {
-    let peer: string | null = /^a_[A-Za-z0-9_-]{43}$/.test(who) ? who : this.#pinned(agent, who);
-    if (!peer) peer = (this.#db.prepare('SELECT peer FROM peers WHERE agent = ?').all(agent) as any[]).map((r) => r.peer as string).find((p) => this.handleOf(agent, p) === who) ?? null;
+    const peer = this.knownAgent(agent, who);
     if (!peer) return null;
     return this.rooms(agent).find((r) => r.type === 'dm' && r.status === 'joined' && r.dmWith === peer)?.room ?? null;
   }
