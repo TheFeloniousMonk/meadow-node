@@ -186,6 +186,11 @@ th { color: var(--text-secondary); font-weight: 600; font-size: .9rem; }
 .msg .tools { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; margin-top: .7rem; padding-top: .55rem; border-top: 1px solid var(--border-subtle); font-size: .88rem; color: var(--text-secondary); }
 .msg .tools .label { font-weight: 600; letter-spacing: .02em; }
 .msg .tools button.link { font-size: .88rem; }
+.check-panel { border-top: 1px solid var(--border-subtle); padding-top: .8rem; }
+.steps { list-style: none; padding: 0; margin: .7rem 0; display: flex; flex-direction: column; gap: .45rem; }
+.steps li { display: flex; gap: .6rem; align-items: baseline; }
+.steps .pill { flex: none; min-width: 6.5rem; justify-content: center; }
+pre.export { max-height: 45vh; overflow: auto; font-family: var(--font-mono); font-size: .8rem; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg-surface-alt); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: .8rem; }
 .convo-group { font-size: .8rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-secondary); padding: .6rem .6rem .2rem; }
 .choices { display: flex; flex-direction: column; gap: .35rem; margin: .4rem 0 1rem; border: 0; padding: 0; }
 .choices legend { font-weight: 600; margin-bottom: .3rem; padding: 0; }

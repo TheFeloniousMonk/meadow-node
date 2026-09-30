@@ -49,6 +49,12 @@ const handle = createHandlers(services, {
   // The harness writes a temp file, not Claude's own, so a Claude open on this computer does not matter here.
   claudeRunning: async () => process.argv.includes('--claude-open'),
   // Files go to a temporary folder; opening picks the last backup saved there.
+  saveText: async (name, text) => {
+    const path = join(files, name);
+    writeFileSync(path, text);
+    console.log('saved:', path);
+    return path;
+  },
   saveFile: async (name, data) => {
     lastSaved = join(files, name);
     writeFileSync(lastSaved, data);

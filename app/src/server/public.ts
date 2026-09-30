@@ -17,6 +17,7 @@ import { randomBytes } from 'node:crypto';
 import { handleMcp, MCP_VERSIONS } from '../core/mcp.ts';
 import { OAUTH, type OAuth } from '../core/oauth.ts';
 import type { ToolHost } from '../core/tools.ts';
+import type { Diagnostics } from '../core/diagnostics.ts';
 import { hostAllowed } from './local.ts';
 import { formatCode } from '../core/oauth.ts';
 
@@ -34,6 +35,8 @@ export interface PublicServerOptions {
   onRequest(): void;
   /** Called when tokens are issued, so the app shows the connection as approved. */
   onTokens?(): void;
+  /** Where refusals and failures are recorded for the connection check (§16.17.1). */
+  diagnostics?: Diagnostics;
 }
 
 const json = (res: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}) => {
@@ -175,8 +178,10 @@ if(j.state==='expired'){s.textContent='This request has expired. Start again fro
       if (mcp && opts.agents().has(mcp[1])) {
         const resource = resourceOf(base, mcp[1]);
         const bearer = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization?.trim() ?? '')?.[1];
-        const agent = opts.oauth.verify(bearer, resource);
+        const checked = opts.oauth.check(bearer, resource);
+        const agent = 'agent' in checked ? checked.agent : null;
         if (!agent) {
+          opts.diagnostics?.event('http', '401', `sign-in token: ${'why' in checked ? checked.why : 'refused'}`, opts.agents().get(mcp[1])!.id);
           return json(res, 401, { error: 'invalid_token', error_description: 'Sign in through the Meadow app first.' }, {
             'www-authenticate': `Bearer resource_metadata="${base}/.well-known/oauth-protected-resource/${mcp[1]}/mcp", scope="${OAUTH.scope}"`,
           });
@@ -191,7 +196,7 @@ if(j.state==='expired'){s.textContent='This request has expired. Start again fro
         const messages = Array.isArray(body) ? body : [body];
         const answers = [];
         for (const m of messages) {
-          const a = await handleMcp(m, opts.host, agent, { audience: 'person', version: opts.version });
+          const a = await handleMcp(m, opts.host, agent, { audience: 'person', version: opts.version, via: 'chatgpt' });
           if (a) answers.push(a);
         }
         if (!answers.length) {
@@ -200,9 +205,13 @@ if(j.state==='expired'){s.textContent='This request has expired. Start again fro
         }
         return json(res, 200, Array.isArray(body) ? answers : answers[0], { 'mcp-protocol-version': MCP_VERSIONS[0] });
       }
+      // The path is not recorded: it is whatever a stranger typed.
+      opts.diagnostics?.event('http', '404', 'unknown path');
       return json(res, 404, { error: 'not_found' });
-    } catch {
-      if (!res.headersSent) json(res, 500, { error: 'server_error' });
+    } catch (err) {
+      // Recorded and said, never a bare 500 (§16.17.5).
+      opts.diagnostics?.event('http', '500', err instanceof Error ? err.message : String(err));
+      if (!res.headersSent) json(res, 500, { error: 'server_error', error_description: "The Meadow app failed to answer. Open the agent's card in the Meadow app and look at its connection check." });
     }
   });
   // The whole request must arrive within 30 s (answers may take longer; this bounds only the upload).

@@ -12,6 +12,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { handleMcp, rpcError, RPC, MCP_VERSIONS } from '../core/mcp.ts';
 import type { Audience, ToolHost } from '../core/tools.ts';
+import type { Via } from '../core/diagnostics.ts';
 
 export const LOCAL_HOST = '127.0.0.1';
 const MAX_BODY = 1024 * 1024;
@@ -19,7 +20,7 @@ const MAX_BODY = 1024 * 1024;
 export interface LocalServerOptions {
   host: ToolHost;
   /** The agent a bearer token acts as, and who is in its conversation. */
-  resolve(token: string | undefined): { agent: string; audience: Audience; rooms?: Set<string> } | null;
+  resolve(token: string | undefined): { agent: string; audience: Audience; rooms?: Set<string>; via?: Via } | null;
   version: string;
 }
 
@@ -117,7 +118,7 @@ export function createLocalServer(opts: LocalServerOptions): Server {
         const messages = Array.isArray(body) ? body : [body];
         const answers = [];
         for (const m of messages) {
-          const a = await handleMcp(m, opts.host, who.agent, { audience: who.audience, version: opts.version, rooms: who.rooms });
+          const a = await handleMcp(m, opts.host, who.agent, { audience: who.audience, version: opts.version, rooms: who.rooms, via: who.via ?? 'local' });
           if (a) answers.push(a);
         }
         if (!answers.length) return send(res, 202, undefined);
@@ -125,7 +126,7 @@ export function createLocalServer(opts: LocalServerOptions): Server {
       }
       const tool = /^\/rest\/([a-z_]+)$/.exec(url.pathname)?.[1];
       if (tool) {
-        const r = await opts.host.call(who.agent, tool, body, { audience: who.audience, rooms: who.rooms });
+        const r = await opts.host.call(who.agent, tool, body, { audience: who.audience, rooms: who.rooms, via: 'rest' });
         return send(res, r.isError ? 400 : 200, r.data);
       }
       return send(res, 404, { error: 'Not found.' });

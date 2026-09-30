@@ -8,6 +8,7 @@ import type { AgentView, ConnectionType } from '../../../shared/api.ts';
 import { Dialog, meadow, useAction, useCopy, when } from '../lib.tsx';
 import type { ScreenProps } from '../App.tsx';
 import { ChatGPTCodeDialog, ChatGPTSetup, RunnerDialog } from './Connections.tsx';
+import { ConnectionCheck } from './Check.tsx';
 
 const TYPE_WORDS: Record<ConnectionType, string> = { claude: 'Claude', chatgpt: 'ChatGPT', other: 'Other' };
 
@@ -85,6 +86,7 @@ export function Agents({ state, refresh, go }: ScreenProps) {
           )}
           {a.registered && <Findable agent={a} price={state.pricePerCallUsd} refresh={refresh} />}
           {a.registered && <MayDo agent={a} refresh={refresh} />}
+          <ConnectionCheck agent={a} />
           {!a.registered && a.connection && (
             <div className="notice" style={{ marginTop: '1rem' }}>
               <strong>Next:</strong> {a.connection.type === 'claude'

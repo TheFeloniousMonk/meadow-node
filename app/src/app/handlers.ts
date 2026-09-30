@@ -11,6 +11,7 @@ import { tokenBalance } from '../core/balance.ts';
 import { add, bridgeEntry, claudeDesktopConfigPath, claudeDesktopRunning, entryName, remove, status } from '../server/claude-desktop.ts';
 import { CHANNELS, linkAllowed, type Api, type AppState, type Channel, type MessageView, type MovePlanView, type MoveStateView } from '../shared/api.ts';
 import type { Services } from './services.ts';
+import { connectionCheck, diagnosticsText, testConnection, type ClaudeState } from './check.ts';
 
 export interface HandlerEnv {
   /** The app's executable, which runs the Claude bridge as Node. */
@@ -26,6 +27,8 @@ export interface HandlerEnv {
   claudeRunning?(): Promise<boolean | null>;
   /** Asks where to save a file (a system dialog); resolves to the path written, or null if cancelled. */
   saveFile(defaultName: string, data: Buffer, folder?: string): Promise<string | null>;
+  /** Asks where to save a text file (the diagnostics export); resolves to the path written, or null. */
+  saveText?(defaultName: string, text: string): Promise<string | null>;
   /** Asks for a file to open; resolves to its name and bytes, or null. */
   openFile(): Promise<{ name: string; data: Buffer } | null>;
   /** Applies settings that belong to the operating system (start at login). */
@@ -66,6 +69,18 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     return bridgeEntry({ appExecutable: env.execPath, bridgeScript: env.bridgeScript, port: s.settings().localPort, token });
   };
   const claudePath = () => env.claudeConfigPath ?? claudeDesktopConfigPath();
+  // The Claude Desktop entry's state, for the connection check (§16.17.2).
+  const claudeState = (agent: string): ClaudeState => {
+    if ((s.connections.get(agent) as any)?.type !== 'claude') return null;
+    const a = s.core.agents().find((x) => x.id === agent);
+    if (!a) return null;
+    try {
+      const st = status(claudePath(), entryName(a.name), claudeEntry(agent));
+      return { installed: st.installed, upToDate: st.upToDate, unreadable: st.unreadable };
+    } catch {
+      return { installed: false, upToDate: false, unreadable: true };
+    }
+  };
   const nameOf = (agent: string) => s.core.agents().find((a) => a.id === agent)?.name ?? '';
 
   const handlers: Api = {
@@ -94,8 +109,9 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
             runnerLog: s.runner.log(a.id, 5),
             queued: s.core.outbox(a.id).filter((e) => e.kind === 'msg.post').length,
             may: s.core.may(a.id),
+            check: connectionCheck(s, a.id, claudeState(a.id)),
             heldBySetting: s.core.heldBySetting(a.id),
-            lastSync: s.lastSync.get(a.id) ?? null,
+            lastSync: s.lastSyncOk(a.id),
             discoverable: a.registered ? s.core.discoverable(a.id) : null,
             unlistedNotice: a.registered && s.core.discoverable(a.id) !== true && !s.db.prepare('SELECT 1 FROM meta WHERE key = ?').get(`unlisted_notice_seen:${a.id}`),
           };
@@ -230,6 +246,8 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     },
 
     guardCheck: undefined as any, // async, below
+    testConnection: undefined as any, // async, below
+    diagnosticsSave: undefined as any, // async, below
     connectClaude: undefined as any,
     claudeRunning: undefined as any,
     installUpdate: undefined as any,
@@ -248,6 +266,10 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     setRunner({ agent, ...c }) {
       s.runner.configure(agent, c);
       return { ok: true };
+    },
+
+    diagnosticsText() {
+      return { text: diagnosticsText(s, claudeState) };
     },
 
     setMay({ agent, may }) {
@@ -336,6 +358,13 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     guardCheck: async ({ agent, message }) => {
       const r = await s.guard.checkOne(agent, message);
       return { verdict: r?.verdict ?? null, matches: r?.matches.map((m) => m.label) ?? [] };
+    },
+    testConnection: async ({ agent }) => testConnection(s, agent),
+    diagnosticsSave: async () => {
+      if (!env.saveText) throw new Error('Saving is not available here.');
+      const d = new Date();
+      const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      return { saved: await env.saveText(`meadow-diagnostics-${date}.txt`, diagnosticsText(s, claudeState)) };
     },
     backup: async ({ agent, password }) => {
       const name = s.core.agents().find((a) => a.id === agent)?.name ?? 'agent';

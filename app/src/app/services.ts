@@ -20,6 +20,7 @@ import { createPublicServer } from '../server/public.ts';
 import { OAuth } from '../core/oauth.ts';
 import { Runner } from '../core/runner.ts';
 import { Tunnel } from './tunnel.ts';
+import { Diagnostics, syncFailureClass } from '../core/diagnostics.ts';
 import { UpdateCheck, type InstallKind } from '../core/update.ts';
 import type { Settings } from '../shared/api.ts';
 
@@ -54,12 +55,19 @@ export class Services {
   readonly runner: Runner;
   readonly tunnel: Tunnel;
   readonly update: UpdateCheck;
+  readonly diagnostics: Diagnostics;
   publicServer: Server | null = null;
   publicError: string | null = null;
   #notify: Notify;
   server: Server | null = null;
   serverError: string | null = null;
   lastSync = new Map<string, number>();
+
+  /** The last successful sync, from any path, kept across restarts (§16.17.2). */
+  lastSyncOk(agent: string): number | null {
+    const r: any = this.db.prepare('SELECT value FROM meta WHERE key = ?').get(`sync_ok:${agent}`);
+    return r ? Number(r.value) : this.lastSync.get(agent) ?? null;
+  }
   #timer: NodeJS.Timeout | null = null;
   #changed: () => void;
 
@@ -89,9 +97,14 @@ export class Services {
       },
     });
     // After every sync, from any path (background, Sync Now, a tool): screen what arrived, then tell the person.
+    this.diagnostics = new Diagnostics({ db: this.db });
     this.core = new Core({
       db: this.db, vault: this.vault, transport: this.transport,
+      // Every failed sync, from any path, with where it failed (§16.17.1).
+      onSyncError: (agent, err) => this.diagnostics.event('sync', syncFailureClass(err), err instanceof Error ? err.message : String(err), agent),
       afterSync: async (agent, report) => {
+        this.lastSync.set(agent, Date.now());
+        this.db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(`sync_ok:${agent}`, String(Date.now()));
         const screened = await this.guard.screenNew(agent);
         if (screened.stopped) this.db.prepare('INSERT INTO problems (agent, at, kind, text) VALUES (?, ?, ?, ?)').run(agent, Date.now(), 'messageguard', `MessageGuard could not check every new message: ${screened.stopped}`);
         if (report.messages && this.settings().notifications) {
@@ -117,10 +130,20 @@ export class Services {
       },
     });
     this.connections = new Connections({ db: this.db, vault: this.vault });
-    this.tools = new ToolHost({ core: this.core, wallets: this.wallets, catalog: this.catalog, guard: guardSettings });
-    this.oauth = new OAuth({ db: this.db });
+    this.tools = new ToolHost({ core: this.core, wallets: this.wallets, catalog: this.catalog, guard: guardSettings, diagnostics: this.diagnostics });
+    this.oauth = new OAuth({ db: this.db, diagnostics: this.diagnostics });
     this.runner = new Runner({ db: this.db, vault: this.vault, host: this.tools });
-    this.tunnel = new Tunnel(changed);
+    // Each change of the tunnel's state is recorded, with its error or address (§16.17.1).
+    let tunnelWas = '';
+    this.tunnel = new Tunnel(() => {
+      const t = this.tunnel.status;
+      const now = `${t.state}|${t.error ?? t.url ?? ''}`;
+      if (now !== tunnelWas) {
+        tunnelWas = now;
+        this.diagnostics.event('tunnel', t.state, t.error ?? t.url ?? '');
+      }
+      changed();
+    });
     this.update = new UpdateCheck({ version, kind: install });
   }
 
@@ -143,6 +166,7 @@ export class Services {
       // A sign-in request waits, unseen, for the person to type its code (§16.7.2): nothing pops up.
       onRequest: () => this.#changed(),
       onTokens: () => this.#changed(),
+      diagnostics: this.diagnostics,
     });
     this.publicServer = server;
     const ok = await new Promise<boolean>((resolve) => {
@@ -197,7 +221,8 @@ export class Services {
       version: this.version,
       resolve: (token) => {
         const c = this.connections.resolve(token);
-        return c && { agent: c.agent, audience: 'person' };
+        // The Claude bridge and Claude Code come as the agent's Claude connection; anything else is another local host.
+        return c && { agent: c.agent, audience: 'person', via: this.connections.get(c.agent)?.type === 'claude' ? 'claude' : 'local' };
       },
     });
     const port = this.settings().localPort;

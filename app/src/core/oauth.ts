@@ -16,6 +16,7 @@
 
 import { createHash, randomBytes, randomInt } from 'node:crypto';
 import type { Db } from './db.ts';
+import type { Diagnostics } from './diagnostics.ts';
 
 export const OAUTH = {
   requestMs: 10 * 60_000, // an authorization request waits this long for the person
@@ -59,10 +60,17 @@ export class OAuth {
   #db: Db;
   #now: () => number;
   #registrations = new Map<string, number[]>();
+  #diagnostics?: Diagnostics;
 
-  constructor({ db, now = Date.now }: { db: Db; now?: () => number }) {
+  constructor({ db, now = Date.now, diagnostics }: { db: Db; now?: () => number; diagnostics?: Diagnostics }) {
     this.#db = db;
     this.#now = now;
+    this.#diagnostics = diagnostics;
+  }
+
+  /** Sign-in events for the connection check (§16.17.1): outcomes only, never a code or token. */
+  #record(what: 'issued' | 'refreshed' | 'refused' | 'revoked', agent: string, detail = '') {
+    this.#diagnostics?.event('oauth', what, detail, agent);
   }
 
   /** Dynamic client registration (RFC 7591), public clients only, redirecting to ChatGPT only. */
@@ -133,7 +141,8 @@ export class OAuth {
     this.#db.prepare("UPDATE oauth_requests SET decision = 'expired' WHERE decision IS NULL AND created_at < ?").run(now - OAUTH.requestMs);
     this.#db.prepare('DELETE FROM oauth_requests WHERE created_at < ?').run(now - 2 * OAUTH.requestMs);
     this.#db.prepare('DELETE FROM oauth_codes WHERE expires_at < ?').run(now);
-    this.#db.prepare('DELETE FROM oauth_tokens WHERE expires_at < ?').run(now);
+    // Expired tokens stay a week, as hashes and refused, so the connection check can say a sign-in expired (§16.17.2).
+    this.#db.prepare('DELETE FROM oauth_tokens WHERE expires_at < ?').run(now - 7 * 24 * 3600 * 1000);
   }
 
   /** Requests waiting for the person, for the app window. */
@@ -204,6 +213,13 @@ export class OAuth {
 
   /** The token endpoint: authorization_code with the PKCE verifier, or refresh_token (rotated). */
   token(form: Record<string, string | undefined>): OAuthError | Record<string, unknown> {
+    const r = this.#token(form);
+    if ('error' in r) this.#record('refused', (r as any).agent ?? '', `${r.error}: ${r.error_description}`);
+    const { agent: _a, ...out } = r as any;
+    return out;
+  }
+
+  #token(form: Record<string, string | undefined>): (OAuthError & { agent?: string }) | Record<string, unknown> {
     this.#sweep();
     if (form.grant_type === 'authorization_code') {
       const c: any = form.code ? this.#db.prepare('SELECT * FROM oauth_codes WHERE code_hash = ?').get(hash(form.code)) : null;
@@ -213,13 +229,16 @@ export class OAuth {
       if (form.redirect_uri !== undefined && form.redirect_uri !== c.redirect_uri) return err('invalid_grant', 'The redirect address does not match.');
       if (!form.code_verifier || s256(form.code_verifier) !== c.challenge) return err('invalid_grant', 'The PKCE verifier does not match.');
       if (form.resource !== undefined && form.resource !== c.resource) return err('invalid_target', 'The resource does not match the authorization.');
+      this.#record('issued', c.agent);
       return this.#issue(c.client_id, c.agent, c.resource);
     }
     if (form.grant_type === 'refresh_token') {
       const t: any = form.refresh_token ? this.#db.prepare("SELECT * FROM oauth_tokens WHERE token_hash = ? AND kind = 'refresh'").get(hash(form.refresh_token)) : null;
-      if (!t || t.expires_at < this.#now()) return err('invalid_grant', 'The refresh token is unknown, revoked, or expired.');
-      if (form.client_id !== undefined && form.client_id !== t.client_id) return err('invalid_grant', 'The refresh token belongs to another client.');
+      if (!t) return err('invalid_grant', 'The refresh token is unknown, revoked, or expired.');
+      if (t.expires_at < this.#now()) return { ...err('invalid_grant', 'The refresh token expired after 30 days unused.'), agent: t.agent };
+      if (form.client_id !== undefined && form.client_id !== t.client_id) return { ...err('invalid_grant', 'The refresh token belongs to another client.'), agent: t.agent };
       this.#db.prepare('DELETE FROM oauth_tokens WHERE token_hash = ?').run(t.token_hash);
+      this.#record('refreshed', t.agent);
       return this.#issue(t.client_id, t.agent, t.resource);
     }
     return err('unsupported_grant_type', 'Use authorization_code or refresh_token.');
@@ -237,9 +256,19 @@ export class OAuth {
 
   /** The agent a bearer token acts as, for this resource; null for anything else. */
   verify(bearer: string | undefined, resource: string): string | null {
-    if (!bearer || !/^mat_[A-Za-z0-9_-]{43}$/.test(bearer)) return null;
+    const r = this.check(bearer, resource);
+    return 'agent' in r ? r.agent : null;
+  }
+
+  /** As verify, with why a token was refused, for the connection check (§16.17.1). */
+  check(bearer: string | undefined, resource: string): { agent: string } | { why: 'none' | 'unknown or revoked' | 'expired' | 'for another agent' } {
+    if (!bearer) return { why: 'none' };
+    if (!/^mat_[A-Za-z0-9_-]{43}$/.test(bearer)) return { why: 'unknown or revoked' };
     const t: any = this.#db.prepare("SELECT agent, resource, expires_at FROM oauth_tokens WHERE token_hash = ? AND kind = 'access'").get(hash(bearer));
-    return t && t.expires_at > this.#now() && t.resource === resource ? t.agent : null;
+    if (!t) return { why: 'unknown or revoked' };
+    if (t.expires_at <= this.#now()) return { why: 'expired' };
+    if (t.resource !== resource) return { why: 'for another agent' };
+    return { agent: t.agent };
   }
 
   /** Clients with a live authorization, per agent, for Settings. */
@@ -251,6 +280,7 @@ export class OAuth {
 
   /** Revokes a client for an agent: its tokens stop working at once. */
   revoke(client: string, agent: string) {
+    this.#record('revoked', agent);
     this.#db.prepare('DELETE FROM oauth_tokens WHERE client_id = ? AND agent = ?').run(client, agent);
     this.#db.prepare('DELETE FROM oauth_codes WHERE client_id = ? AND agent = ?').run(client, agent);
   }

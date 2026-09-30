@@ -51,10 +51,36 @@ export interface AgentView {
   /** What this agent may do (§16.7.5), and how many queued events that setting holds back. */
   may: 'all' | 'no_new' | 'porch';
   heldBySetting: number;
+  /** The connection check (§16.17.2); null for an agent with no connection. */
+  check: ConnectionCheckView | null;
   /** Whether other agents can find this one by name or search word (§5.4); null before it registered. */
   discoverable: boolean | null;
   /** Registered before unlisted-by-default and not told yet: the Agents screen says so once (§16.6). */
   unlistedNotice: boolean;
+}
+
+/** One step of the connection check (§16.17.2), in plain words. `at` is a time the window shows after the text. */
+export interface CheckStep {
+  key: 'network' | 'door' | 'bridge' | 'tunnel' | 'signin' | 'lastcall';
+  label: string;
+  state: 'ok' | 'warn' | 'bad';
+  text: string;
+  at?: number;
+  /** What to do, when the step is not working. */
+  fix?: string;
+}
+
+export interface ConnectionCheckView {
+  /** The first step that is not working, and what to do; or that all is well on this computer. */
+  verdict: { state: 'ok' | 'warn' | 'bad'; text: string };
+  steps: CheckStep[];
+}
+
+/** Test connection (§16.17.3): each request made through the tunnel, and whether the app answered it. */
+export interface ConnectionTestView {
+  ok: boolean;
+  steps: { label: string; ok: boolean; text: string }[];
+  note: string;
 }
 
 export interface WalletView {
@@ -202,6 +228,12 @@ export interface Api {
   setMay(a: { agent: string; may: 'all' | 'no_new' | 'porch' }): { ok: true };
   /** A room's own MessageGuard and notification settings (§16.10.2, §16.11). */
   setRoomSettings(a: { agent: string; room: string; guard?: 'default' | 'always' | 'never'; notify?: 'normal' | 'priority' | 'muted' }): { ok: true };
+  /** Test connection (§16.17.3): two free requests through the tunnel. */
+  testConnection(a: { agent: string }): ConnectionTestView;
+  /** The diagnostics export's full text, for the person to read before saving (§16.17.4). */
+  diagnosticsText(): { text: string };
+  /** Saves the export, made again at that moment, through the save dialog. */
+  diagnosticsSave(): { saved: string | null };
   restoreOpen(): { file: string } | null;
   restorePreview(a: { password: string }): { agent: string; displayName: string; name: string; registered: boolean; createdAt: number; rooms: number; privateRooms: number; alreadyHere: boolean };
   restoreApply(a: { password: string; replace: boolean }): { agent: string };
@@ -218,7 +250,7 @@ export type Channel = keyof Api;
 export const CHANNELS: Channel[] = [
   'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'claudeRunning', 'installUpdate', 'disconnectClaude', 'localInterface', 'rotateToken',
   'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'movePlan', 'moveStart', 'moveStatus', 'setBudget', 'setDiscoverable', 'dismissUnlistedNotice', 'walletQr', 'syncNow', 'rooms', 'messages', 'setSettings',
-  'guardCheck', 'guardDecide', 'backup', 'backupChanges', 'setMay', 'setRoomSettings', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'enterChatgptCode', 'revokeClient', 'setRunner',
+  'guardCheck', 'guardDecide', 'backup', 'backupChanges', 'setMay', 'setRoomSettings', 'testConnection', 'diagnosticsText', 'diagnosticsSave', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'enterChatgptCode', 'revokeClient', 'setRunner',
   'copy', 'openExternal',
 ];
 

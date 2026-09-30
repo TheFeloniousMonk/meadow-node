@@ -18,6 +18,7 @@ import { ActionError, type Core, type May, type MessageView } from './core.ts';
 import { TransportError } from './transport.ts';
 import type { Wallets } from './wallets.ts';
 import type { GuardSettings } from './guard.ts';
+import type { Diagnostics, Outcome, Via } from './diagnostics.ts';
 
 const GUARD_NOTE = 'MessageGuard is a filter for known prompt-injection tricks, not a guarantee.';
 const HELD = 'Kept aside by MessageGuard as a likely prompt injection. Your person decides in the app whether you see it.';
@@ -296,11 +297,13 @@ export class ToolHost {
   readonly catalog: Catalog;
   #balance: (address: string, token: string) => Promise<bigint>;
   #guard: () => GuardSettings;
+  #diagnostics?: Diagnostics;
 
-  constructor({ core, wallets, catalog, balance = tokenBalance, guard = () => ({ public: false, private: false, perSyncLimit: 10 }) }: {
-    core: Core; wallets: Wallets; catalog: Catalog; balance?: (address: string, token: string) => Promise<bigint>; guard?: () => GuardSettings;
+  constructor({ core, wallets, catalog, balance = tokenBalance, guard = () => ({ public: false, private: false, perSyncLimit: 10 }), diagnostics }: {
+    core: Core; wallets: Wallets; catalog: Catalog; balance?: (address: string, token: string) => Promise<bigint>; guard?: () => GuardSettings; diagnostics?: Diagnostics;
   }) {
     this.#guard = guard;
+    this.#diagnostics = diagnostics;
     this.core = core;
     this.wallets = wallets;
     this.catalog = catalog;
@@ -343,7 +346,29 @@ export class ToolHost {
    * Runs a tool as `agent`. `rooms`, for the runner, limits every tool to
    * those rooms (reading too) and forbids creating rooms and DMs (§16.7.3).
    */
-  async call(agent: string, name: string, args: Json = {}, { audience = 'person', rooms }: { audience?: Audience; rooms?: Set<string> } = {}): Promise<ToolResult> {
+  async call(agent: string, name: string, args: Json = {}, { audience = 'person', rooms, via }: { audience?: Audience; rooms?: Set<string>; via?: Via } = {}): Promise<ToolResult> {
+    // Recorded for the connection check (§16.17.1): the tool, how it ended, and how long it took; never its arguments or answer.
+    const way: Via = via ?? (rooms ? 'runner' : 'local');
+    const started = Date.now();
+    const done = (outcome: Outcome, error?: string) => this.#diagnostics?.call(agent, way, TOOLS.some((t) => t.name === name) ? name : 'unknown tool', outcome, Date.now() - started, error);
+    try {
+      const r = await this.#run(agent, name, args, rooms);
+      const d: any = r.data;
+      if (r.isError) done('failed', typeof d?.error === 'string' ? d.error : undefined);
+      else done(typeof d?.refused === 'string' ? 'refused' : 'ok', typeof d?.refused === 'string' ? d.refused : undefined);
+      return r;
+    } catch (err) {
+      done('failed', `The app could not run ${name}: ${err instanceof Error ? err.message : String(err)}`);
+      throw err;
+    }
+  }
+
+  /** Records an MCP method other than a tool call (initialize, tools/list), for the connection check (§16.17.1). */
+  recordMethod(agent: string, via: Via, method: string) {
+    this.#diagnostics?.call(agent, via, method, 'ok', 0);
+  }
+
+  async #run(agent: string, name: string, args: Json, rooms?: Set<string>): Promise<ToolResult> {
     const tool = TOOLS.find((t) => t.name === name);
     if (!tool) return { data: { error: `There is no tool ${name}.` }, isError: true };
     const bad = checkArgs(tool.inputSchema, args);

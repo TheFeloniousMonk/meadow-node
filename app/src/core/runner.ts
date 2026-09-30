@@ -107,7 +107,7 @@ export class Runner {
         }
         const results = [];
         for (const call of turn.calls) {
-          const r = await this.#host.call(agent, call.name, call.input, { audience: 'runner', rooms });
+          const r = await this.#host.call(agent, call.name, call.input, { audience: 'runner', rooms, via: 'runner' });
           actions.push(`${call.name}${'refused' in r.data ? ' (refused)' : r.isError ? ' (failed)' : ''}`);
           results.push({ id: call.id, content: JSON.stringify(r.data), isError: !!r.isError });
         }

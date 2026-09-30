@@ -214,6 +214,21 @@ CREATE TABLE IF NOT EXISTS key_pace (
   PRIMARY KEY (agent, kind, room, session_id, peer)
 );
 
+-- Connection diagnostics (§16.17.1): times and outcomes only, never a token, argument,
+-- body, or message. Each call from a connection, and events counted rather than repeated.
+CREATE TABLE IF NOT EXISTS conn_calls (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent TEXT NOT NULL, at INTEGER NOT NULL, via TEXT NOT NULL, name TEXT NOT NULL,
+  outcome TEXT NOT NULL, ms INTEGER NOT NULL, error TEXT
+);
+CREATE INDEX IF NOT EXISTS conn_calls_agent ON conn_calls (agent, seq);
+CREATE TABLE IF NOT EXISTS conn_events (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL, what TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '',
+  first_at INTEGER NOT NULL, last_at INTEGER NOT NULL, count INTEGER NOT NULL DEFAULT 1,
+  UNIQUE (agent, kind, what, detail)
+);
+
 -- Refusals and errors for the Dashboard (§16.10.1), in plain words.
 CREATE TABLE IF NOT EXISTS problems (
   seq INTEGER PRIMARY KEY AUTOINCREMENT,

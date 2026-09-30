@@ -190,6 +190,12 @@ else {
         writeFileSync(r.filePath, data);
         return r.filePath;
       },
+      saveText: async (defaultName, text) => {
+        const r = await dialog.showSaveDialog(win!, { title: 'Save the diagnostics', defaultPath: join(app.getPath('documents'), defaultName), filters: [{ name: 'Text', extensions: ['txt'] }] });
+        if (r.canceled || !r.filePath) return null;
+        writeFileSync(r.filePath, text, 'utf8');
+        return r.filePath;
+      },
       openFile: async () => {
         const r = await dialog.showOpenDialog(win!, { title: 'Choose a backup', properties: ['openFile'], filters: [{ name: 'Meadow backup', extensions: ['meadow-backup'] }] });
         if (r.canceled || !r.filePaths[0]) return null;

@@ -6,6 +6,7 @@ import type { AppState } from '../../../shared/api.ts';
 import { Dialog, dailySyncCost, meadow, useAction, useToast } from '../lib.tsx';
 import type { ScreenProps } from '../App.tsx';
 import { TunnelControls } from './Connections.tsx';
+import { DiagnosticsDialog } from './Check.tsx';
 
 const SOURCE = 'https://github.com/TheFeloniousMonk/meadow-node';
 
@@ -43,6 +44,7 @@ export function SettingsScreen({ state, refresh }: ScreenProps) {
   const toast = useToast();
   const { error, run } = useAction();
   const [perCall, setPerCall] = useState(s.perCallMaxUsd);
+  const [exporting, setExporting] = useState(false);
   const [port, setPort] = useState(String(s.localPort));
   const [askPrivate, setAskPrivate] = useState(false);
   const save = (changes: Parameters<typeof meadow.setSettings>[0], what = 'Saved') => run(async () => { await meadow.setSettings(changes); await refresh(); toast(what); });
@@ -149,6 +151,8 @@ export function SettingsScreen({ state, refresh }: ScreenProps) {
       <section className="card">
         <h2>About</h2>
         <p>Meadow app, version {state.version}. Free software under the AGPL-3.0: <button className="link" onClick={() => meadow.openExternal({ url: SOURCE })}>the source code</button>.</p>
+        <p><button className="secondary" onClick={() => setExporting(true)}>Export diagnostics</button> <span className="small muted">A text file for whoever helps you, with no secrets and no messages. You see all of it before saving.</span></p>
+        {exporting && <DiagnosticsDialog onClose={() => setExporting(false)} />}
         <p className="small muted" style={{ margin: 0 }}>Your keys, wallets, and messages stay on this computer.</p>
       </section>
 

@@ -30,6 +30,8 @@ export interface CoreOptions {
   now?: () => number;
   /** Runs after every sync, inside the agent's lock: MessageGuard screening, notifications (§16.11). */
   afterSync?: (agent: string, report: SyncReport) => Promise<void>;
+  /** Told of every sync that fails, from any path, for the connection check (§16.17.1). */
+  onSyncError?: (agent: string, err: unknown) => void;
 }
 
 /** Author names in sync (§7.2, §16.8). */
@@ -129,12 +131,14 @@ export class Core {
   #vault: Vault;
   #transport: Transport;
   #afterSync?: (agent: string, report: SyncReport) => Promise<void>;
+  #onSyncError?: (agent: string, err: unknown) => void;
   #now: () => number;
   #ctx = new Map<string, Ctx>();
   #locks = new Map<string, Promise<unknown>>();
 
-  constructor({ db, vault, transport, now = Date.now, afterSync }: CoreOptions) {
+  constructor({ db, vault, transport, now = Date.now, afterSync, onSyncError }: CoreOptions) {
     this.#afterSync = afterSync;
+    this.#onSyncError = onSyncError;
     this.#db = db;
     this.#vault = vault;
     this.#transport = transport;
@@ -683,6 +687,15 @@ export class Core {
   }
 
   async #sync(ctx: Ctx): Promise<SyncReport> {
+    try {
+      return await this.#syncPages(ctx);
+    } catch (err) {
+      this.#onSyncError?.(ctx.id, err);
+      throw err;
+    }
+  }
+
+  async #syncPages(ctx: Ctx): Promise<SyncReport> {
     const report: SyncReport = { calls: 0, accepted: [], rejected: [], pending: [], invites: 0, messages: 0 };
     for (let page = 0; page < SYNC.maxPages; page++) {
       // Events the agent's setting holds back stay queued, unsent (§16.7.5).
