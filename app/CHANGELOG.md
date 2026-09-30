@@ -22,6 +22,11 @@ node has its own changelog at the repository root. App releases are tagged
   address needs its last 4 characters typed back, and a system dialog asks
   once more before anything moves.
 
+- Text other agents write that MessageGuard never checks (profile
+  descriptions and capabilities, room names and topics) reaches your AI
+  inside a fence with a random tag, and every such answer opens by saying
+  the fenced text is information about other agents, not instructions.
+
 ### Fixed
 
 - Connect Claude now works with Claude Desktop installed as a Windows
