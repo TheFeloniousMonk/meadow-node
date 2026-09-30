@@ -1,10 +1,12 @@
 // Wallets (SPEC §16.9, §16.10.4): each wallet's address, balance, and daily
 // budget; creating one (the recovery phrase shown once, continued only after
 // the person ticks that it is saved); importing one; topping off by address
-// and QR code; and recent payments.
+// and QR code; removing one from this app (§16.9: red, behind typing its
+// name); and recent payments.
 import { useEffect, useRef, useState } from 'react';
 import { Dialog, meadow, time, useAction, useCopy } from '../lib.tsx';
 import type { ScreenProps } from '../App.tsx';
+import type { AppState } from '../../../shared/api.ts';
 
 const USD = /^\d+(\.\d{1,6})?$/;
 
@@ -12,7 +14,7 @@ export function Wallets({ state, refresh, balances, balancesAt, reloadBalances }
   const checking = useAction();
   const recheck = () => checking.run(() => reloadBalances(true));
   const copy = useCopy();
-  const [dialog, setDialog] = useState<'create' | 'import' | { topOff: string } | { budget: string } | null>(null);
+  const [dialog, setDialog] = useState<'create' | 'import' | { topOff: string } | { budget: string } | { remove: string } | null>(null);
   const agentName = (id: string | null) => state.agents.find((a) => a.id === id)?.displayName ?? '—';
   const close = () => {
     setDialog(null);
@@ -54,9 +56,12 @@ export function Wallets({ state, refresh, balances, balancesAt, reloadBalances }
                 <button className="secondary icon" onClick={() => copy(w.address, 'Address copied')}>Copy address</button>
               </div>
             </div>
-            <p className="small muted" style={{ marginTop: '.75rem', marginBottom: 0 }}>
-              Pays for: {w.agents.length ? w.agents.map((a) => agentName(a)).join(', ') : 'no agent yet'}
-            </p>
+            <div className="row spread" style={{ marginTop: '.75rem' }}>
+              <p className="small muted" style={{ margin: 0 }}>
+                Pays for: {w.agents.length ? w.agents.map((a) => agentName(a)).join(', ') : 'no agent yet'}
+              </p>
+              <button className="danger solid icon" onClick={() => setDialog({ remove: w.id })}>Remove from this app</button>
+            </div>
           </div>
         );
       })}
@@ -87,6 +92,14 @@ export function Wallets({ state, refresh, balances, balancesAt, reloadBalances }
       {dialog && typeof dialog === 'object' && 'budget' in dialog && (
         <Budget walletId={dialog.budget} current={state.wallets.find((w) => w.id === dialog.budget)!.dailyBudgetUsd} onClose={close} />
       )}
+      {dialog && typeof dialog === 'object' && 'remove' in dialog && (
+        <RemoveWallet
+          wallet={state.wallets.find((w) => w.id === dialog.remove)!}
+          balance={balances[dialog.remove]}
+          agents={state.wallets.find((w) => w.id === dialog.remove)!.agents.map(agentName)}
+          onClose={close}
+        />
+      )}
     </div>
   );
 }
@@ -113,6 +126,9 @@ function CreateWallet({ onClose }: { onClose: () => void }) {
         <div className="notice warn">
           <strong>These 12 words are the only way to get this wallet's money back</strong> if this computer is lost or the app is removed.
           Write them down, in order, on paper, and keep them somewhere safe. Anyone who has them can take the money. The app will not show them again.
+        </div>
+        <div className="notice warn">
+          <strong>Never take a photo or a screenshot of them, and never show them to anyone, your AI included.</strong> No one helping you ever needs them.
         </div>
         <div className="phrase">{created.mnemonic.split(' ').map((w, i) => <span key={i}>{w}</span>)}</div>
         <label className="check"><input type="checkbox" checked={saved} onChange={(e) => setSaved(e.target.checked)} /> I have written these words down and put them somewhere safe.</label>
@@ -172,6 +188,50 @@ function Budget({ walletId, current, onClose }: { walletId: string; current: str
       <div className="actions">
         <button className="secondary" onClick={onClose}>Cancel</button>
         <button disabled={busy || !USD.test(budget)} onClick={() => run(async () => { await meadow.setBudget({ walletId, dailyBudgetUsd: budget }); onClose(); })}>Save</button>
+      </div>
+    </Dialog>
+  );
+}
+
+/**
+ * Remove from this app (§16.9). A wallet lives on Base, not here: this only
+ * erases the app's copy of its phrase. High friction on purpose: it says where
+ * the money is, and Remove works only once the wallet's name is typed exactly.
+ */
+function RemoveWallet({ wallet, balance, agents, onClose }: { wallet: AppState['wallets'][number]; balance: string | null | undefined; agents: string[]; onClose: () => void }) {
+  const [typed, setTyped] = useState('');
+  const { busy, error, run } = useAction();
+  const funded = balance == null || Number(balance.replace('$', '')) > 0;
+  const matches = typed.trim() === wallet.name.trim();
+  return (
+    <Dialog title={`Remove ${wallet.name} from this app`} onClose={onClose}>
+      <p>
+        A wallet cannot be deleted. It lives on the Base network, not on this computer, and its address and any money in it stay there.
+        This only takes it off this app: the app forgets its recovery phrase and stops paying from it.
+      </p>
+      <div className="notice warn">
+        {balance == null
+          ? <>The app could not check this wallet's balance just now. It may still hold money.</>
+          : funded
+            ? <>This wallet holds <strong>{balance}</strong> in USDC. After removing it, only its 12-word recovery phrase can reach that money.</>
+            : <>This wallet is empty right now. Anything sent to its address later can be reached only with its recovery phrase.</>}
+        {' '}If you do not have the phrase written down, keep the wallet.
+      </div>
+      <p>
+        <strong>If someone else has seen the recovery phrase</strong> (a photo, a screenshot, or showing it to an AI), removing the wallet does not make it safe:
+        {funded
+          ? ' first move the money to a new wallet using another wallet app, then remove this one and create a new wallet here.'
+          : ' remove it, create a new wallet here, and never send money to the old address.'}
+      </p>
+      {agents.length > 0 && <p>It pays for {agents.join(', ')}. They will have no wallet, and will not send or receive, until you choose another on the Agents screen.</p>}
+      <div className="field">
+        <label htmlFor="rmconfirm">Type the wallet's name, <strong>{wallet.name}</strong>, to confirm</label>
+        <input id="rmconfirm" type="text" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" spellCheck={false} />
+      </div>
+      {error && <div className="notice warn">{error}</div>}
+      <div className="actions">
+        <button className="secondary" onClick={onClose}>Keep the wallet</button>
+        <button className="danger solid" disabled={busy || !matches} onClick={() => run(async () => { await meadow.removeWallet({ walletId: wallet.id, confirm: typed }); onClose(); })}>Remove from this app</button>
       </div>
     </Dialog>
   );

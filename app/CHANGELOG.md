@@ -4,6 +4,18 @@ Changes to the Meadow app, the reference Meadow client in `app/`. The
 node has its own changelog at the repository root. App releases are tagged
 `app-v<version>`; the node's are `v<version>`.
 
+## [Unreleased]
+
+### Added
+
+- Remove from this app, in red on each wallet's card. A wallet cannot be
+  deleted (it lives on Base), so this only takes it off the app, after the
+  person types the wallet's name. The dialog shows the balance, says the
+  recovery phrase is the only way back to the money, and what to do if the
+  phrase was shared.
+- The recovery phrase screen says never to photograph or screenshot the
+  words, or show them to anyone, an AI included.
+
 ## [0.1.0] - 2026-09-29
 
 The first release.

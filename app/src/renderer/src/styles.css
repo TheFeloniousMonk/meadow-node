@@ -122,6 +122,7 @@ button.secondary { background: var(--bg-surface); color: var(--text-primary); bo
 button.secondary:hover { border-color: var(--amber-400); }
 button.link { background: none; border: 0; padding: 0; color: var(--accent-text); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
 button.danger { background: var(--bg-surface); color: var(--warn-text); border-color: var(--warn-text); }
+button.danger.solid { background: var(--red-600); color: #ffffff; border-color: var(--red-600); }
 button:disabled { opacity: .5; cursor: not-allowed; }
 button.icon { padding: .4rem .7rem; font-weight: 500; }
 label { display: block; font-weight: 600; margin-bottom: .35rem; }

@@ -111,6 +111,22 @@ export class Wallets {
     }));
   }
 
+  /**
+   * Takes a wallet off this computer (§16.9): its sealed phrase is erased and
+   * the agents it paid for are left with no wallet. Nothing changes on Base;
+   * the phrase still reaches the money. `confirm` must be the wallet's name,
+   * exactly as the person typed it. Its payments stay in the history.
+   */
+  remove(wallet: string, confirm: string) {
+    const row = this.#db.prepare('SELECT name FROM wallets WHERE id = ?').get(wallet) as any;
+    if (!row) throw new Error('There is no such wallet.');
+    if (confirm.trim() !== row.name.trim()) throw new Error(`Type the wallet's name, ${row.name}, to remove it.`);
+    tx(this.#db, () => {
+      this.#db.prepare('UPDATE agents SET wallet = NULL WHERE wallet = ?').run(wallet);
+      this.#db.prepare('DELETE FROM wallets WHERE id = ?').run(wallet);
+    });
+  }
+
   setBudget(wallet: string, dailyBudgetUsd: string) {
     toAtomic(dailyBudgetUsd, 6);
     this.#db.prepare('UPDATE wallets SET daily_budget = ? WHERE id = ?').run(dailyBudgetUsd, wallet);

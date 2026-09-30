@@ -146,6 +146,11 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       return s.wallets.import(name, phrase, dailyBudgetUsd);
     },
 
+    removeWallet({ walletId, confirm }) {
+      s.wallets.remove(walletId, confirm);
+      return { ok: true };
+    },
+
     setBudget({ walletId, dailyBudgetUsd }) {
       s.wallets.setBudget(walletId, dailyBudgetUsd);
       return { ok: true };

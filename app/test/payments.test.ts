@@ -131,6 +131,22 @@ test('an agent with no wallet cannot pay', async () => {
   await assert.rejects(transport.call('/v2/rooms', {}, id), /No wallet pays for this agent/);
 });
 
+test('removing a wallet needs its exact name, forgets its phrase, and leaves its agents unable to pay', async () => {
+  const { db, core, wallets, transport, wallet, agent } = setup();
+  const id = agent('removed');
+  assert.throws(() => wallets.remove(wallet.id, 'everyday'), /Type the wallet's name, Everyday/);
+  assert.throws(() => wallets.remove(wallet.id, ''), /Type the wallet's name/);
+  assert.throws(() => wallets.remove('w_nope', 'Everyday'), /no such wallet/);
+  assert.equal(wallets.list().length, 1);
+  wallets.remove(wallet.id, ' Everyday ');
+  assert.equal(wallets.list().length, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM wallets').get()!.n, 0);
+  assert.equal(wallets.walletOf(id), null);
+  await assert.rejects(transport.call('/v2/rooms', {}, id), /No wallet pays for this agent/);
+  // The agent itself stays; only its wallet is gone.
+  assert.equal(core.agents().length, 1);
+});
+
 test('a second 402 after paying is a failure, never a second signature', async () => {
   portal.quote = {};
   portal.always402 = true;

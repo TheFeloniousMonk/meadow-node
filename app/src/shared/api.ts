@@ -140,6 +140,8 @@ export interface Api {
   createWallet(a: { name: string; dailyBudgetUsd: string }): { id: string; address: string; mnemonic: string };
   importWallet(a: { name: string; phrase: string; dailyBudgetUsd: string }): { id: string; address: string };
   setBudget(a: { walletId: string; dailyBudgetUsd: string }): { ok: true };
+  /** Takes a wallet off this computer (§16.9); `confirm` is its name as the person typed it. Nothing changes on Base. */
+  removeWallet(a: { walletId: string; confirm: string }): { ok: true };
   walletQr(a: { walletId: string }): { svg: string; address: string };
   syncNow(a: { agent: string }): { ok: boolean; message: string };
   rooms(a: { agent: string }): RoomView[];
@@ -163,7 +165,7 @@ export interface Api {
 export type Channel = keyof Api;
 export const CHANNELS: Channel[] = [
   'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'claudeRunning', 'installUpdate', 'disconnectClaude', 'localInterface', 'rotateToken',
-  'assignWallet', 'createWallet', 'importWallet', 'setBudget', 'walletQr', 'syncNow', 'rooms', 'messages', 'setSettings',
+  'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'setBudget', 'walletQr', 'syncNow', 'rooms', 'messages', 'setSettings',
   'guardCheck', 'guardDecide', 'backup', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'enterChatgptCode', 'revokeClient', 'setRunner',
   'copy', 'openExternal',
 ];
