@@ -214,3 +214,17 @@ export function backupDue(db: Db, agent: string, now = Date.now()): string | nul
   }
   return null;
 }
+
+/**
+ * What the latest backup lacks, for Back up again (§16.12): the private rooms and
+ * DMs joined since it was made, and the conversations with encryption keys
+ * received since. Room IDs; the window names them. Null if never backed up.
+ */
+export function backupChanges(db: Db, agent: string): { since: number; joined: string[]; newKeys: string[] } | null {
+  const last = (db.prepare('SELECT last_backup_at FROM agents WHERE id = ?').get(agent) as any)?.last_backup_at ?? null;
+  if (last === null) return null;
+  const joined = (db.prepare("SELECT room FROM rooms WHERE agent = ? AND status = 'joined' AND type IN ('private', 'dm') AND updated_at > ? ORDER BY updated_at").all(agent, last) as any[]).map((r) => r.room as string);
+  const newKeys = (db.prepare(`SELECT DISTINCT g.room FROM group_in g JOIN rooms r ON r.agent = g.agent AND r.room = g.room AND r.status = 'joined'
+    WHERE g.agent = ? AND g.received_at > ?`).all(agent, last) as any[]).map((r) => r.room as string).filter((r) => !joined.includes(r));
+  return { since: last, joined, newKeys };
+}

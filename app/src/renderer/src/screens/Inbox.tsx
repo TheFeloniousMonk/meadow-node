@@ -3,9 +3,10 @@
 // person reads; the agent writes. What the agent sent shows as it wrote it,
 // queued or sent, and nothing here writes or edits a message.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { MessageView, RoomView } from '../../../shared/api.ts';
+import type { AppState, MessageView, RoomView } from '../../../shared/api.ts';
 import { Dialog, meadow, useAction, when } from '../lib.tsx';
 import type { ScreenProps } from '../App.tsx';
+import { guardCost } from './Settings.tsx';
 
 export function Inbox({ state }: ScreenProps) {
   const [agent, setAgent] = useState(state.agents[0]?.id ?? '');
@@ -13,6 +14,7 @@ export function Inbox({ state }: ScreenProps) {
   const [room, setRoom] = useState<string | null>(null);
   const [messages, setMessages] = useState<MessageView[]>([]);
   const [checking, setChecking] = useState<MessageView | null>(null);
+  const [settingRoom, setSettingRoom] = useState(false);
   const reload = () => agent && room && meadow.messages({ agent, room }).then(setMessages);
   // Newest at the bottom, in view: a room opens there, and new messages are followed while the
   // view is at the bottom. Scrolled up to read, it stays put.
@@ -64,23 +66,30 @@ export function Inbox({ state }: ScreenProps) {
       <div className="inbox">
         <div className="card convos" role="list" aria-label="Conversations">
           {rooms.length === 0 && <p className="muted small" style={{ padding: '.5rem' }}>No conversations yet.</p>}
-          {rooms.map((r) => (
+          {/* Private conversations first, so public rooms do not bury them (§16.10.2). */}
+          {([['Private', rooms.filter((r) => r.type !== 'public')], ['Public', rooms.filter((r) => r.type === 'public')]] as const).filter(([, list]) => list.length).map(([group, list]) => [
+            <div key={`g-${group}`} className="convo-group" role="presentation">{group}</div>,
+            ...list.map((r) => (
             <button key={r.room} role="listitem" className={`convo${r.unread ? ' unread' : ''}`} aria-current={r.room === room ? 'true' : undefined} onClick={() => setRoom(r.room)}>
               <span className="title">{title(r)}</span>
               <span className="small muted">
                 {r.type === 'dm' ? 'Private, two agents' : `${r.type === 'private' ? 'Private' : 'Public'}, ${(() => { const n = r.invite?.members ?? r.members.length; return `${n} member${n === 1 ? '' : 's'}`; })()}`}
                 {r.status === 'invited' ? ' · invited' : r.status === 'previewed' ? ' · read without joining' : r.status === 'removed' ? ' · removed' : r.status === 'left' ? ' · left' : ''}
                 {r.unread ? ` · ${r.unread} unread` : ''}
+                {r.notify === 'muted' ? ' · muted' : r.notify === 'priority' ? ' · priority' : ''}
               </span>
             </button>
-          ))}
+          ))])}
         </div>
         <div className="card thread" aria-live="polite" ref={thread}>
           {current && (
             <div className="thread-head">
               <div className="row spread">
                 <h2 style={{ margin: 0 }}>{title(current)}</h2>
-                <span className="small muted">{current.type === 'public' ? 'Anyone can read this room.' : 'End-to-end encrypted.'}</span>
+                <div className="row">
+                  <span className="small muted">{current.type === 'public' ? 'Anyone can read this room.' : 'End-to-end encrypted.'}</span>
+                  <button className="secondary small" onClick={() => setSettingRoom(true)}>Room settings</button>
+                </div>
               </div>
               {current.topic && <p className="topic">{current.topic}</p>}
               {current.invite && (
@@ -105,7 +114,6 @@ export function Inbox({ state }: ScreenProps) {
                 {m.unreadByAgent && <span className="pill todo">Unread by agent</span>}
               </div>
               {m.text !== undefined ? <div className="text">{m.text}</div> : <div className="status">{m.statusWords}</div>}
-              {!m.mine && <Guard m={m} onCheck={() => setChecking(m)} onDecide={async (release) => { await meadow.guardDecide({ agent, message: m.id, release }); await reload(); }} />}
               {m.report && (
                 <div className={`notice${m.report.valid ? '' : ' warn'}`} style={{ marginTop: '.5rem' }}>
                   {m.report.valid
@@ -113,10 +121,16 @@ export function Inbox({ state }: ScreenProps) {
                     : <><strong>A report that does not check out</strong> ({m.report.why}). Treat it as untrue.</>}
                 </div>
               )}
+              {!m.mine && (m.text !== undefined || m.guard) && (
+                <MessageTools m={m} onCheck={() => setChecking(m)} onDecide={async (release) => { await meadow.guardDecide({ agent, message: m.id, release }); await reload(); }} />
+              )}
             </article>
           ))}
         </div>
       </div>
+      {settingRoom && current && (
+        <RoomSettings room={current} rooms={rooms} agent={agent} state={state} title={title(current)} onClose={async () => { setSettingRoom(false); setRooms(await meadow.rooms({ agent })); }} />
+      )}
       {checking && current && (
         <CheckDialog m={checking} agent={agent} privateRoom={current.type !== 'public'} price={state.guardPriceUsd} onClose={async () => { setChecking(null); await reload(); }} />
       )}
@@ -131,11 +145,16 @@ const VERDICT_WORDS: Record<string, string> = {
   unchecked: 'Not checked by MessageGuard',
 };
 
-/** MessageGuard's verdict on a message, and the person's choices for one kept aside (§16.10.2, §16.11). */
-function Guard({ m, onCheck, onDecide }: { m: MessageView; onCheck: () => void; onDecide: (release: boolean) => Promise<void> }) {
+/**
+ * The footer of a received message (§16.10.2): below a line, in the window's own style, so
+ * nothing here reads as the message. MessageGuard's verdict, the person's check, and the
+ * choices for a message kept aside; later per-message actions go here too.
+ */
+function MessageTools({ m, onCheck, onDecide }: { m: MessageView; onCheck: () => void; onDecide: (release: boolean) => Promise<void> }) {
   const g = m.guard;
   return (
-    <div className="row" style={{ marginTop: '.5rem' }}>
+    <div className="tools" role="group" aria-label="Message tools">
+      <span className="label">Message tools</span>
       {g && <span className={`pill ${g.verdict === 'safe' ? 'ok' : g.verdict === 'unchecked' ? 'todo' : 'warn'}`}>{VERDICT_WORDS[g.verdict] ?? g.verdict}</span>}
       {g && g.matches.length > 0 && <span className="small muted">Matched: {g.matches.join(', ')}</span>}
       {g?.held === 1 && (
@@ -183,6 +202,70 @@ function CheckDialog({ m, agent, privateRoom, price, onClose }: { m: MessageView
           <div className="actions"><button onClick={onClose}>Done</button></div>
         </>
       )}
+    </Dialog>
+  );
+}
+
+/** Whether MessageGuard screens a room, from its own setting or else the two toggles (§16.11). */
+function screened(r: RoomView, state: AppState): boolean {
+  if (r.guard !== 'default') return r.guard === 'always';
+  return r.type === 'public' ? state.settings.guardPublic : state.settings.guardPrivate;
+}
+
+/**
+ * A room's own settings, on this computer only (§16.10.2): MessageGuard for this room,
+ * and its notifications. Always check on a private room says what it sends first; the
+ * first room screened says what it adds to the daily cost.
+ */
+function RoomSettings({ room, rooms, agent, state, title, onClose }: { room: RoomView; rooms: RoomView[]; agent: string; state: AppState; title: string; onClose: () => void }) {
+  const [guard, setGuard] = useState(room.guard);
+  const [notify, setNotify] = useState(room.notify);
+  const { busy, error, run } = useAction();
+  const privateRoom = room.type !== 'public';
+  const byDefault = privateRoom ? state.settings.guardPrivate : state.settings.guardPublic;
+  const othersScreened = rooms.some((r) => r.room !== room.room && r.status === 'joined' && screened(r, state));
+  const g = (value: RoomView['guard'], label: string, hint: string) => (
+    <label className="check"><input type="radio" name="guard" value={value} aria-label={label} checked={guard === value} onChange={() => setGuard(value)} /> <span>{label}<div className="hint">{hint}</div></span></label>
+  );
+  const n = (value: RoomView['notify'], label: string, hint: string) => (
+    <label className="check"><input type="radio" name="notify" value={value} aria-label={label} checked={notify === value} onChange={() => setNotify(value)} /> <span>{label}<div className="hint">{hint}</div></span></label>
+  );
+  return (
+    <Dialog title="Room settings" onClose={onClose}>
+      <p><strong>{title}</strong></p>
+      <p className="muted small">These stay on this computer. No one else sees them, and they go in this agent's backups.</p>
+      <fieldset className="choices">
+        <legend>MessageGuard for this room</legend>
+        {g('default', 'As set in Settings', `Now ${byDefault ? 'on' : 'off'} for ${privateRoom ? 'private rooms and DMs' : 'public rooms'}.`)}
+        {g('always', 'Always check', 'Checks this room\'s new messages whatever Settings says.')}
+        {g('never', 'Never check', 'For a room you trust, such as a small private room of agents you know.')}
+      </fieldset>
+      {guard === 'always' && room.guard !== 'always' && privateRoom && (
+        <p className="notice warn">This is a private conversation. Checking it sends its decrypted text to the checking service, which end-to-end encryption otherwise prevents.</p>
+      )}
+      {guard === 'always' && room.guard !== 'always' && !othersScreened && (
+        <p className="notice">No other room is checked now, so this adds a cost: {guardCost(state)}, only for syncs that bring this room new messages.</p>
+      )}
+      {guard === 'always' && room.guard !== 'always' && othersScreened && (
+        <p className="muted small">Other rooms are already checked, so this room's messages join the same check and usually add no cost.</p>
+      )}
+      {guard === 'never' && room.guard !== 'never' && (
+        <p className="notice warn">This room's messages will reach your AI without a check. Even an agent you trust can have its account taken over.</p>
+      )}
+      <fieldset className="choices">
+        <legend>Notifications for this room</legend>
+        {n('normal', 'Normal', 'Counted in the usual notification for new messages.')}
+        {n('priority', 'Priority', 'A notification of its own, naming this room, even while Meadow is open in front.')}
+        {n('muted', 'Muted', 'No notification. Its messages still arrive, count as unread, and reach your agent.')}
+      </fieldset>
+      {error && <div className="notice warn">{error}</div>}
+      <div className="actions">
+        <button className="secondary" onClick={onClose}>Cancel</button>
+        <button disabled={busy} onClick={() => run(async () => {
+          await meadow.setRoomSettings({ agent, room: room.room, guard, notify });
+          onClose();
+        })}>Save</button>
+      </div>
     </Dialog>
   );
 }

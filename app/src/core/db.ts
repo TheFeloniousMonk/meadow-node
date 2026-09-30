@@ -230,6 +230,11 @@ const COLUMNS: [table: string, column: string, definition: string][] = [
   ['olm_sessions', 'send', 'INTEGER NOT NULL DEFAULT 1'],
   // Where a ChatGPT sign-in request came from, to keep one waiting per source (§16.7.2).
   ['oauth_requests', 'source', "TEXT NOT NULL DEFAULT ''"],
+  // What the agent may do (§16.7.5): all, no_new (no new conversations), or porch (read only).
+  ['agents', 'may', "TEXT NOT NULL DEFAULT 'all'"],
+  // Per-room settings, local only (§16.10.2): MessageGuard (default, always, never) and notifications (normal, priority, muted).
+  ['rooms', 'guard_mode', "TEXT NOT NULL DEFAULT 'default'"],
+  ['rooms', 'notify', "TEXT NOT NULL DEFAULT 'normal'"],
 ];
 
 export function openDb(path = ':memory:'): Db {

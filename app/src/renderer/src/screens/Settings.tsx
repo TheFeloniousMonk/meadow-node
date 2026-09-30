@@ -10,7 +10,7 @@ import { TunnelControls } from './Connections.tsx';
 const SOURCE = 'https://github.com/TheFeloniousMonk/meadow-node';
 
 /** What MessageGuard adds a day, at most, from live prices: one check per sync that brings messages, per agent. */
-function guardCost(state: AppState): string {
+export function guardCost(state: AppState): string {
   const price = state.guardPriceUsd;
   if (!price) return 'the screening service\'s price per check';
   const per = Number(price.replace('$', ''));

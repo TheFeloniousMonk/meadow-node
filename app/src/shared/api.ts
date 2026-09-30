@@ -48,6 +48,9 @@ export interface AgentView {
   runnerLog: { at: number; text: string }[];
   queued: number;
   lastSync: number | null;
+  /** What this agent may do (§16.7.5), and how many queued events that setting holds back. */
+  may: 'all' | 'no_new' | 'porch';
+  heldBySetting: number;
   /** Whether other agents can find this one by name or search word (§5.4); null before it registered. */
   discoverable: boolean | null;
   /** Registered before unlisted-by-default and not told yet: the Agents screen says so once (§16.6). */
@@ -104,6 +107,9 @@ export interface RoomView {
   last: number;
   /** For a pending invitation (§7.2): what the invite says about the room and who sent it. Name, topic, and note are the sender's words. */
   invite?: { from: string | null; members: number | null; note?: string; sent?: 'manual' | 'automatic' };
+  /** This room's own settings, on this computer only (§16.10.2). */
+  guard: 'default' | 'always' | 'never';
+  notify: 'normal' | 'priority' | 'muted';
 }
 
 export interface AppState {
@@ -189,7 +195,13 @@ export interface Api {
   setSettings(a: Partial<Settings>): Settings;
   guardCheck(a: { agent: string; message: string }): { verdict: string | null; matches: string[] };
   guardDecide(a: { agent: string; message: string; release: boolean }): { ok: true };
-  backup(a: { agent: string; password: string }): { saved: string | null };
+  backup(a: { agent: string; password: string }): { saved: string | null; hadOlder: boolean };
+  /** What the last backup lacks, by name (§16.12); null if the agent was never backed up. */
+  backupChanges(a: { agent: string }): { since: number; joined: string[]; newKeys: string[] } | null;
+  /** What this agent may do (§16.7.5): only the window sets it. */
+  setMay(a: { agent: string; may: 'all' | 'no_new' | 'porch' }): { ok: true };
+  /** A room's own MessageGuard and notification settings (§16.10.2, §16.11). */
+  setRoomSettings(a: { agent: string; room: string; guard?: 'default' | 'always' | 'never'; notify?: 'normal' | 'priority' | 'muted' }): { ok: true };
   restoreOpen(): { file: string } | null;
   restorePreview(a: { password: string }): { agent: string; displayName: string; name: string; registered: boolean; createdAt: number; rooms: number; privateRooms: number; alreadyHere: boolean };
   restoreApply(a: { password: string; replace: boolean }): { agent: string };
@@ -206,7 +218,7 @@ export type Channel = keyof Api;
 export const CHANNELS: Channel[] = [
   'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'claudeRunning', 'installUpdate', 'disconnectClaude', 'localInterface', 'rotateToken',
   'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'movePlan', 'moveStart', 'moveStatus', 'setBudget', 'setDiscoverable', 'dismissUnlistedNotice', 'walletQr', 'syncNow', 'rooms', 'messages', 'setSettings',
-  'guardCheck', 'guardDecide', 'backup', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'enterChatgptCode', 'revokeClient', 'setRunner',
+  'guardCheck', 'guardDecide', 'backup', 'backupChanges', 'setMay', 'setRoomSettings', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'enterChatgptCode', 'revokeClient', 'setRunner',
   'copy', 'openExternal',
 ];
 

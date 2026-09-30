@@ -2,7 +2,7 @@
 // before the AI sees them, with the portal's prompt-injection detection
 // service. Off by default; the person turns it on for public rooms, and
 // separately for private rooms and DMs, whose decrypted text it then sends to
-// the service.
+// the service. A room's own setting (always, never) overrides both.
 //
 // Batched per sync: all new messages go in one call, clearly delimited. If
 // that says safe, all are delivered. Otherwise each is checked in its own call,
@@ -90,11 +90,12 @@ export class MessageGuard {
   async screenNew(agent: string): Promise<GuardReport> {
     const s = this.#settings();
     const report: GuardReport = { calls: 0, safe: 0, suspicious: 0, held: 0, unchecked: 0 };
+    // Which rooms: the two toggles by room type, unless the room's own setting says always or never (§16.11).
     const types = [...(s.public ? ['public'] : []), ...(s.private ? ['private', 'dm'] : [])];
-    if (!types.length) return report;
+    const byType = types.length ? `(r.guard_mode = 'default' AND r.type IN (${types.map(() => '?').join(', ')}))` : '0';
     const rows = this.#db.prepare(`SELECT m.id, m.author, m.ts, m.body_sealed FROM messages m JOIN rooms r ON r.agent = m.agent AND r.room = m.room
       WHERE m.agent = ? AND m.author != ? AND m.status = 'shown' AND m.guard IS NULL AND m.delivered = 0 AND m.body_sealed IS NOT NULL
-        AND r.type IN (${types.map(() => '?').join(', ')}) ORDER BY m.ts, m.id`).all(agent, agent, ...types) as any[];
+        AND (r.guard_mode = 'always' OR ${byType}) ORDER BY m.ts, m.id`).all(agent, agent, ...types) as any[];
     // Kept aside last time because their flagged batch left them unchecked: they go straight to single checks.
     const waiting = this.#db.prepare(`SELECT id, author, ts, body_sealed FROM messages WHERE agent = ? AND guard = 'unchecked' AND held = 1 AND body_sealed IS NOT NULL`).all(agent) as any[];
     if (!rows.length && !waiting.length) return report;

@@ -33,7 +33,11 @@ export const DEFAULT_SETTINGS: Omit<Settings, 'perCallMaxUsd'> = {
 };
 
 /** How the app tells the person about new messages; the main process shows a system notification. */
-export type Notify = (agent: string, displayName: string, count: number, held: number) => void;
+/**
+ * New messages for the person (§16.10.2): `count` from rooms set to normal, in one
+ * notification; each priority room in one of its own. Muted rooms are left out.
+ */
+export type Notify = (agent: string, displayName: string, count: number, held: number, priority: { room: string; title: string; count: number }[]) => void;
 
 export class Services {
   readonly db: Db;
@@ -92,7 +96,20 @@ export class Services {
         if (screened.stopped) this.db.prepare('INSERT INTO problems (agent, at, kind, text) VALUES (?, ?, ?, ?)').run(agent, Date.now(), 'messageguard', `MessageGuard could not check every new message: ${screened.stopped}`);
         if (report.messages && this.settings().notifications) {
           const a = this.core.agents().find((x) => x.id === agent);
-          this.#notify(agent, a?.display_name ?? 'Your agent', report.messages, screened.held);
+          const rooms = new Map(this.core.rooms(agent).map((r) => [r.room, r]));
+          let normal = 0;
+          const priority: { room: string; title: string; count: number }[] = [];
+          for (const [room, n] of Object.entries(report.byRoom ?? {})) {
+            const r = rooms.get(room);
+            if (r?.notify === 'muted') continue;
+            if (r?.notify !== 'priority') {
+              normal += n;
+              continue;
+            }
+            const title = r.type === 'dm' ? `DM with ${(r.dmWith && this.core.handleOf(agent, r.dmWith)) ?? 'another agent'}` : r.name ?? 'a room';
+            priority.push({ room, title, count: n });
+          }
+          if (normal || priority.length || screened.held) this.#notify(agent, a?.display_name ?? 'Your agent', normal, screened.held, priority);
         }
         // The runner acts outside the sync that woke it (the sync holds the agent's lock, and its own writes sync).
         if (this.runner.config(agent)?.enabled) setTimeout(() => void this.runner.run(agent).finally(() => this.#changed()), 0);

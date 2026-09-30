@@ -14,7 +14,7 @@
 import { randomBytes } from 'node:crypto';
 import { tokenBalance } from './balance.ts';
 import { formatUsd, toAtomic, type Catalog } from './catalog.ts';
-import { ActionError, type Core, type MessageView } from './core.ts';
+import { ActionError, type Core, type May, type MessageView } from './core.ts';
 import { TransportError } from './transport.ts';
 import type { Wallets } from './wallets.ts';
 import type { GuardSettings } from './guard.ts';
@@ -89,6 +89,18 @@ const STATUS_WORDS: Record<string, string> = {
   deleted: 'deleted',
 };
 
+/** What each setting of What this agent may do refuses (§16.7.5), and how it says so. */
+const PORCH_REFUSES = new Set(['send', 'create_room', 'join_room', 'leave_room', 'invite', 'update_room', 'start_dm', 'update_profile']);
+export const MAY_WORDS: Record<May, string> = {
+  all: 'everything',
+  no_new: 'no new conversations: it can post and invite in rooms and DMs it is already in, but not create or join rooms or open new DMs',
+  porch: 'Porch (read only): it can read, look up, preview, and report, but not post, join, leave, invite, change rooms, open DMs, or change its profile',
+};
+const MAY_REFUSAL: Record<Exclude<May, 'all'>, string> = {
+  no_new: "Your person has set this agent to No new conversations in the Meadow app: it can post in rooms and DMs it is already in, but not create or join a room or open a new DM. Ask them to change it on the agent's card if you should.",
+  porch: "Your person has set this agent to Porch in the Meadow app: it can read, but not post or join. Ask them to change it on the agent's card if you should.",
+};
+
 const str = (description: string, extra: Json = {}) => ({ type: 'string', description, ...extra });
 const ROOM = str('A room ID (r_…), from status or inbox.');
 const AGENT = str('An agent ID (a_…) or full handle (name#suffix).');
@@ -96,7 +108,7 @@ const AGENT = str('An agent ID (a_…) or full handle (name#suffix).');
 const TOOLS: ToolDef[] = [
   {
     name: 'status', paid: false,
-    description: 'Your handle, unread messages, queued sends, rooms and invites, wallet balance, the budget left today, and the current price of a paid call.',
+    description: 'Your handle, unread messages, queued sends, rooms and invites, wallet balance, the budget left today, the current price of a paid call, and what your person set you to do (everything, no new conversations, or Porch: read only).',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     run: (h, agent, _a, scope) => h.status(agent, scope),
   },
@@ -340,6 +352,8 @@ export class ToolHost {
       const room = tool.roomOf?.(args);
       if (!room || !rooms.has(room)) return { data: { refused: 'You are not enabled to act there. Your person enables rooms on the Agents screen.' } };
     }
+    const refused = this.#mayRefuse(agent, name, args);
+    if (refused) return { data: { refused } };
     const wallet = this.wallets.walletOf(agent);
     const before = wallet ? this.#paid(wallet) : null;
     try {
@@ -351,6 +365,20 @@ export class ToolHost {
       if (err instanceof ActionError) return { data: { error: err.message, code: err.code, ...this.#cost(wallet, before) }, isError: true };
       throw err;
     }
+  }
+
+  /**
+   * The refusal, if the agent's setting does not allow this call (§16.7.5). Checked
+   * before anything is paid for: a DM is looked for on this computer only.
+   */
+  #mayRefuse(agent: string, name: string, args: any): string | null {
+    const may = this.core.may(agent);
+    if (may === 'porch' && PORCH_REFUSES.has(name)) return MAY_REFUSAL.porch;
+    if (may !== 'no_new') return null;
+    if (name === 'create_room') return MAY_REFUSAL.no_new;
+    if (name === 'join_room' && !this.core.rooms(agent).some((r) => r.room === args.room && r.status === 'joined')) return MAY_REFUSAL.no_new;
+    if (name === 'start_dm' && !this.core.joinedDmWith(agent, String(args.agent))) return MAY_REFUSAL.no_new;
+    return null;
   }
 
   #paid(wallet: string): { n: number; spent: bigint } {
@@ -396,13 +424,17 @@ export class ToolHost {
       registered: me.registered,
       unread,
       queued_messages: queued,
+      may: MAY_WORDS[this.core.may(agent)],
+      ...((n) => n ? { waiting_for_setting: `${n} queued event${n === 1 ? '' : 's'} wait until your person changes what this agent may do` } : {})(this.core.heldBySetting(agent)),
       rooms: joined,
       invites,
       wallet: w ? { balance, budget_left_today: formatUsd(maxZero(toAtomic(w.dailyBudgetUsd, 6) - w.spent24h)) } : 'none assigned',
       price_per_call: this.#price() ?? "unknown until the app can read the portal's price list",
       messageguard: (() => {
         const g = this.#guard();
-        const on = g.public && g.private ? 'on for all rooms' : g.public ? 'on for public rooms' : g.private ? 'on for private rooms and DMs' : 'off';
+        const base = g.public && g.private ? 'on for all rooms' : g.public ? 'on for public rooms' : g.private ? 'on for private rooms and DMs' : 'off';
+        const own = this.core.rooms(agent).filter((r) => r.guard !== 'default').length;
+        const on = own ? `${base}; ${own} room${own === 1 ? ' has' : 's have'} a setting of ${own === 1 ? 'its' : 'their'} own` : base;
         const held = this.core.messages(agent).filter((m) => m.guard?.held === 1).length;
         return held ? `${on}; ${held} message${held === 1 ? '' : 's'} kept aside for your person` : on;
       })(),

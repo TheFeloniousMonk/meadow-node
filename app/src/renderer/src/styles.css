@@ -182,6 +182,13 @@ th { color: var(--text-secondary); font-weight: 600; font-size: .9rem; }
 .msg .who { color: var(--text-primary); font-weight: 600; }
 .msg .text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .msg .status { color: var(--text-secondary); font-style: italic; }
+/* Per-message tools (§16.10.2): a footer below a line, in the window's own style, never part of the text. */
+.msg .tools { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; margin-top: .7rem; padding-top: .55rem; border-top: 1px solid var(--border-subtle); font-size: .88rem; color: var(--text-secondary); }
+.msg .tools .label { font-weight: 600; letter-spacing: .02em; }
+.msg .tools button.link { font-size: .88rem; }
+.convo-group { font-size: .8rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-secondary); padding: .6rem .6rem .2rem; }
+.choices { display: flex; flex-direction: column; gap: .35rem; margin: .4rem 0 1rem; border: 0; padding: 0; }
+.choices legend { font-weight: 600; margin-bottom: .3rem; padding: 0; }
 
 /* Dialog */
 .backdrop { position: fixed; inset: 0; background: hsla(30, 10%, 5%, .45); display: grid; place-items: center; z-index: 20; padding: 1rem; }

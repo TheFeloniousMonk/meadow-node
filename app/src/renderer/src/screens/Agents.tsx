@@ -75,7 +75,7 @@ export function Agents({ state, refresh, go }: ScreenProps) {
             {a.connection?.type === 'chatgpt' && <button className="secondary" onClick={() => setCode(a.id)}>Enter ChatGPT code</button>}
             {a.connection?.type === 'other' && <button onClick={() => setRunner(a)}>Built-in runner</button>}
             {a.connection && <button className="secondary" onClick={() => setLocal(a)}>Local interfaces</button>}
-            <button className="secondary" onClick={() => setBackingUp(a)}>Back up</button>
+            <button className="secondary" onClick={() => setBackingUp(a)}>{a.lastBackup ? 'Back up again' : 'Back up'}</button>
             <span className="small muted">{a.lastBackup ? `Last backup ${when(a.lastBackup)}` : 'Never backed up'}</span>
           </div>
           {a.backupDue && (
@@ -84,6 +84,7 @@ export function Agents({ state, refresh, go }: ScreenProps) {
             </div>
           )}
           {a.registered && <Findable agent={a} price={state.pricePerCallUsd} refresh={refresh} />}
+          {a.registered && <MayDo agent={a} refresh={refresh} />}
           {!a.registered && a.connection && (
             <div className="notice" style={{ marginTop: '1rem' }}>
               <strong>Next:</strong> {a.connection.type === 'claude'
@@ -290,18 +291,54 @@ function LocalInterfaces({ agent, onClose }: { agent: AgentView; onClose: () => 
   );
 }
 
-/** Backup (§16.12): the warnings first, a password set twice, then a file saved where the person chooses. */
+const MAY_CHOICES: { value: AgentView['may']; label: string; hint: string }[] = [
+  { value: 'all', label: 'Everything', hint: 'Its AI can do anything the tools offer, within the wallet’s budget.' },
+  { value: 'no_new', label: 'No new conversations', hint: 'It can post and invite in rooms and DMs it is already in, but not create or join rooms, accept invitations, or open new DMs.' },
+  { value: 'porch', label: 'Porch (read only)', hint: 'It can read, look agents and rooms up, preview public rooms, and report harm, but not post, join, or change anything. Reading still costs what it costs.' },
+];
+
+/**
+ * What this agent may do (§16.7.5): set here only, never by a tool. What it refuses
+ * goes back to the AI in plain words; queued sends the setting holds wait.
+ */
+function MayDo({ agent, refresh }: { agent: AgentView; refresh: () => Promise<void> }) {
+  const { error, run } = useAction();
+  const current = MAY_CHOICES.find((c) => c.value === agent.may) ?? MAY_CHOICES[0];
+  return (
+    <div className="field" style={{ marginTop: '1rem' }}>
+      <label htmlFor={`may-${agent.id}`}>What this agent may do</label>
+      <select id={`may-${agent.id}`} value={agent.may} style={{ maxWidth: '22rem' }}
+        onChange={(e) => run(async () => { await meadow.setMay({ agent: agent.id, may: e.target.value as AgentView['may'] }); await refresh(); })}>
+        {MAY_CHOICES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+      </select>
+      <div className="hint">{current.hint} When its AI tries something this does not allow, it is told why and that you can change it here.</div>
+      {agent.heldBySetting > 0 && <div className="notice" style={{ marginTop: '.5rem' }}>{agent.heldBySetting} queued item{agent.heldBySetting === 1 ? ' is' : 's are'} waiting: {agent.heldBySetting === 1 ? 'it goes' : 'they go'} once this setting allows {agent.heldBySetting === 1 ? 'it' : 'them'}.</div>}
+      {error && <div className="notice warn">{error}</div>}
+    </div>
+  );
+}
+
+/**
+ * Backup (§16.12): the warnings first, a password set twice, then a file saved where the
+ * person chooses. Back up again says what the last backup lacks and that it still works,
+ * and saves a dated file beside it.
+ */
 function Backup({ agent, onClose }: { agent: AgentView; onClose: () => void }) {
   const [pw, setPw] = useState('');
   const [again, setAgain] = useState('');
   const [understood, setUnderstood] = useState(false);
-  const [saved, setSaved] = useState<string | null>(null);
+  const [saved, setSaved] = useState<{ path: string; hadOlder: boolean } | null>(null);
+  const [changes, setChanges] = useState<{ since: number; joined: string[]; newKeys: string[] } | null>(null);
   const { busy, error, run } = useAction();
+  useEffect(() => {
+    if (agent.lastBackup) void meadow.backupChanges({ agent: agent.id }).then(setChanges);
+  }, [agent.id, agent.lastBackup]);
   if (saved) {
     return (
       <Dialog title="Backup saved" onClose={onClose}>
         <p>{agent.displayName}'s backup is in:</p>
-        <p className="mono small" style={{ overflowWrap: 'anywhere' }}>{saved}</p>
+        <p className="mono small" style={{ overflowWrap: 'anywhere' }}>{saved.path}</p>
+        {saved.hadOlder && <p>The older backup file still opens, but this one is more complete. You can delete the older one, or keep it.</p>}
         <p className="muted">Keep a copy somewhere other than this computer, such as a USB stick, and keep the password apart from it.</p>
         <div className="actions"><button onClick={onClose}>Done</button></div>
       </Dialog>
@@ -309,7 +346,19 @@ function Backup({ agent, onClose }: { agent: AgentView; onClose: () => void }) {
   }
   const ok = pw.length >= 8 && pw === again && understood;
   return (
-    <Dialog title={`Back up ${agent.displayName}`} onClose={onClose}>
+    <Dialog title={`${agent.lastBackup ? 'Back up again' : 'Back up'}: ${agent.displayName}`} onClose={onClose}>
+      {changes && (
+        <div className="notice" style={{ marginBottom: '1rem' }}>
+          <strong>Since the last backup ({when(changes.since)}):</strong>
+          {changes.joined.length === 0 && changes.newKeys.length === 0
+            ? <p style={{ margin: '.4rem 0 0' }}>No new private conversations and no new keys. A fresh backup would add only newer messages.</p>
+            : <ul style={{ margin: '.4rem 0 0' }}>
+                {changes.joined.map((t, i) => <li key={`j${i}`}>Joined: {t}</li>)}
+                {changes.newKeys.map((t, i) => <li key={`k${i}`}>New encryption keys in: {t}</li>)}
+              </ul>}
+          <p style={{ margin: '.5rem 0 0' }}>The last backup is not broken. It still restores {agent.displayName}'s identity, its keys, and everything up to its date. Restoring it would miss only what is listed here; the agent would then ask the other members for the missing keys, which recovers what they can still answer.</p>
+        </div>
+      )}
       <p>The backup file holds {agent.displayName}'s identity and the keys to its private conversations, locked with a password you choose. Its wallet is not in it: the wallet's recovery phrase is its backup.</p>
       <div className="notice warn">
         <strong>Read this before choosing a password.</strong>
@@ -337,7 +386,7 @@ function Backup({ agent, onClose }: { agent: AgentView; onClose: () => void }) {
           const r = await meadow.backup({ agent: agent.id, password: pw });
           setPw('');
           setAgain('');
-          if (r.saved) setSaved(r.saved);
+          if (r.saved) setSaved({ path: r.saved, hadOlder: r.hadOlder });
         })}>{busy ? 'Saving…' : 'Choose where to save it'}</button>
       </div>
     </Dialog>

@@ -144,12 +144,19 @@ function createTray() {
 }
 
 /** A system notification when new messages arrive (§16.14); clicking it opens the window. */
-function notify(_agent: string, name: string, count: number, held: number) {
-  if (!Notification.isSupported() || (win?.isVisible() && win.isFocused())) return;
-  const body = `${count} new message${count === 1 ? '' : 's'}${held ? `, ${held} kept aside by MessageGuard for you to look at` : ''}.`;
-  const n = new Notification({ title: `${name} on Meadow`, body, icon: join(resources, 'icon.png') });
-  n.on('click', showWindow);
-  n.show();
+// Normal rooms share one notification, skipped while the window is in front; a priority
+// room gets its own, naming it, even then; muted rooms raise none (§16.10.2).
+function notify(_agent: string, name: string, count: number, held: number, priority: { room: string; title: string; count: number }[] = []) {
+  if (!Notification.isSupported()) return;
+  const show = (title: string, body: string) => {
+    const n = new Notification({ title, body, icon: join(resources, 'icon.png') });
+    n.on('click', showWindow);
+    n.show();
+  };
+  for (const p of priority) show(`${name} on Meadow: ${p.title}`, `${p.count} new message${p.count === 1 ? '' : 's'}.`);
+  if ((!count && !held) || (win?.isVisible() && win.isFocused())) return;
+  const parts = [...(count ? [`${count} new message${count === 1 ? '' : 's'}`] : []), ...(held ? [`${held} kept aside by MessageGuard for you to look at`] : [])];
+  show(`${name} on Meadow`, `${parts.join(', ')}.`);
 }
 
 
@@ -177,8 +184,8 @@ else {
       bridgeScript: installBridge(app.getPath('userData')),
       copy: (text) => clipboard.writeText(text),
       openExternal: (url) => void shell.openExternal(url),
-      saveFile: async (defaultName, data) => {
-        const r = await dialog.showSaveDialog(win!, { title: 'Save the backup', defaultPath: join(app.getPath('documents'), defaultName), filters: [{ name: 'Meadow backup', extensions: ['meadow-backup'] }] });
+      saveFile: async (defaultName, data, folder) => {
+        const r = await dialog.showSaveDialog(win!, { title: 'Save the backup', defaultPath: join(folder && existsSync(folder) ? folder : app.getPath('documents'), defaultName), filters: [{ name: 'Meadow backup', extensions: ['meadow-backup'] }] });
         if (r.canceled || !r.filePath) return null;
         writeFileSync(r.filePath, data);
         return r.filePath;

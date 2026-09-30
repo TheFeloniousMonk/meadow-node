@@ -49,7 +49,34 @@ export interface SyncReport {
   pending: { id: string; reason?: string }[];
   invites: number;
   messages: number; // new messages from others
+  byRoom?: Record<string, number>; // the same, per room (for notifications, §16.10.2)
   stopped?: string; // why the sync stopped early, in plain words
+}
+
+function countNew(report: SyncReport, room: string, n: number) {
+  if (!n) return;
+  report.messages += n;
+  (report.byRoom ??= {})[room] = (report.byRoom[room] ?? 0) + n;
+}
+
+/** What an agent may do (§16.7.5): everything, no new conversations, or read only. */
+export type May = 'all' | 'no_new' | 'porch';
+export const MAY: May[] = ['all', 'no_new', 'porch'];
+export type RoomGuard = 'default' | 'always' | 'never';
+export type RoomNotify = 'normal' | 'priority' | 'muted';
+
+/**
+ * Whether a queued event may go out under the agent's setting (§16.7.5).
+ * Porch sends only housekeeping (key sharing and requests, fallback rotation);
+ * No new conversations holds room creations and the agent's own joins.
+ */
+export function outboxAllowed(may: May, agent: string, ev: MeadowEvent): boolean {
+  if (may === 'all') return true;
+  const kind = ev.header.kind;
+  if (may === 'porch') return kind === 'room.keys' || kind === 'agent.keys';
+  if (kind === 'room.create') return false;
+  const d: any = ev.header.data;
+  return !(kind === 'room.member' && d?.membership === 'join' && d?.target === agent);
 }
 
 /** An action the protocol does not allow in the agent's own view of the room. */
@@ -611,11 +638,57 @@ export class Core {
     return out;
   }
 
+  /** The queued events the agent's setting lets go, in order (§16.7.5). */
+  #sendable(agent: string): { id: string; event: string }[] {
+    const may = this.may(agent);
+    const rows = this.#db.prepare('SELECT id, event FROM outbox WHERE agent = ? ORDER BY seq').all(agent) as any[];
+    return may === 'all' ? rows : rows.filter((r) => outboxAllowed(may, agent, JSON.parse(r.event)));
+  }
+
+  /** How many queued events the agent's setting is holding back (§16.10.3). */
+  heldBySetting(agent: string): number {
+    return (this.#db.prepare('SELECT COUNT(*) AS n FROM outbox WHERE agent = ?').get(agent) as any).n - this.#sendable(agent).length;
+  }
+
+  /** What the agent may do (§16.7.5). */
+  may(agent: string): May {
+    const m = (this.#db.prepare('SELECT may FROM agents WHERE id = ?').get(agent) as any)?.may;
+    return MAY.includes(m) ? m : 'all';
+  }
+
+  /** Sets what the agent may do; only the window calls this (§16.7.5). */
+  setMay(agent: string, may: May) {
+    if (!MAY.includes(may)) throw new ActionError('bad_request', 'Unknown setting.');
+    this.#db.prepare('UPDATE agents SET may = ? WHERE id = ?').run(may, agent);
+  }
+
+  /** A room's local settings (§16.10.2); they never touch updated_at, which the backup nudge reads. */
+  setRoomSettings(agent: string, room: string, s: { guard?: RoomGuard; notify?: RoomNotify }) {
+    if (s.guard !== undefined && !['default', 'always', 'never'].includes(s.guard)) throw new ActionError('bad_request', 'Unknown MessageGuard setting.');
+    if (s.notify !== undefined && !['normal', 'priority', 'muted'].includes(s.notify)) throw new ActionError('bad_request', 'Unknown notification setting.');
+    if (!this.#roomRow(agent, room)) throw new ActionError('unknown_room', 'This agent does not know that room.');
+    if (s.guard !== undefined) this.#db.prepare('UPDATE rooms SET guard_mode = ? WHERE agent = ? AND room = ?').run(s.guard, agent, room);
+    if (s.notify !== undefined) this.#db.prepare('UPDATE rooms SET notify = ? WHERE agent = ? AND room = ?').run(s.notify, agent, room);
+  }
+
+  /**
+   * The DM this agent has already joined with `who` (an agent ID or a handle), found
+   * on this computer only, with no paid lookup; null if there is none (§16.7.5).
+   */
+  joinedDmWith(agent: string, who: string): string | null {
+    let peer: string | null = /^a_[A-Za-z0-9_-]{43}$/.test(who) ? who : this.#pinned(agent, who);
+    if (!peer) peer = (this.#db.prepare('SELECT peer FROM peers WHERE agent = ?').all(agent) as any[]).map((r) => r.peer as string).find((p) => this.handleOf(agent, p) === who) ?? null;
+    if (!peer) return null;
+    return this.rooms(agent).find((r) => r.type === 'dm' && r.status === 'joined' && r.dmWith === peer)?.room ?? null;
+  }
+
   async #sync(ctx: Ctx): Promise<SyncReport> {
     const report: SyncReport = { calls: 0, accepted: [], rejected: [], pending: [], invites: 0, messages: 0 };
     for (let page = 0; page < SYNC.maxPages; page++) {
-      const rows = this.#db.prepare('SELECT id, event FROM outbox WHERE agent = ? ORDER BY seq LIMIT ?').all(ctx.id, SYNC.outbox) as any[];
-      const total = (this.#db.prepare('SELECT COUNT(*) AS n FROM outbox WHERE agent = ?').get(ctx.id) as any).n;
+      // Events the agent's setting holds back stay queued, unsent (§16.7.5).
+      const sendable = this.#sendable(ctx.id);
+      const rows = sendable.slice(0, SYNC.outbox);
+      const total = sendable.length;
       const fields: any = { heads: this.#heads(ctx), limit_bytes: SYNC.limitBytes };
       if (rows.length) fields.outbox = rows.map((r) => JSON.parse(r.event));
       // Chains to verify the names nodes gave (§16.8), only where the network takes `agents` (§7.2).
@@ -744,13 +817,13 @@ export class Core {
         // enough: the room is marked removed only when a signed membership event,
         // validated in the agent's own room, says so.
         const room = this.#room(ctx, roomId);
-        if (entry.membership && room.size > 0) report.messages += await this.ingestRoomEvents(ctx.id, roomId, [entry.membership]);
+        if (entry.membership && room.size > 0) countNew(report, roomId, await this.ingestRoomEvents(ctx.id, roomId, [entry.membership]));
         const proved = room.size > 0 && ['leave', 'ban'].includes(membershipOf(room.currentState(), ctx.id));
         const row = this.#roomRow(ctx.id, roomId);
         if (proved && (row?.status === 'joined' || row?.status === 'reading')) tx(this.#db, () => this.#setRoom(ctx.id, roomId, { status: 'removed' }));
         else if (!proved) this.#problem(ctx.id, 'sync', `A node said this agent can no longer read room ${roomId}, without a signed removal; the room is kept.`);
       } else if (entry.events?.length) {
-        report.messages += await this.ingestRoomEvents(ctx.id, roomId, entry.events);
+        countNew(report, roomId, await this.ingestRoomEvents(ctx.id, roomId, entry.events));
       }
     }
   }
@@ -1208,17 +1281,18 @@ export class Core {
     tx(this.#db, () => ids.forEach((id) => stmt.run(agent, id)));
   }
 
-  rooms(agent: string): { room: string; type: string | null; status: string; name?: string; topic?: string; members: string[]; dmWith?: string }[] {
+  rooms(agent: string): { room: string; type: string | null; status: string; name?: string; topic?: string; members: string[]; dmWith?: string; guard: RoomGuard; notify: RoomNotify }[] {
     const ctx = this.#load(agent);
-    return (this.#db.prepare('SELECT room, type, status FROM rooms WHERE agent = ? ORDER BY updated_at DESC').all(agent) as any[]).map((r) => {
+    return (this.#db.prepare('SELECT room, type, status, guard_mode, notify FROM rooms WHERE agent = ? ORDER BY updated_at DESC').all(agent) as any[]).map((r) => {
       const room = this.#room(ctx, r.room);
-      if (room.size === 0) return { room: r.room, type: r.type, status: r.status, members: [] };
+      const local = { guard: r.guard_mode as RoomGuard, notify: r.notify as RoomNotify };
+      if (room.size === 0) return { room: r.room, type: r.type, status: r.status, members: [], ...local };
       const state: State = room.currentState();
       const meta = state.get('room.meta|')?.header.data ?? {};
       const members = [...state].filter(([k, ev]) => k.startsWith('room.member|') && ev.header.data.membership === 'join').map(([, ev]) => ev.header.data.target);
       const create = room.create!.header;
       const dmWith = create.data.type === 'dm' ? (create.author === agent ? create.data.dm_with : create.author) : undefined;
-      return { room: r.room, type: r.type, status: r.status, ...(meta.name && { name: meta.name }), ...(meta.topic && { topic: meta.topic }), members, ...(dmWith && { dmWith }) };
+      return { room: r.room, type: r.type, status: r.status, ...(meta.name && { name: meta.name }), ...(meta.topic && { topic: meta.topic }), members, ...(dmWith && { dmWith }), ...local };
     });
   }
 

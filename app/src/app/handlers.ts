@@ -5,7 +5,8 @@
 import QRCode from 'qrcode';
 import { formatUsd } from '../core/catalog.ts';
 import { GUARD_SERVICE } from '../core/guard.ts';
-import { backupDue, describeBackup, makeBackup, readBackup, restoreBackup } from '../core/backup.ts';
+import { dirname } from 'node:path';
+import { backupChanges, backupDue, describeBackup, makeBackup, readBackup, restoreBackup } from '../core/backup.ts';
 import { tokenBalance } from '../core/balance.ts';
 import { add, bridgeEntry, claudeDesktopConfigPath, claudeDesktopRunning, entryName, remove, status } from '../server/claude-desktop.ts';
 import { CHANNELS, linkAllowed, type Api, type AppState, type Channel, type MessageView, type MovePlanView, type MoveStateView } from '../shared/api.ts';
@@ -24,7 +25,7 @@ export interface HandlerEnv {
   /** Whether Claude Desktop is running (true, false, or null for cannot tell); by default asks the system. */
   claudeRunning?(): Promise<boolean | null>;
   /** Asks where to save a file (a system dialog); resolves to the path written, or null if cancelled. */
-  saveFile(defaultName: string, data: Buffer): Promise<string | null>;
+  saveFile(defaultName: string, data: Buffer, folder?: string): Promise<string | null>;
   /** Asks for a file to open; resolves to its name and bytes, or null. */
   openFile(): Promise<{ name: string; data: Buffer } | null>;
   /** Applies settings that belong to the operating system (start at login). */
@@ -92,6 +93,8 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
             runner: s.runner.config(a.id),
             runnerLog: s.runner.log(a.id, 5),
             queued: s.core.outbox(a.id).filter((e) => e.kind === 'msg.post').length,
+            may: s.core.may(a.id),
+            heldBySetting: s.core.heldBySetting(a.id),
             lastSync: s.lastSync.get(a.id) ?? null,
             discoverable: a.registered ? s.core.discoverable(a.id) : null,
             unlistedNotice: a.registered && s.core.discoverable(a.id) !== true && !s.db.prepare('SELECT 1 FROM meta WHERE key = ?').get(`unlisted_notice_seen:${a.id}`),
@@ -200,7 +203,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
           const name = r.name ?? i?.name;
           const topic = r.topic ?? i?.topic;
           return {
-            room: r.room, type: r.type ?? i?.type ?? null, status: r.status, ...(name && { name }), ...(topic && { topic }),
+            room: r.room, type: r.type ?? i?.type ?? null, status: r.status, guard: r.guard, notify: r.notify, ...(name && { name }), ...(topic && { topic }),
             ...(r.dmWith && { with: s.core.handleOf(agent, r.dmWith) ?? r.dmWith }), members: r.members, unread: unread.get(r.room) ?? 0, last: last.get(r.room) ?? 0,
             ...(i && { invite: { from: i.from ? s.core.handleOf(agent, i.from) ?? i.from : null, members: i.members, ...(i.note && { note: i.note }), ...(i.origin && { sent: i.origin as 'manual' | 'automatic' }) } }),
           };
@@ -245,6 +248,28 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     setRunner({ agent, ...c }) {
       s.runner.configure(agent, c);
       return { ok: true };
+    },
+
+    setMay({ agent, may }) {
+      s.core.setMay(agent, may);
+      return { ok: true };
+    },
+
+    setRoomSettings({ agent, room, guard, notify }) {
+      s.core.setRoomSettings(agent, room, { guard, notify });
+      return { ok: true };
+    },
+
+    backupChanges({ agent }) {
+      const c = backupChanges(s.db, agent);
+      if (!c) return null;
+      const rooms = new Map(s.core.rooms(agent).map((r) => [r.room, r]));
+      const title = (id: string) => {
+        const r = rooms.get(id);
+        if (r?.type === 'dm') return `DM with ${(r.dmWith && s.core.handleOf(agent, r.dmWith)) ?? 'another agent'}`;
+        return r?.name ?? 'A private room with no name';
+      };
+      return { since: c.since, joined: c.joined.map(title), newKeys: c.newKeys.map(title) };
     },
 
     guardDecide({ agent, message, release }) {
@@ -314,8 +339,18 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     },
     backup: async ({ agent, password }) => {
       const name = s.core.agents().find((a) => a.id === agent)?.name ?? 'agent';
+      const before = (s.db.prepare('SELECT last_backup_at FROM agents WHERE id = ?').get(agent) as any)?.last_backup_at ?? null;
       const file = makeBackup(s.db, s.vault, agent, password);
-      return { saved: await env.saveFile(`${name}.meadow-backup`, file) };
+      // Dated, in the last backup's folder, so a new file sits beside the old one (§16.12).
+      const d = new Date();
+      const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const folderKey = `backup_dir:${agent}`;
+      const folder = (s.db.prepare('SELECT value FROM meta WHERE key = ?').get(folderKey) as any)?.value;
+      const saved = await env.saveFile(`${name}-${date}.meadow-backup`, file, folder);
+      // Cancelled: nothing was saved, so the last backup is still the older one.
+      if (!saved) s.db.prepare('UPDATE agents SET last_backup_at = ? WHERE id = ?').run(before, agent);
+      else s.db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(folderKey, dirname(saved));
+      return { saved, hadOlder: saved !== null && before !== null };
     },
     restoreOpen: async () => {
       restoring = await env.openFile();
