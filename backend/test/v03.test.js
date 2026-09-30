@@ -101,7 +101,8 @@ test('sync names every author it serves and every invite sender, from the chain 
   const res = call(store, carol, { heads: { [b.room.id]: [] } });
   const head = store.agent(alice.id).head;
   assert.deepEqual(res.authors, { [alice.id]: { name: 'alicia', head }, [bob.id]: { name: 'bob', head: store.agent(bob.id).head } });
-  assert.deepEqual(Object.keys(res), ['node', 'accepted', 'rejected', 'pending', 'more', 'authors', 'invites', 'rooms', 'agents'], 'names with the metadata, chains last');
+  assert.deepEqual(Object.keys(res), ['node', 'accepted', 'rejected', 'pending', 'more', 'authors', 'invites', 'rooms', 'chains'], 'names with the metadata, chains last');
+  assert.equal('agents' in res, false, 'agents is the lookup array; sync must not reuse the key');
 
   // The invitation shows the room's name, topic, member count, and the note and origin on the invite itself.
   const inv = res.invites[0];
@@ -127,9 +128,9 @@ test('sync returns requested chains that verify, and refuses a bad agents list',
 
   const stranger = b.agent('stranger').id;
   const res = call(store, bob, { agents: [alice.id, stranger] });
-  assert.deepEqual(Object.keys(res.agents), [alice.id], 'unknown agents are left out');
+  assert.deepEqual(Object.keys(res.chains), [alice.id], 'unknown agents are left out');
   const log = new AgentLog();
-  for (const ev of res.agents[alice.id]) assert.equal(log.add(ev).outcome, 'accepted');
+  for (const ev of res.chains[alice.id]) assert.equal(log.add(ev).outcome, 'accepted');
   assert.equal(log.head(alice.id).id, b.id('a1'));
 
   for (const bad of [[], Array.from({ length: 51 }, (_, i) => b.agent(`x${i}`).id), [alice.id, alice.id], ['a_nope'], 'a']) {
@@ -151,9 +152,9 @@ test('the first requested chain always comes; others wait for room in limit_byte
   const store = new Store();
   for (const s of b.steps) store.ingest(s.event);
   const res = call(store, asker, { agents: [one.id, two.id], limit_bytes: 100 });
-  assert.deepEqual(Object.keys(res.agents), [one.id], 'past limit_bytes, only the first');
+  assert.deepEqual(Object.keys(res.chains), [one.id], 'past limit_bytes, only the first');
   const roomy = call(store, asker, { agents: [one.id, two.id] });
-  assert.deepEqual(Object.keys(roomy.agents).sort(), [one.id, two.id].sort());
+  assert.deepEqual(Object.keys(roomy.chains).sort(), [one.id, two.id].sort());
 });
 
 test('discoverable agents only in name and word searches; a toggle takes effect at the head', () => {
@@ -187,5 +188,5 @@ test('a chain too large for one answer says so instead', () => {
   assert.equal(p.chain, undefined);
   assert.equal(p.chain_too_large, true);
   const asker = b.agent('asker');
-  assert.deepEqual(call(store, asker, { agents: [alice.id] }).agents, { [alice.id]: { chain_too_large: true } });
+  assert.deepEqual(call(store, asker, { agents: [alice.id] }).chains, { [alice.id]: { chain_too_large: true } });
 });

@@ -8,6 +8,20 @@ relate.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-30
+
+Same protocol (3) and room version (1) as 0.3.0.
+
+### Fixed
+
+- Sync returns requested chains under `chains`, not `agents`. In 0.3.0 the
+  answer's `agents` was an object, while `agents` is lookup's array; the Pocket
+  agentic portal checks every Meadow answer against one schema that declares
+  `agents` an array, so it refused every `/v2/sync` from the 0.3.0 deploy
+  (17:53 UTC) until this release. The payers were not charged. The request
+  field is still `agents`. SPEC §7.6 now states the rule: a top-level key keeps
+  one type across every route.
+
 ## [0.3.0] - 2026-09-30
 
 **A network upgrade: protocol 3.** Nodes implement event formats 2 and 3.

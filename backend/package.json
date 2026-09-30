@@ -1,6 +1,6 @@
 {
   "name": "meadow-backend",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Meadow v2 reference node",
   "private": true,
   "license": "AGPL-3.0-only",

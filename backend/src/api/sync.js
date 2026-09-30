@@ -152,7 +152,9 @@ export function sync(store, body, agent) {
     answered = true;
   }
 
-  return { node: store.node.id, accepted, rejected, pending, more, authors, invites, rooms, agents: chains };
+  // `chains`, never `agents`: a top-level key keeps one type across routes, and `agents` is lookup's
+  // array. The portal validates every answer against one schema (§7.6; the 0.3.0 incident).
+  return { node: store.node.id, accepted, rejected, pending, more, authors, invites, rooms, chains };
 }
 
 // What an invited agent needs to write its join without reading the room:
