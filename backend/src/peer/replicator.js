@@ -3,6 +3,7 @@
 // depended on, and periodic anti-entropy. Every event received is validated
 // like a client's (§11.4). Peer calls are free, so pacing can be quick.
 
+import { REPLY_LIMITS, ReplyTooLarge, readJson } from './read.js';
 import { signPeer } from './peers.js';
 import { ingestFromPeer, isAgentEvent, PEER_LIMITS } from './api.js';
 import { verifyReport } from '../proto/report.js';
@@ -93,7 +94,14 @@ export class Replicator {
       body: JSON.stringify(signPeer(this.#store.node, fields)),
       signal: AbortSignal.timeout(this.#opts.timeoutMs),
     });
-    const body = await res.json();
+    let body;
+    try {
+      body = await readJson(res, REPLY_LIMITS.peer);
+    } catch (err) {
+      // A reply past the limit is a failed call, scored as for a malformed event (§11.2).
+      if (err instanceof ReplyTooLarge) this.#peers.penalize(peer.id);
+      throw err;
+    }
     if (!res.ok) throw new Error(`${peer.id} ${path}: ${res.status} ${body?.error?.code ?? ''}`);
     return body;
   }
@@ -168,9 +176,17 @@ export class Replicator {
     for (const ev of held) if (!still.has(ev.id)) this.#held.delete(ev.id);
   }
 
+  // An agent's chain, page by page, oldest first (§11.2).
   async pullChain(peer, agent) {
-    const res = await this.#call(peer, '/v2/chain', { agent });
-    ingestFromPeer(this.#store, res.events, { onInvalid: () => this.#peers.penalize(peer.id) });
+    let after;
+    for (let page = 0; page < 100; page++) {
+      const res = await this.#call(peer, '/v2/chain', { agent, ...(after && { after }) });
+      const events = Array.isArray(res.events) ? res.events : [];
+      ingestFromPeer(this.#store, events, { onInvalid: () => this.#peers.penalize(peer.id) });
+      // A page that does not move past the last one ends the pull, whatever `more` says.
+      if (!res.more || !events.length || events.at(-1).id === after) return;
+      after = events.at(-1).id;
+    }
   }
 
   // Pull a room's events we lack, page by page, from our heads forward.

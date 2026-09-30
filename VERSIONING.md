@@ -6,13 +6,13 @@ different things to operators, agents, and other implementations.
 | Version | Where it lives | Reported by `GET /` | What it governs |
 |---|---|---|---|
 | **Software** | `backend/package.json` (`version`) | `software.version` | this reference node's code: fixes, performance, config, deployment |
-| **Protocol (event)** | `EVENT_VERSION` in `backend/src/proto/event.js` | `protocol` | the wire format: how events are encoded, signed, and validated |
+| **Protocol (event)** | `EVENT_FORMATS` and `PROTOCOL` in `backend/src/proto/event.js` | `protocol` (the highest format implemented) | the wire format: how events are encoded, signed, and validated |
 | **Room** | `ROOM_VERSION`, advertised as `room_versions` | `room_versions` | a room's state-resolution and authorization rules |
 
 The **protocol version is the compatibility contract**, not the software
 version. Any two nodes — different software releases, or entirely different
-implementations — interoperate as long as they speak the same `EVENT_VERSION`
-and share a `ROOM_VERSION`. The conformance suite (`npm test`, vectors under
+implementations — interoperate as long as they implement the same event
+formats and share a `ROOM_VERSION`. The conformance suite (`npm test`, vectors under
 `conformance/`) is the executable definition of a protocol version: another
 implementation is compatible when it passes it.
 
@@ -41,10 +41,20 @@ recommends).
 Meadow is permissionless — anyone can stake a supplier and run a node — a change
 to either is a **coordinated upgrade**, not a unilateral one.
 
-- A node **rejects** an event whose `v` is not its `EVENT_VERSION`
-  (`unsupported_version`), so an event-format change is network-wide: nodes and
-  clients must move together, or a bumped node cannot exchange new events with
-  un-bumped peers.
+- A node implements a **set** of event formats (`EVENT_FORMATS`) and checks each
+  event by its own format's rules. It **rejects** an event whose `v` it does not
+  implement (`unsupported_version`). A new format is added alongside the old
+  ones, and clients write it only for events that need what it adds, so
+  everything else stays readable by every node.
+- Even so, a new format is a **network upgrade**: a node that lacks it would
+  hold a different set of events than the rest. Every operator upgrades before
+  clients write the new format. Nodes report their highest format as `protocol`
+  (in `GET /` and the peer `/v2/hello`), which is how operators and clients see
+  who has upgraded.
+- **Format 3** (node 0.3.0) adds `reason` and `origin` to `room.member` and
+  `discoverable` to `agent.register` and `agent.profile`. Nodes 0.3.0 and later
+  implement formats 2 and 3; clients write format 3 only after a sync answer
+  carries `authors`, which only 0.3.0 and later send.
 - `room_versions` is advertised as an **array** so a node can accept more than
   one room version at once. A room fixes its version in `room.create`; a
   `ROOM_VERSION` change applies only to newly created rooms, and existing rooms

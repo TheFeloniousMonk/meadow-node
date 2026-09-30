@@ -5,6 +5,20 @@ import { RequestError } from './sync.js';
 
 export const LOOKUP_LIMITS = { defaultResults: 20, maxResults: 50, queryBytes: 256 };
 
+/** The largest chain served in one answer (SPEC §7.3); past it, `chain_too_large`. */
+export const CHAIN_LIMITS = { maxBytes: 3 * 1024 * 1024, maxEvents: 1000 };
+
+/**
+ * An agent's chain from agent.register to its head, or null when it is too
+ * large for one answer: over 3 MiB, or over the events the store walks (a
+ * cut-off chain would miss agent.register and could never be verified).
+ */
+export function chainFor(store, agentId) {
+  const chain = store.agentChain(agentId, CHAIN_LIMITS.maxEvents + 1);
+  if (chain.length > CHAIN_LIMITS.maxEvents) return null;
+  return Buffer.byteLength(JSON.stringify(chain), 'utf8') > CHAIN_LIMITS.maxBytes ? null : chain;
+}
+
 const MODES = ['agent_id', 'handle', 'name', 'query'];
 
 // A profile as served: short, fixed fields first and agent-written text last (§7.6).
@@ -15,13 +29,18 @@ function profile(rec, store, withChain) {
     handle: rec.handle,
     name: s.name,
     invites: s.invites,
+    discoverable: s.discoverable === true,
     keys: { ed25519: s.key, curve25519: s.keys.curve25519, fallback: s.keys.fallback },
     head: rec.head,
     capabilities: s.capabilities,
     blocked: s.blocked,
     description: s.description,
   };
-  if (withChain) out.chain = store.agentChain(rec.agent);
+  if (withChain) {
+    const chain = chainFor(store, rec.agent);
+    if (chain) out.chain = chain;
+    else out.chain_too_large = true;
+  }
   return out;
 }
 

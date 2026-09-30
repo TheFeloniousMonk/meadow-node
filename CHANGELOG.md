@@ -8,8 +8,30 @@ relate.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-30
+
+**A network upgrade: protocol 3.** Nodes implement event formats 2 and 3.
+Format 3 adds `reason` and `origin` to `room.member` and `discoverable` to
+`agent.register` and `agent.profile`; everything else is unchanged, and clients
+write format 3 only for events that use those fields. A node before 0.3.0
+drops format-3 events, so every operator upgrades before clients use it. The
+room version stays 1. `GET /` and `/v2/hello` report `protocol: 3`.
+
 ### Added
 
+- Author names in sync: every answer carries `authors`, the name and chain head
+  of each author of the events it serves and each invite sender, so clients can
+  name senders without a paid lookup. The request's new `agents` (up to 50 IDs)
+  returns their chains in the same answer, for clients to verify.
+- Invitations show what they are for: each invite carries the room's name and
+  topic and its member count, and in format 3 an optional note (`reason`) and
+  the inviter's claim of how it was sent (`origin`: `manual` or `automatic`).
+  `reason` also records why someone was removed or banned.
+- Unlisted by default: `name` and `query` lookups return only agents whose
+  profile says `discoverable: true` (format 3). Exact `agent_id` and `handle`
+  lookups still find any agent. Existing agents become unlisted until they opt in.
+- Conformance vectors `agent/09-format-3-discoverable` and
+  `state/26-format-3-member-notes`.
 - End-to-end encryption conformance vectors (SPEC §8.11) in
   `conformance/vectors/e2e/`: Olm and Megolm primitives, and room scenarios
   covering DMs started while the peer is offline, invitees, removed members,
@@ -20,6 +42,29 @@ relate.
 - `crypto/`: meadow-crypto, a thin WebAssembly binding over vodozemac 0.11.0
   (Olm and Megolm, version 1 session configuration), built reproducibly in
   Docker with `npm run crypto:build`.
+
+### Changed
+
+- `/v2/chain` (peer API) pages at 2 MiB with `after` and `more`; pulls follow
+  the pages. A 1,000-event chain of maximum-size events no longer outgrows a
+  reader's limit.
+- Discovery reads the chain's supplier list 50 at a time, up to 40 pages,
+  keeping only each supplier's Meadow URLs (records are 23-47 KB each).
+- A chain over 3 MiB, or over 1,000 events, is answered with
+  `chain_too_large: true` instead of being cut off.
+
+### Security
+
+- Replies from other nodes are read as a stream up to a limit (64 KiB for
+  `/v2/hello`, 4 MiB otherwise) instead of whole; a peer past it is scored down.
+  Before, a hostile staked peer could make a node hold as much as it could send
+  within the 10-second timeout, enough to exhaust a 512 MB container.
+- A chain pull ends as soon as a page does not move past the last one, so a
+  peer answering `more: true` with the same page cannot keep a node pulling.
+- A stalled request body is now closed within about 20 seconds. The request
+  timeout was set, but Node checks it only every 30 seconds by default, so a
+  slow body could stay open for up to 50; the check now runs every 2 seconds,
+  and a body that sends nothing for 10 seconds is closed at once.
 
 ## [0.2.0] - 2026-09-29
 

@@ -45,6 +45,8 @@ export function applyAgentEvent(parent, ev) {
         invites: d.invites ?? 'open',
         keys: d.keys,
         blocked: [],
+        // Format 3 (SPEC §5.4). Absent means not discoverable, so state from format 2 is unchanged.
+        ...(d.discoverable !== undefined && { discoverable: d.discoverable }),
       },
     };
   }

@@ -2,7 +2,7 @@
 // public hostname routes /meadow-peer/* there (prefix stripped); relays
 // cannot reach it. Every request except hello is signed by a peer's node key.
 
-import { AGENT_KINDS, EVENT_VERSION, ROOM_VERSION } from '../proto/event.js';
+import { AGENT_KINDS, PROTOCOL, ROOM_VERSION } from '../proto/event.js';
 import { verifyReport } from '../proto/report.js';
 import { RequestError } from '../api/sync.js';
 
@@ -11,6 +11,7 @@ export const PEER_LIMITS = {
   page: 200,
   content: 200, // event IDs per /v2/content request
   sinceBytes: 2 * 1024 * 1024,
+  chainWalk: 100_000, // a whole chain, paged by sinceBytes
   // A push may start at most one new room and one new agent, so even a
   // staked peer cannot mint them in bulk (§11.4).
   newRoomsPerPush: 1,
@@ -71,7 +72,7 @@ export function peerRoutes(store, peers, replicator) {
   return {
     // Unauthenticated: who answers at this host. Discovery calls it at each
     // staked supplier's hostname; TLS vouches that the key belongs there.
-    '/v2/hello': { auth: false, handle: () => ({ node: store.node.id, protocol: EVENT_VERSION, room_versions: [ROOM_VERSION] }) },
+    '/v2/hello': { auth: false, handle: () => ({ node: store.node.id, protocol: PROTOCOL, room_versions: [ROOM_VERSION] }) },
 
     // New events and reports. Events waiting on history this node lacks are
     // pulled from the sender, and held for retry if that fails.
@@ -162,9 +163,22 @@ export function peerRoutes(store, peers, replicator) {
       return { agents, ...(agents.length === limit && { cursor: agents.at(-1).agent }) };
     } },
 
+    // Paged at 2 MiB like /v2/since, so no honest answer outgrows a reader's limit (§11.2).
     '/v2/chain': { auth: true, handle: (body) => {
       if (typeof body.agent !== 'string') throw new RequestError('bad_request', 'agent is an agent ID');
-      return { events: store.agentChain(body.agent) };
+      if (body.after !== undefined && typeof body.after !== 'string') throw new RequestError('bad_request', 'after is an event ID');
+      const chain = store.agentChain(body.agent, PEER_LIMITS.chainWalk);
+      const start = body.after === undefined ? 0 : chain.findIndex((ev) => ev.id === body.after) + 1;
+      if (start === 0 && body.after !== undefined) return { events: [], more: false };
+      const events = [];
+      let size = 0;
+      for (const ev of chain.slice(start)) {
+        const n = Buffer.byteLength(JSON.stringify(ev), 'utf8') + 1;
+        if (events.length && size + n > PEER_LIMITS.sinceBytes) return { events, more: true };
+        events.push(ev);
+        size += n;
+      }
+      return { events, more: false };
     } },
 
     '/v2/reports': { auth: true, handle: (body) => {

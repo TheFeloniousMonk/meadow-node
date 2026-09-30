@@ -2,6 +2,8 @@
 // everything new in the agent's rooms, oldest first, within limit_bytes.
 
 import { roomIdOf } from '../proto/event.js';
+import { keyFromAgentId } from '../proto/keys.js';
+import { chainFor } from './lookup.js';
 
 export const SYNC_LIMITS = {
   outbox: 100,
@@ -10,6 +12,8 @@ export const SYNC_LIMITS = {
   headsPerRoom: 20,
   defaultBytes: 1024 * 1024,
   maxBytes: 4 * 1024 * 1024 - 64 * 1024, // leave room for metadata under the 4 MiB cap
+  responseBytes: 4 * 1024 * 1024, // the whole answer (§7.6)
+  agents: 50, // chains asked for in one call (§7.2)
 };
 
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
@@ -36,13 +40,18 @@ function parse(body) {
     throw new RequestError('bad_request', `heads must map at most ${SYNC_LIMITS.rooms} rooms to at most ${SYNC_LIMITS.headsPerRoom} event IDs`);
   }
   if (!Number.isSafeInteger(limit) || limit < 1) throw new RequestError('bad_request', 'limit_bytes must be a positive integer');
-  const extra = Object.keys(body).filter((k) => !['auth', 'outbox', 'heads', 'limit_bytes'].includes(k));
+  const agents = body.agents;
+  if (agents !== undefined && (!Array.isArray(agents) || agents.length < 1 || agents.length > SYNC_LIMITS.agents ||
+      new Set(agents).size !== agents.length || !agents.every((a) => keyFromAgentId(a) !== null))) {
+    throw new RequestError('bad_request', `agents must list 1 to ${SYNC_LIMITS.agents} distinct agent IDs`);
+  }
+  const extra = Object.keys(body).filter((k) => !['auth', 'outbox', 'heads', 'limit_bytes', 'agents'].includes(k));
   if (extra.length) throw new RequestError('bad_request', `unknown fields: ${extra.join(', ')}`);
-  return { outbox, heads, limit: Math.min(limit, SYNC_LIMITS.maxBytes) };
+  return { outbox, heads, limit: Math.min(limit, SYNC_LIMITS.maxBytes), agents: agents ?? [] };
 }
 
 export function sync(store, body, agent) {
-  const { outbox, heads, limit } = parse(body);
+  const { outbox, heads, limit, agents: wanted } = parse(body);
 
   const accepted = [];
   const rejected = [];
@@ -114,18 +123,51 @@ export function sync(store, body, agent) {
     rooms[roomId] = { heads: room.heads(), missing: since.missing, events };
   }
 
-  return { node: store.node.id, accepted, rejected, pending, more, invites, rooms };
+  // Names for everyone the answer mentions (§7.2): authors of the events served, and invite senders.
+  const authors = {};
+  const named = new Set(invites.map((i) => i.from));
+  for (const r of Object.values(rooms)) for (const ev of r.events ?? []) named.add(ev.header.author);
+  for (const id of named) {
+    const rec = store.agent(id);
+    if (rec) authors[id] = { name: rec.state.name, head: rec.head };
+  }
+
+  // The chains asked for, after the room events and within limit_bytes; the first one the node
+  // holds always comes, so every chain can arrive, while the whole answer stays under 4 MiB.
+  const chains = {};
+  let answered = false;
+  const used = limit - budget;
+  for (const id of wanted) {
+    if (!store.agent(id)) continue;
+    const chain = chainFor(store, id);
+    if (!chain) {
+      chains[id] = { chain_too_large: true };
+      continue;
+    }
+    const size = Buffer.byteLength(JSON.stringify(chain), 'utf8') + 64;
+    const fits = size <= budget || (!answered && used + size <= SYNC_LIMITS.responseBytes - 64 * 1024);
+    if (!fits) continue;
+    chains[id] = chain;
+    budget -= size;
+    answered = true;
+  }
+
+  return { node: store.node.id, accepted, rejected, pending, more, authors, invites, rooms, agents: chains };
 }
 
 // What an invited agent needs to write its join without reading the room:
 // the heads, and the state events its join's auth list may cite (§6.4).
 function inviteEntry(store, room, agent, from) {
   const state = room.currentState();
-  const keys = ['room.create|', 'room.power|', `room.member|${agent}`, `room.rotate|${agent}`];
+  // room.meta too, so the invitee sees the room's name and topic before it joins (§7.2).
+  const keys = ['room.create|', 'room.meta|', 'room.power|', `room.member|${agent}`, `room.rotate|${agent}`];
+  let members = 0;
+  for (const [k, ev] of state) if (k.startsWith('room.member|') && ev.header.data.membership === 'join') members++;
   return {
     room: room.id,
     type: room.create.header.data.type,
     from,
+    members,
     heads: room.heads(),
     state: keys.filter((k) => state.has(k)).map((k) => store.serve(room, state.get(k).id)),
   };

@@ -14,7 +14,7 @@ import { report } from './api/report.js';
 import { peerRoutes } from './peer/api.js';
 import { Peers, verifyPeer } from './peer/peers.js';
 import { toWire } from './api/wire.js';
-import { AGENT_KINDS, EVENT_VERSION, ROOM_VERSION } from './proto/event.js';
+import { AGENT_KINDS, PROTOCOL, ROOM_VERSION } from './proto/event.js';
 
 export const MAX_REQUEST_BYTES = 8 * 1024 * 1024;
 
@@ -40,6 +40,11 @@ function ingestOwnAgentEvents(store, body) {
 export const HEADERS_TIMEOUT_MS = 10_000;
 export const REQUEST_TIMEOUT_MS = 20_000;
 const KEEPALIVE_TIMEOUT_MS = 10_000;
+// Node checks headers/request timeouts only this often (its default is 30 s,
+// which let a stalled body live up to ~50 s); it can only be set at creation.
+const TIMEOUT_CHECK_MS = 2_000;
+// A body that sends nothing for this long is closed, whatever its total age.
+export const BODY_IDLE_MS = 10_000;
 
 function send(res, status, value, head = false) {
   // A request that already timed out (Node auto-sends 408 and destroys it) or a
@@ -60,7 +65,15 @@ function readBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
+    const idle = () => {
+      reject(new RequestError('client_closed', 'request body stalled'));
+      req.destroy();
+    };
+    let timer = setTimeout(idle, BODY_IDLE_MS);
+    const stop = () => clearTimeout(timer);
     req.on('data', (chunk) => {
+      clearTimeout(timer);
+      timer = setTimeout(idle, BODY_IDLE_MS);
       size += chunk.length;
       if (size > MAX_REQUEST_BYTES) {
         reject(new RequestError('too_large', `request body over ${MAX_REQUEST_BYTES} bytes`));
@@ -69,8 +82,15 @@ function readBody(req) {
       }
       chunks.push(chunk);
     });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-    req.on('error', reject);
+    req.on('end', () => {
+      stop();
+      resolve(Buffer.concat(chunks).toString('utf8'));
+    });
+    req.on('error', (err) => {
+      stop();
+      reject(err);
+    });
+    req.on('close', stop);
     // A stalled/slow body is closed by the server's requestTimeout; settle the
     // promise so the handler doesn't hang on an aborted connection.
     req.on('aborted', () => reject(new RequestError('client_closed', 'request aborted')));
@@ -80,7 +100,7 @@ function readBody(req) {
 // A JSON POST server over a route table. `authenticate(route, body)` returns
 // { error, status } or the caller's identity; `gets` answers GET and HEAD.
 function jsonServer(table, authenticate, gets = {}) {
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer({ connectionsCheckingInterval: TIMEOUT_CHECK_MS }, async (req, res) => {
     const path = new URL(req.url, 'http://node').pathname;
     try {
       if (gets[path] && (req.method === 'GET' || req.method === 'HEAD')) return send(res, 200, gets[path](), req.method === 'HEAD');
@@ -119,7 +139,7 @@ export function nodeInfo(store, config) {
   return {
     node: store.node.id,
     network: config.network ?? null,
-    protocol: EVENT_VERSION,
+    protocol: PROTOCOL,
     room_versions: [ROOM_VERSION],
     software: { name: 'meadow-node', version: config.version },
     source: config.sourceUrl,

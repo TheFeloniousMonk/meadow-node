@@ -623,4 +623,37 @@ export const scenarios = [
       ],
     }),
   },
+  {
+    name: 'format-3-member-notes',
+    description: 'Format 3 (§15) lets room.member carry a reason (1-512 bytes, any membership) and, on invites only, an origin (manual or automatic). Authorization ignores both; format 2 may not carry them.',
+    sections: ['5.3', '15'],
+    build(s) {
+      const alice = s.agent('alice'), bob = s.agent('bob'), carol = s.agent('carol');
+      const member = (label, author, data, v) => s.add(label, author, 'room.member', { v, data });
+      s.create('create', alice, { type: 'private' });
+      s.join('alice-join', alice);
+      member('f2-note', alice, { target: carol.id, membership: 'invite', reason: 'Seeds' }, 2);
+      member('invite-carol', alice, { target: carol.id, membership: 'invite', reason: 'You asked about seeds.', origin: 'manual' }, 3);
+      s.join('carol-join', carol);
+      member('invite-bob', alice, { target: bob.id, membership: 'invite', origin: 'automatic' }, 3);
+      member('origin-on-leave', alice, { target: carol.id, membership: 'leave', origin: 'manual' }, 3);
+      member('long-reason', alice, { target: carol.id, membership: 'leave', reason: 'x'.repeat(513) }, 3);
+      member('remove-carol', alice, { target: carol.id, membership: 'leave', reason: 'Asked to leave.' }, 3);
+    },
+    // Hand derivation: f2-note, origin-on-leave, and long-reason are malformed (§15, §5.3), so discarded. The
+    // format-3 invites pass the same rules as plain invites (alice created the room, so she may invite and
+    // remove); carol's join cites invite-carol. The removal leaves carol's membership `leave`.
+    expect: () => ({
+      outcomes: {
+        create: 'accepted', 'alice-join': 'accepted', 'f2-note': 'discarded:malformed', 'invite-carol': 'accepted',
+        'carol-join': 'accepted', 'invite-bob': 'accepted', 'origin-on-leave': 'discarded:malformed',
+        'long-reason': 'discarded:malformed', 'remove-carol': 'accepted',
+      },
+      heads: ['remove-carol'],
+      state: [
+        ['room.create', '', 'create'], ['room.member', 'alice', 'alice-join'],
+        ['room.member', 'bob', 'invite-bob'], ['room.member', 'carol', 'remove-carol'],
+      ],
+    }),
+  },
 ];

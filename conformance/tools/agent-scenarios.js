@@ -173,4 +173,32 @@ export const agentScenarios = [
       heads: { alice: { head: 'register', state: registered(s.agents.get('alice')) } },
     }),
   },
+  {
+    name: 'format-3-discoverable',
+    description: 'Format 3 (§15) adds discoverable, a boolean, to register and profile; format 2 may not carry it, and a non-boolean is malformed. Turning it off is a change like any other.',
+    build(s) {
+      const alice = s.agent('alice'), bob = s.agent('bob');
+      s.register('register', alice, { discoverable: true }, { v: 3 });
+      s.agentEvent('f2-toggle', alice, 'agent.profile', { parent: 'register', data: { discoverable: false } });
+      s.agentEvent('not-boolean', alice, 'agent.profile', { v: 3, parent: 'register', data: { discoverable: 1 } });
+      s.agentEvent('off', alice, 'agent.profile', { v: 3, parent: 'register', data: { discoverable: false } });
+      s.agentEvent('v4', alice, 'agent.profile', { v: 4, parent: 'off', data: { description: 'x' } });
+      s.register('bob-f2', bob, { discoverable: false });
+      s.register('bob-register', bob);
+    },
+    expect: (s) => {
+      const alice = s.agents.get('alice'), bob = s.agents.get('bob');
+      return {
+        outcomes: {
+          register: 'accepted', 'f2-toggle': 'discarded:malformed', 'not-boolean': 'discarded:malformed', off: 'accepted',
+          v4: 'discarded:unsupported_version', 'bob-f2': 'discarded:malformed', 'bob-register': 'accepted',
+        },
+        heads: {
+          alice: { head: 'off', state: { ...registered(alice), discoverable: false } },
+          // A format-2 agent's state has no discoverable field: absent means not discoverable (§5.4).
+          bob: { head: 'bob-register', state: registered(bob) },
+        },
+      };
+    },
+  },
 ];

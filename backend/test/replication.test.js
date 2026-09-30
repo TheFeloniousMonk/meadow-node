@@ -362,3 +362,92 @@ test('a peer without /v2/content (an older release) does not stop the rest of an
     await close();
   }
 });
+
+// A server that answers every request with an endless JSON-looking body, as fast as it can.
+async function flooder() {
+  const { createServer } = await import('node:http');
+  const server = createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    const chunk = Buffer.alloc(64 * 1024, 0x20);
+    res.write('[');
+    const pump = () => { while (res.write(chunk)); };
+    res.on('drain', pump);
+    pump();
+    req.on('close', () => res.destroy());
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return { url: `http://127.0.0.1:${server.address().port}`, close: () => new Promise((r) => { server.closeAllConnections(); server.close(r); }) };
+}
+
+test('a peer reply past its limit is cut off and scores the peer; hello past 64 KiB is not a peer', async () => {
+  const { nodes, close } = await cluster(1);
+  const flood = await flooder();
+  try {
+    const [A] = nodes;
+    const id = 'n_' + b64u(keypairFromSeed(sha256('flooder')).publicKey);
+    A.peers.add({ id, url: flood.url });
+    const before = process.memoryUsage().rss;
+    await assert.rejects(A.replicator.pullChain(A.peers.get(id), 'a_' + 'A'.repeat(43)), { name: 'Error', message: /reply over 4194304 bytes/ });
+    assert.equal(A.peers.get(id).penalty, 1);
+    assert.ok(process.memoryUsage().rss - before < 64 * 1024 * 1024, 'the node did not keep reading');
+
+    const peers = new Peers();
+    const d = new Discovery(A.store, peers, { networks: ['beta'], peerPath: '', timeoutMs: 5000, listSuppliers: async () => [{ operator: 'pokt1x', urls: [flood.url] }] });
+    assert.deepEqual(await d.run(), []);
+    assert.equal((await post(`${A.url}/v2/hello`, {})).body.protocol, 3);
+  } finally {
+    await flood.close();
+    await close();
+  }
+});
+
+test('/v2/chain pages at 2 MiB, and a pull follows the pages to the head', async () => {
+  const b = new Builder();
+  const alice = b.agent('alice');
+  b.register('reg', alice);
+  let parent = 'reg';
+  // Near the largest agent events allowed, so the chain passes 2 MiB.
+  for (let i = 0; i < 700; i++) {
+    b.agentEvent(`p${i}`, alice, 'agent.profile', { parent, data: { description: `${i}`.padEnd(1024, 'd'), capabilities: Array.from({ length: 32 }, (_, k) => `${i}.${k}`.padEnd(64, 'c')) } });
+    parent = `p${i}`;
+  }
+  const { nodes, close } = await cluster(2, ([a]) => { for (const s of b.steps) a.ingest(s.event); });
+  try {
+    const [A, B] = nodes;
+    const first = await post(`${A.url}/v2/chain`, signPeer(B.store.node, { agent: alice.id }));
+    assert.equal(first.body.more, true);
+    assert.ok(JSON.stringify(first.body.events).length <= 2 * 1024 * 1024 + 1024);
+    assert.equal(first.body.events[0].id, b.id('reg'));
+    const next = await post(`${A.url}/v2/chain`, signPeer(B.store.node, { agent: alice.id, after: first.body.events.at(-1).id }));
+    assert.equal(next.body.events[0].header.parents[0], first.body.events.at(-1).id, 'the next page starts right after');
+
+    await B.replicator.pullChain(B.peers.get(A.id), alice.id);
+    assert.equal(B.store.agent(alice.id)?.head, b.id(parent));
+    assert.equal(B.peers.get(A.id).penalty, 0, 'an honest peer is never scored for a long chain');
+  } finally {
+    await close();
+  }
+});
+
+test('a chain pull stops when a page does not advance, whatever more says', async () => {
+  const { createServer } = await import('node:http');
+  const b = new Builder();
+  const alice = b.agent('alice');
+  b.register('reg', alice);
+  const page = JSON.stringify({ events: events(b, 'reg'), more: true });
+  let calls = 0;
+  const server = createServer((req, res) => { calls++; res.writeHead(200, { 'content-type': 'application/json' }); res.end(page); });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { nodes, close } = await cluster(1);
+  try {
+    const [A] = nodes;
+    const id = 'n_' + b64u(keypairFromSeed(sha256('repeater')).publicKey);
+    A.peers.add({ id, url: `http://127.0.0.1:${server.address().port}` });
+    await A.replicator.pullChain(A.peers.get(id), alice.id);
+    assert.equal(calls, 2, 'the second, identical page ends the pull');
+    assert.equal(A.store.agent(alice.id)?.head, b.id('reg'));
+  } finally {
+    server.close();
+    await close();
+  }
+});

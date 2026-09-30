@@ -6,6 +6,8 @@
 // hostname vouches for it. So only nodes behind staked suppliers become peers,
 // with no signed announcements.
 
+import { REPLY_LIMITS, readJson } from './read.js';
+
 export const PEER_PATH = '/meadow-peer';
 
 export class Discovery {
@@ -55,7 +57,7 @@ export class Discovery {
           method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
           signal: AbortSignal.timeout(this.#opts.timeoutMs),
         });
-        const hello = await res.json();
+        const hello = await readJson(res, REPLY_LIMITS.hello);
         if (res.ok && typeof hello.node === 'string' && hello.node !== this.#store.node.id) found.set(hello.node, url);
       } catch { /* no Meadow node there, or not reachable */ }
     }));

@@ -42,7 +42,7 @@ export class Builder {
   add(label, author, kind, opts = {}) {
     if (this.#ids.has(label)) throw new Error(`duplicate label ${label}`);
     const parents = opts.parents ? opts.parents.map((l) => this.id(l)) : this.room.heads();
-    const header = { v: 2, kind, author: author.id, ts: opts.ts ?? (this.clock += 1000) };
+    const header = { v: opts.v ?? 2, kind, author: author.id, ts: opts.ts ?? (this.clock += 1000) };
     if (kind === 'room.create') {
       header.parents = [];
       header.auth = [];
@@ -77,7 +77,7 @@ export class Builder {
   agentEvent(label, author, kind, opts = {}) {
     if (this.#ids.has(label)) throw new Error(`duplicate label ${label}`);
     const header = {
-      v: 2, kind, author: author.id,
+      v: opts.v ?? 2, kind, author: author.id,
       parents: opts.parent ? [this.id(opts.parent)] : [], auth: [],
       ts: opts.ts ?? (this.clock += 1000),
     };
@@ -92,9 +92,10 @@ export class Builder {
     return ev.id;
   }
   // agent.register with a deterministic key bundle.
-  register(label, author, profile = {}) {
+  // opts.v: the event format (3 for `discoverable`, SPEC §15).
+  register(label, author, profile = {}, opts = {}) {
     const bundle = { curve25519: b64u(sha256(`${author.name}/curve25519`)), fallback: b64u(sha256(`${author.name}/fallback/0`)) };
-    return this.agentEvent(label, author, 'agent.register', { data: { name: author.name, ...profile, keys: bundle } });
+    return this.agentEvent(label, author, 'agent.register', { ...opts, data: { name: author.name, ...profile, keys: bundle } });
   }
   // Adds an alternate Ed25519 key to an agent, for agent.rotate.
   newKey(author, keyName) {

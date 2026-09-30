@@ -4,7 +4,18 @@
 import { b64u, canonicalize, fromB64u, sha256 } from './encoding.js';
 import { keyFromAgentId, keyFromB64u, verifyBytes } from './keys.js';
 
+/** The event format written by default: every event that needs nothing format 3 adds. */
 export const EVENT_VERSION = 2;
+/**
+ * The formats this node implements (SPEC §15). Format 3 is format 2 plus
+ * `reason` and `origin` on room.member and `discoverable` on agent.register
+ * and agent.profile; each format is checked by its own rules.
+ */
+export const EVENT_FORMATS = new Set([2, 3]);
+/** What the node reports as its protocol (`/v2/hello`, `GET /`): its highest format. */
+export const PROTOCOL = 3;
+export const MAX_REASON = 512;
+export const ORIGINS = new Set(['manual', 'automatic']);
 export const ROOM_VERSION = 1;
 export const MAX_PARENTS = 20;
 export const MAX_CONTENT = 64 * 1024;
@@ -39,6 +50,7 @@ const isCapabilities = (x) => Array.isArray(x) && x.length <= 32 && new Set(x).s
   x.every((c) => typeof c === 'string' && c.length > 0 && utf8Len(c) <= 64);
 
 function checkProfileFields(d) {
+  if (d.discoverable !== undefined && typeof d.discoverable !== 'boolean') return 'malformed';
   if (d.name !== undefined && !isName(d.name)) return 'malformed';
   if (d.description !== undefined && !isDescription(d.description)) return 'malformed';
   if (d.capabilities !== undefined && !isCapabilities(d.capabilities)) return 'malformed';
@@ -83,6 +95,9 @@ export const signingKeyB64 = (header) => header.signer ?? header.author.slice(2)
 
 function checkData(h) {
   const d = h.data;
+  // Fields format 3 adds (SPEC §15); in a format-2 event they are unknown, so malformed.
+  const f3 = h.v >= 3;
+  const profileKeys = ['name', 'description', 'capabilities', 'invites', ...(f3 ? ['discoverable'] : [])];
   switch (h.kind) {
     case 'room.create': {
       if (!isObject(d) || !onlyKeys(d, ['type', 'room_version', 'levels', 'dm_with', 'dm_key', 'chain'])) return 'malformed';
@@ -113,7 +128,11 @@ function checkData(h) {
       if (!isObject(d.users) || !Object.entries(d.users).every(([a, l]) => isAgentId(a) && isLevel(l))) return 'malformed';
       return null;
     case 'room.member':
-      if (!isObject(d) || Object.keys(d).length !== 2 || !isAgentId(d.target) || !MEMBERSHIPS.has(d.membership)) return 'malformed';
+      if (!isObject(d) || !isAgentId(d.target) || !MEMBERSHIPS.has(d.membership)) return 'malformed';
+      if (!onlyKeys(d, ['target', 'membership', ...(f3 ? ['reason', 'origin'] : [])])) return 'malformed';
+      // A note from the author, and on invitations the author's own claim of how it was sent. Authorization ignores both.
+      if (d.reason !== undefined && (typeof d.reason !== 'string' || d.reason.length === 0 || utf8Len(d.reason) > MAX_REASON)) return 'malformed';
+      if (d.origin !== undefined && (d.membership !== 'invite' || !ORIGINS.has(d.origin))) return 'malformed';
       return null;
     case 'room.rotate':
       if (!isObject(d) || Object.keys(d).length !== 1 || !isEventId(d.chain)) return 'malformed';
@@ -122,11 +141,11 @@ function checkData(h) {
       if (!isObject(d) || Object.keys(d).length !== 1 || !isEventId(d.target)) return 'malformed';
       return null;
     case 'agent.register':
-      if (!isObject(d) || !onlyKeys(d, ['name', 'description', 'capabilities', 'invites', 'keys']) || !isName(d.name)) return 'malformed';
+      if (!isObject(d) || !onlyKeys(d, [...profileKeys, 'keys']) || !isName(d.name)) return 'malformed';
       if (!isObject(d.keys) || Object.keys(d.keys).length !== 2 || !isKey(d.keys.curve25519) || !isKey(d.keys.fallback)) return 'malformed';
       return checkProfileFields(d);
     case 'agent.profile':
-      if (!isObject(d) || Object.keys(d).length === 0 || !onlyKeys(d, ['name', 'description', 'capabilities', 'invites'])) return 'malformed';
+      if (!isObject(d) || Object.keys(d).length === 0 || !onlyKeys(d, profileKeys)) return 'malformed';
       return checkProfileFields(d);
     case 'agent.keys':
       if (!isObject(d) || Object.keys(d).length === 0 || !onlyKeys(d, ['curve25519', 'fallback'])) return 'malformed';
@@ -152,7 +171,7 @@ export function checkWellFormed(ev) {
   if (!Object.keys(ev).every((k) => EVENT_FIELDS.has(k))) return 'malformed';
   const h = ev.header;
   if (!Number.isSafeInteger(h.v)) return 'malformed';
-  if (h.v !== EVENT_VERSION) return 'unsupported_version';
+  if (!EVENT_FORMATS.has(h.v)) return 'unsupported_version';
   if (!Object.keys(h).every((k) => HEADER_FIELDS.has(k))) return 'malformed';
   if (!ROOM_KINDS.has(h.kind) && !AGENT_KINDS.has(h.kind)) return 'unknown_kind';
   if (!isAgentId(h.author) || !Number.isSafeInteger(h.ts) || h.ts < 0) return 'malformed';

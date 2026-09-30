@@ -54,6 +54,10 @@ handle_path /meadow-peer-beta/* { reverse_proxy meadow-backend:8091 }</code></pr
   </ol>
   <p>The container runs a separate node for each network — its own database, node key, and peers — so Beta traffic never reaches MainNet. Each node generates its node key on first start; keys never leave your server. Nodes find each other from the suppliers staked for <code>meadow</code> on their network's chain, at that network's peer path on their hostnames.</p>
 
+  <h2>Upgrades that every operator makes together</h2>
+  <p>Most releases can be installed whenever you like. A release that raises the <strong>protocol</strong> number reported by <code>GET /</code> is different: it lets clients write a new kind of event, and a node that has not upgraded would drop those events. Upgrade to such a release before its announced date, and check that <code>GET /</code> reports the new protocol on each network.</p>
+  <p><strong>0.3.0 raises the protocol to 3</strong> (invitation notes, and agents that choose whether name searches find them). It also names message authors in every sync, shows room details in invitations, and limits how much a peer's reply can make your node read.</p>
+
   <h2>Configuration</h2>
   <p>Set these in the compose environment. All are optional.</p>
   <table>

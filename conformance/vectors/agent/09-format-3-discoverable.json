@@ -1,0 +1,224 @@
+{
+  "name": "format-3-discoverable",
+  "description": "Format 3 (§15) adds discoverable, a boolean, to register and profile; format 2 may not carry it, and a non-boolean is malformed. Turning it off is a change like any other.",
+  "spec_sections": [
+    "5.4"
+  ],
+  "agents": {
+    "alice": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+    "bob": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg"
+  },
+  "steps": [
+    {
+      "label": "register",
+      "event": {
+        "header": {
+          "v": 3,
+          "kind": "agent.register",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "parents": [],
+          "auth": [],
+          "ts": 1790000001000,
+          "data": {
+            "name": "alice",
+            "discoverable": true,
+            "keys": {
+              "curve25519": "tbkaMMpBIzRi5XWtnfhJ-e1uvtDdCTTiJFr7vkv8GxY",
+              "fallback": "4kE_-1gSAbFRTSxMjJWtQtc28Rlwv76bu51qRm3vkF8"
+            }
+          }
+        },
+        "id": "e_2U5yzspyP48F03ERh81v2cR6YG3XQpYNR_FRkr8ZBB4",
+        "sig": "H-KsdzAEzxzphBw9nAZdbMe-BEUxXhWPwO2w9dyE0WyziZfSP4eHMv5Dv7KJX48RO9qQ5097g0W4IFTj_WyiBA"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "f2-toggle",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "agent.profile",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "parents": [
+            "e_2U5yzspyP48F03ERh81v2cR6YG3XQpYNR_FRkr8ZBB4"
+          ],
+          "auth": [],
+          "ts": 1790000002000,
+          "data": {
+            "discoverable": false
+          }
+        },
+        "id": "e_RgDZtXiXiftWY7hp9tScEfIg1vZHPuWL-VgeD_6X3Ts",
+        "sig": "aTib6A3YrO5jyTht0Hoar2dj8nSHXs7ttOb8UQLeiCxacgcJQVCVYnCNS8uyAgY5fMqzpcPgucSPhtkSxzWSCQ"
+      },
+      "expect": {
+        "outcome": "discarded",
+        "reason": "malformed"
+      }
+    },
+    {
+      "label": "not-boolean",
+      "event": {
+        "header": {
+          "v": 3,
+          "kind": "agent.profile",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "parents": [
+            "e_2U5yzspyP48F03ERh81v2cR6YG3XQpYNR_FRkr8ZBB4"
+          ],
+          "auth": [],
+          "ts": 1790000003000,
+          "data": {
+            "discoverable": 1
+          }
+        },
+        "id": "e_AYavicGAKig2lv1VHDMaQPC73oj63bG7CCqrDEItUFI",
+        "sig": "CD6F-wFsxrlEQ1MxockdC0FTrrfelm-2WWGGjNTx9RGlK9AL6bm5tNfBBSASuRZZhtp69VmRj9LjY7jacNvpBQ"
+      },
+      "expect": {
+        "outcome": "discarded",
+        "reason": "malformed"
+      }
+    },
+    {
+      "label": "off",
+      "event": {
+        "header": {
+          "v": 3,
+          "kind": "agent.profile",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "parents": [
+            "e_2U5yzspyP48F03ERh81v2cR6YG3XQpYNR_FRkr8ZBB4"
+          ],
+          "auth": [],
+          "ts": 1790000004000,
+          "data": {
+            "discoverable": false
+          }
+        },
+        "id": "e_BRQPObcCAMHJTuL6DBpr0BAQKtLoZOkODVpgJwY2SBs",
+        "sig": "OslNwDcsKyU_TdQU1-xOfEaU-48smjGCbprr1gJnSLQbcOxAOCXx6pv1eLpvDFTrRmfjnHAzDwgE9ooYlgLyCw"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "v4",
+      "event": {
+        "header": {
+          "v": 4,
+          "kind": "agent.profile",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "parents": [
+            "e_BRQPObcCAMHJTuL6DBpr0BAQKtLoZOkODVpgJwY2SBs"
+          ],
+          "auth": [],
+          "ts": 1790000005000,
+          "data": {
+            "description": "x"
+          }
+        },
+        "id": "e_xzyWMmI7bINg6WB0VhBaD0Zn_2HtmGekIfdcnLbLlVM",
+        "sig": "Ks8-uER_W7ukmOmfBr9yLBJ_XuSqpbWmfq5rglRRPqzrKzKRuQGHFQccIvVNmxUh405lV7-Jk5p4fqsxKWQ2DQ"
+      },
+      "expect": {
+        "outcome": "discarded",
+        "reason": "unsupported_version"
+      }
+    },
+    {
+      "label": "bob-f2",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "agent.register",
+          "author": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+          "parents": [],
+          "auth": [],
+          "ts": 1790000006000,
+          "data": {
+            "name": "bob",
+            "discoverable": false,
+            "keys": {
+              "curve25519": "grjcqfO7uObK7JNBBjOvu6NCKZoLH4lnjN3s8puZa8w",
+              "fallback": "K6gfPX6A-siZYMC89EZAWPCgWelQgyjtT77Yof2onU8"
+            }
+          }
+        },
+        "id": "e_xBGZPZTL6jiFo6ee40llyiMLClEFT9QXyYdl1OoRWpQ",
+        "sig": "c18ZtpvSUNMSUJUjWkOSc1nDz2HQbEqG6dajYvodyM-XJhnQptJUOvGESOYIqzUGijxQT5h40SLjbxW7WfmqCQ"
+      },
+      "expect": {
+        "outcome": "discarded",
+        "reason": "malformed"
+      }
+    },
+    {
+      "label": "bob-register",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "agent.register",
+          "author": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+          "parents": [],
+          "auth": [],
+          "ts": 1790000007000,
+          "data": {
+            "name": "bob",
+            "keys": {
+              "curve25519": "grjcqfO7uObK7JNBBjOvu6NCKZoLH4lnjN3s8puZa8w",
+              "fallback": "K6gfPX6A-siZYMC89EZAWPCgWelQgyjtT77Yof2onU8"
+            }
+          }
+        },
+        "id": "e_BJYUvoJpRQGYHy6dbRHMOj424adMEmhRunOHssxkV68",
+        "sig": "OEw7r-67Khe84e3eykEhYENsZl0OxJO-fw0VESNYd9XKJ7erF-msGvDXMI4nTJEuSFwmm2t7P7_IIWC3xcLwDA"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    }
+  ],
+  "final": {
+    "heads": {
+      "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o": {
+        "head": "off",
+        "state": {
+          "key": "GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "name": "alice",
+          "description": "",
+          "capabilities": [],
+          "invites": "open",
+          "keys": {
+            "curve25519": "tbkaMMpBIzRi5XWtnfhJ-e1uvtDdCTTiJFr7vkv8GxY",
+            "fallback": "4kE_-1gSAbFRTSxMjJWtQtc28Rlwv76bu51qRm3vkF8"
+          },
+          "blocked": [],
+          "discoverable": false
+        }
+      },
+      "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg": {
+        "head": "bob-register",
+        "state": {
+          "key": "SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+          "name": "bob",
+          "description": "",
+          "capabilities": [],
+          "invites": "open",
+          "keys": {
+            "curve25519": "grjcqfO7uObK7JNBBjOvu6NCKZoLH4lnjN3s8puZa8w",
+            "fallback": "K6gfPX6A-siZYMC89EZAWPCgWelQgyjtT77Yof2onU8"
+          },
+          "blocked": []
+        }
+      }
+    }
+  }
+}

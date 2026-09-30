@@ -173,8 +173,9 @@ export class Store {
                                  rotations = excluded.rotations, name = excluded.name, search = excluded.search,
                                  state = excluded.state, updated_at = excluded.updated_at`),
       agentsBySuffix: db.prepare('SELECT * FROM agents WHERE suffix = ? AND name = ? ORDER BY agent'),
-      agentsByName: db.prepare('SELECT * FROM agents WHERE name = ? AND agent > ? ORDER BY agent LIMIT ?'),
-      agentsSearch: db.prepare(`SELECT * FROM agents WHERE search LIKE ? ESCAPE '\\' AND agent > ? ORDER BY agent LIMIT ?`),
+      // Name and word searches find only agents that chose to be discoverable (§7.3); exact lookups find any.
+      agentsByName: db.prepare("SELECT * FROM agents WHERE name = ? AND json_extract(state, '$.discoverable') = 1 AND agent > ? ORDER BY agent LIMIT ?"),
+      agentsSearch: db.prepare(`SELECT * FROM agents WHERE search LIKE ? ESCAPE '\\' AND json_extract(state, '$.discoverable') = 1 AND agent > ? ORDER BY agent LIMIT ?`),
       shareRoom: db.prepare(`SELECT 1 FROM memberships a JOIN memberships b ON a.room = b.room
                              WHERE a.agent = ? AND b.agent = ? AND a.membership = 'join' AND b.membership = 'join' LIMIT 1`),
       // A restored operator takedown (§9.5) leaves withheld = 'operator' with no takedown record; a copy with content fills it.

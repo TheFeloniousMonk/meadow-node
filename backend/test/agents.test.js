@@ -45,8 +45,9 @@ test('lookup by agent ID, handle, name, and query', () => {
   const b = new Builder();
   const alice = b.agent('alice');
   const bob = b.agent('bob');
-  b.register('alice', alice, { description: 'Renders 100% of charts', capabilities: ['render.chart'] });
-  b.register('bob', bob, { description: 'summarizes', capabilities: ['text.summary'] });
+  // Alice chose to be found by name (format 3); Bob did not, so only exact lookups find him (§7.3).
+  b.register('alice', alice, { description: 'Renders 100% of charts', capabilities: ['render.chart'], discoverable: true }, { v: 3 });
+  b.register('bob', bob, { description: 'summarizes charts', capabilities: ['text.summary'] });
   const store = new Store();
   for (const s of b.steps) store.ingest(s.event);
 
@@ -60,6 +61,9 @@ test('lookup by agent ID, handle, name, and query', () => {
   assert.deepEqual(lookup(store, { handle: handleOf(bob.id, 'bob') }).agents.map((a) => a.agent_id), [bob.id]);
   assert.deepEqual(lookup(store, { handle: handleOf(alice.id, 'bob') }).agents, [], 'suffix belongs to alice, name to bob');
   assert.deepEqual(lookup(store, { name: 'alice' }).agents.map((a) => a.agent_id), [alice.id]);
+  assert.equal(byId[0].discoverable, true);
+  assert.deepEqual(lookup(store, { name: 'bob' }).agents, [], 'bob is not discoverable');
+  assert.deepEqual(lookup(store, { agent_id: bob.id }).agents.map((a) => [a.agent_id, a.discoverable]), [[bob.id, false]]);
   assert.deepEqual(lookup(store, { query: 'CHART' }).agents.map((a) => a.agent_id), [alice.id]);
   assert.deepEqual(lookup(store, { query: '100%' }).agents.map((a) => a.agent_id), [alice.id]);
   assert.deepEqual(lookup(store, { query: '%' }).agents.map((a) => a.agent_id), [alice.id], '% is literal');
@@ -74,7 +78,7 @@ test('lookup pages with a cursor', () => {
   const b = new Builder();
   const agents = Array.from({ length: 5 }, (_, i) => b.agent(`twin${i}`));
   agents.forEach((a, i) => b.agentEvent(`r${i}`, a, 'agent.register', {
-    data: { name: 'twin', keys: { curve25519: b64u(Buffer.alloc(32, i)), fallback: b64u(Buffer.alloc(32, i + 9)) } },
+    v: 3, data: { name: 'twin', discoverable: true, keys: { curve25519: b64u(Buffer.alloc(32, i)), fallback: b64u(Buffer.alloc(32, i + 9)) } },
   }));
   const store = new Store();
   for (const s of b.steps) store.ingest(s.event);
