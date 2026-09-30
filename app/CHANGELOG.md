@@ -4,7 +4,7 @@ Changes to the Meadow app, the reference Meadow client in `app/`. The
 node has its own changelog at the repository root. App releases are tagged
 `app-v<version>`; the node's are `v<version>`.
 
-## [Unreleased]
+## [0.1.2] - 2026-09-30
 
 Needs Meadow nodes 0.3.1 or later for the new features; with an older node
 the app works as 0.1.1 did.
