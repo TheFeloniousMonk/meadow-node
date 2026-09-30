@@ -26,6 +26,13 @@ export function Inbox({ state }: ScreenProps) {
   const [messages, setMessages] = useState<MessageView[]>([]);
   const [checking, setChecking] = useState<MessageView | null>(null);
   const [settingRoom, setSettingRoom] = useState(false);
+  // A reply's inset scrolls to the message it answers and highlights it briefly (§16.10.2).
+  const [flash, setFlash] = useState<string | null>(null);
+  const jumpTo = (id: string) => {
+    document.getElementById(`m-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setFlash(id);
+    setTimeout(() => setFlash((f) => (f === id ? null : f)), 1600);
+  };
   const reload = () => agent && room && meadow.messages({ agent, room }).then(setMessages);
   // Newest at the bottom, in view: a room opens there, and new messages are followed while the
   // view is at the bottom. Scrolled up to read, it stays put.
@@ -63,6 +70,7 @@ export function Inbox({ state }: ScreenProps) {
   if (!state.agents.length) return <p className="muted">No agents yet.</p>;
   const me = state.agents.find((a) => a.id === agent);
   const current = rooms.find((r) => r.room === room);
+  const byId = new Map(messages.map((m) => [m.id, m]));
   const title = (r: RoomView) => r.type === 'dm' ? `With ${r.with ?? 'another agent'}` : r.name ?? `Room ${r.room.slice(2, 10)}…`;
 
   return (
@@ -116,7 +124,7 @@ export function Inbox({ state }: ScreenProps) {
           )}
           {messages.length === 0 && <p className="muted">No messages here yet.</p>}
           {messages.map((m) => (
-            <article key={m.id} className={`msg${m.unreadByAgent ? ' unread' : ''}${m.mine ? ' mine' : ''}`}>
+            <article key={m.id} id={`m-${m.id}`} className={`msg${m.unreadByAgent ? ' unread' : ''}${m.mine ? ' mine' : ''}${flash === m.id ? ' flash' : ''}`}>
               <div className="meta">
                 <span className="who">{m.mine ? `${me?.displayName} (your agent)` : m.authorHandle ?? 'An agent not looked up yet'}</span>
                 {!m.mine && !m.authorHandle && <span className="mono small">{m.author.slice(0, 14)}…</span>}
@@ -124,6 +132,7 @@ export function Inbox({ state }: ScreenProps) {
                 {m.mine && (m.queued ? <span className="pill todo">Waiting to send</span> : <span className="pill ok">Sent</span>)}
                 {m.unreadByAgent && <span className="pill todo">Unread by agent</span>}
               </div>
+              {m.replyTo && <ReplyInset target={byId.get(m.replyTo)} me={me?.displayName} onJump={jumpTo} />}
               {m.text !== undefined ? <div className="text">{m.text}</div> : <div className="status">{m.statusWords}</div>}
               {m.report && (
                 <div className={`notice${m.report.valid ? '' : ' warn'}`} style={{ marginTop: '.5rem' }}>
@@ -147,6 +156,21 @@ export function Inbox({ state }: ScreenProps) {
       )}
     </div>
   );
+}
+
+/**
+ * What a reply answers (§16.10.2): its author and first line, never more than the window
+ * shows of that message itself; one kept aside, unreadable, or not held here says so.
+ */
+function ReplyInset({ target, me, onJump }: { target: MessageView | undefined; me?: string; onJump: (id: string) => void }) {
+  const who = target ? (target.mine ? `${me ?? 'your agent'} (your agent)` : target.authorHandle ?? 'an agent not looked up yet') : null;
+  const line = !target ? 'an earlier message' : target.guard?.held ? 'a message MessageGuard kept aside'
+    : target.text === undefined ? target.statusWords ?? 'a message that cannot be read'
+    : (() => { const first = target.text.split('\n').find((l) => l.trim()) ?? ''; return first.length > 140 ? `${first.slice(0, 140)}…` : first; })();
+  const body = <><span className="to">↩ replying to {who ?? 'a message'}</span><span className="line">{line}</span></>;
+  return target
+    ? <button className="reply" onClick={() => onJump(target.id)} title="Show the message this answers">{body}</button>
+    : <div className="reply">{body}</div>;
 }
 
 const VERDICT_WORDS: Record<string, string> = {

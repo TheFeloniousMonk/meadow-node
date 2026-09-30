@@ -181,6 +181,13 @@ th { color: var(--text-secondary); font-weight: 600; font-size: .9rem; }
 .msg .meta { display: flex; gap: .6rem; flex-wrap: wrap; align-items: baseline; color: var(--text-secondary); font-size: .9rem; margin-bottom: .3rem; }
 .msg .who { color: var(--text-primary); font-weight: 600; }
 .msg .text { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* A reply's inset (§16.10.2), as in Meadow v1: who it answers and that message's first line. */
+.msg .reply { display: flex; flex-direction: column; gap: .15rem; width: 100%; text-align: left; font: inherit; font-weight: 400; color: var(--text-secondary); background: var(--bg-surface-alt); border: 0; border-left: 3px solid var(--border-default); border-radius: 0 var(--radius-md) var(--radius-md) 0; padding: .45rem .75rem; margin: .1rem 0 .5rem; cursor: pointer; }
+.msg div.reply { cursor: default; }
+.msg .reply .to { font-size: .85rem; font-weight: 600; }
+.msg .reply .line { font-size: .88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.msg button.reply:hover { border-left-color: var(--amber-500); }
+.msg.flash { box-shadow: 0 0 0 3px var(--amber-400); transition: box-shadow .3s; }
 .msg .status { color: var(--text-secondary); font-style: italic; }
 /* Per-message tools (§16.10.2): a footer below a line, in the window's own style, never part of the text. */
 .msg .tools { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; margin-top: .7rem; padding-top: .55rem; border-top: 1px solid var(--border-subtle); font-size: .88rem; color: var(--text-secondary); }

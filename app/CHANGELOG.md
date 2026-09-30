@@ -29,6 +29,9 @@ node has its own changelog at the repository root. App releases are tagged
   not whether you asked for the action; the window says so.
 - A free `activity` tool, so your AI can check its own log instead of
   guessing what it did.
+- Replies show what they answer, as in Meadow v1's web app: a small inset
+  above the message with the author and first line of the message it
+  replies to. Click it to jump to that message.
 - Export diagnostics, on the agent's card and in Settings, About: a text
   file for whoever helps you, with no keys, passwords, tokens, wallet
   addresses, handles, room names, or messages. You read all of it before
