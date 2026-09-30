@@ -9,7 +9,7 @@
 // (seen 2026-09-29). So the entry is added only while Claude Desktop is closed.
 
 import { execFile } from 'node:child_process';
-import { existsSync, readFileSync, renameSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, renameSync, writeFileSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -39,9 +39,25 @@ export function claudeDesktopRunning(platform = process.platform): Promise<boole
   return Promise.resolve(null); // no official Claude Desktop on Linux; the dialog advises quitting it
 }
 
-/** Where Claude Desktop keeps claude_desktop_config.json on this platform. */
-export function claudeDesktopConfigPath(platform = process.platform, env = process.env, home = homedir()): string {
-  if (platform === 'win32') return join(env.APPDATA ?? join(home, 'AppData', 'Roaming'), 'Claude', 'claude_desktop_config.json');
+/**
+ * Where Claude Desktop reads claude_desktop_config.json on this platform.
+ *
+ * On Windows, Claude Desktop installed as a packaged (MSIX) app has its
+ * %APPDATA% redirected into its package folder,
+ * %LOCALAPPDATA%\Packages\Claude_<id>\LocalCache\Roaming. Once that private
+ * copy of the file exists (Claude writes its own settings there), Claude reads
+ * only it, and the file under %APPDATA%\Claude is ignored without a word,
+ * although Claude's own Edit Config button still opens that one (seen by a
+ * tester, 2026-09-29; anthropics/claude-code#26073). So when the package is
+ * installed, the entry goes into the package's copy.
+ */
+export function claudeDesktopConfigPath(platform = process.platform, env = process.env, home = homedir(), list = listDir): string {
+  if (platform === 'win32') {
+    const packages = join(env.LOCALAPPDATA ?? join(home, 'AppData', 'Local'), 'Packages');
+    const pkg = list(packages).filter((n) => /^Claude_[a-z0-9]+$/i.test(n)).sort()[0];
+    if (pkg) return join(packages, pkg, 'LocalCache', 'Roaming', 'Claude', 'claude_desktop_config.json');
+    return join(env.APPDATA ?? join(home, 'AppData', 'Roaming'), 'Claude', 'claude_desktop_config.json');
+  }
   if (platform === 'darwin') return join(home, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json');
   return join(env.XDG_CONFIG_HOME ?? join(home, '.config'), 'Claude', 'claude_desktop_config.json');
 }
@@ -61,10 +77,32 @@ export function bridgeEntry({ appExecutable, bridgeScript, port, token }: { appE
   };
 }
 
+function listDir(dir: string): string[] {
+  try {
+    return readdirSync(dir);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The file a packaged Claude Desktop falls back to while its own copy does not
+ * exist yet: Windows shows it the real %APPDATA% file then. Null for any other path.
+ */
+export function unpackagedPath(path: string): string | null {
+  const m = /^(.*)[\\/]Local[\\/]Packages[\\/]Claude_[^\\/]+[\\/]LocalCache[\\/]Roaming[\\/](.*)$/i.exec(path);
+  return m ? join(m[1], 'Roaming', m[2]) : null;
+}
+
 type Read = { data: Record<string, any> | null; found: boolean; unreadable: boolean };
 
 function read(path: string): Read {
-  if (!existsSync(path)) return { data: null, found: false, unreadable: false };
+  if (!existsSync(path)) {
+    // A packaged Claude with no copy of its own reads the real file: so do we, and a
+    // first write carries that file's settings into the copy instead of hiding them.
+    const real = unpackagedPath(path);
+    return real && existsSync(real) ? read(real) : { data: null, found: false, unreadable: false };
+  }
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf8'));
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { data: null, found: true, unreadable: true };

@@ -4,13 +4,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Catalog } from '../src/core/catalog.ts';
 import { Services } from '../src/app/services.ts';
 import { createHandlers } from '../src/app/handlers.ts';
-import { isDesktopRunning } from '../src/server/claude-desktop.ts';
+import { add, bridgeEntry, claudeDesktopConfigPath, isDesktopRunning, status, unpackagedPath } from '../src/server/claude-desktop.ts';
 
 test('Claude Code is not Claude Desktop', () => {
   const exe = (...parts: string[]) => parts.join('\\');
@@ -41,4 +41,33 @@ test('the entry is added only while Claude Desktop is closed', async () => {
   running = null; // cannot tell: the dialog advises, and adding goes ahead
   assert.deepEqual(await handle('connectClaude', { agent: id }), { ok: true });
   s.stop();
+});
+
+test('a packaged (MSIX) Claude Desktop on Windows gets the entry in its own copy of the file', () => {
+  const home = join('C:', 'Users', 'ann');
+  const env = { APPDATA: join(home, 'AppData', 'Roaming'), LOCALAPPDATA: join(home, 'AppData', 'Local') };
+  const classic = join(env.APPDATA, 'Claude', 'claude_desktop_config.json');
+  assert.equal(claudeDesktopConfigPath('win32', env, home, () => []), classic);
+  assert.equal(claudeDesktopConfigPath('win32', env, home, () => ['Microsoft.Photos_8wekyb3d8bbwe']), classic);
+  const packaged = claudeDesktopConfigPath('win32', env, home, () => ['Microsoft.Photos_8wekyb3d8bbwe', 'Claude_pzs8sxrjxfjjc']);
+  assert.equal(packaged, join(env.LOCALAPPDATA, 'Packages', 'Claude_pzs8sxrjxfjjc', 'LocalCache', 'Roaming', 'Claude', 'claude_desktop_config.json'));
+  assert.equal(unpackagedPath(packaged), classic);
+  assert.equal(unpackagedPath(classic), null);
+});
+
+test('a first write into the packaged copy keeps the settings of the file Claude read until then', () => {
+  const home = mkdtempSync(join(tmpdir(), 'meadow-msix-'));
+  const classic = join(home, 'AppData', 'Roaming', 'Claude', 'claude_desktop_config.json');
+  const packaged = join(home, 'AppData', 'Local', 'Packages', 'Claude_pzs8sxrjxfjjc', 'LocalCache', 'Roaming', 'Claude', 'claude_desktop_config.json');
+  mkdirSync(join(home, 'AppData', 'Roaming', 'Claude'), { recursive: true });
+  writeFileSync(classic, JSON.stringify({ preferences: { theme: 'dark' }, mcpServers: { other: { command: 'x', args: [], env: {} } } }));
+  const entry = bridgeEntry({ appExecutable: 'C:/Meadow/Meadow.exe', bridgeScript: 'C:/b.js', port: 47733, token: 'mdw_t' });
+  assert.equal(status(packaged, 'meadow-ann', entry).installed, false);
+  assert.deepEqual(add(packaged, 'meadow-ann', entry), { ok: true });
+  const written = JSON.parse(readFileSync(packaged, 'utf8'));
+  assert.deepEqual(written.preferences, { theme: 'dark' });
+  assert.deepEqual(Object.keys(written.mcpServers).sort(), ['meadow-ann', 'other']);
+  assert.equal(status(packaged, 'meadow-ann', entry).upToDate, true);
+  // The real file is left as it was.
+  assert.equal(JSON.parse(readFileSync(classic, 'utf8')).mcpServers['meadow-ann'], undefined);
 });

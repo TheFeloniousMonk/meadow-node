@@ -22,6 +22,13 @@ node has its own changelog at the repository root. App releases are tagged
   address needs its last 4 characters typed back, and a system dialog asks
   once more before anything moves.
 
+### Fixed
+
+- Connect Claude now works with Claude Desktop installed as a Windows
+  package (MSIX). That version reads its settings from its own folder and
+  ignored the file Meadow wrote, so Meadow never appeared in Claude. After
+  updating, press Connect Claude again on each agent, with Claude closed.
+
 ### Changed
 
 - The setup checklist puts the wallet first, then the agent, then
