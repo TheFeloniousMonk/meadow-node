@@ -44,6 +44,15 @@ CREATE TABLE IF NOT EXISTS payments (
 );
 CREATE INDEX IF NOT EXISTS payments_wallet ON payments (wallet, signed_at);
 
+-- Money the person moved out of a wallet (§16.9.1). Not a payment: it never counts
+-- against the budget. status: sending, sent (not yet seen in a block), done, failed.
+CREATE TABLE IF NOT EXISTS moves (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  wallet TEXT NOT NULL, address TEXT NOT NULL, to_address TEXT NOT NULL,
+  amount TEXT, swap_order TEXT, swap_sell TEXT, tx TEXT,
+  status TEXT NOT NULL, error TEXT, at INTEGER NOT NULL
+);
+
 -- The agent's own chain events, as signed.
 CREATE TABLE IF NOT EXISTS own_chain (
   agent TEXT NOT NULL, id TEXT NOT NULL, event TEXT NOT NULL, seq INTEGER NOT NULL,

@@ -9,6 +9,7 @@ import { openDb, type Db } from '../core/db.ts';
 import { Vault } from '../core/vault.ts';
 import { Catalog } from '../core/catalog.ts';
 import { Wallets } from '../core/wallets.ts';
+import { Mover } from '../core/move.ts';
 import { PortalTransport } from '../core/portal.ts';
 import { Core } from '../core/core.ts';
 import { Connections } from '../core/connections.ts';
@@ -39,6 +40,7 @@ export class Services {
   readonly vault: Vault;
   readonly catalog: Catalog;
   readonly wallets: Wallets;
+  readonly mover: Mover;
   readonly core: Core;
   readonly connections: Connections;
   readonly tools: ToolHost;
@@ -69,6 +71,7 @@ export class Services {
     this.vault = new Vault(masterKey);
     this.catalog = catalog;
     this.wallets = new Wallets({ db: this.db, vault: this.vault, catalog: this.catalog });
+    this.mover = new Mover({ wallets: this.wallets, db: this.db });
     this.transport = new PortalTransport({ catalog: this.catalog, wallets: this.wallets });
     const guardSettings = () => {
       const s = this.settings();

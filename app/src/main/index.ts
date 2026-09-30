@@ -188,6 +188,11 @@ else {
         if (r.canceled || !r.filePaths[0]) return null;
         return { name: basename(r.filePaths[0]), data: readFileSync(r.filePaths[0]) };
       },
+      // A system dialog, not the window, so only the person can say yes (§16.9.1). Cancel is the default.
+      confirmMove: async ({ message, detail }) => {
+        const r = await dialog.showMessageBox(win!, { type: 'warning', title: 'Move money', message, detail, buttons: ['Cancel', 'Move the money'], defaultId: 0, cancelId: 0, noLink: true });
+        return r.response === 1;
+      },
       applySettings: (s) => {
         if (!dev) startAtLogin(s.startAtLogin);
       },

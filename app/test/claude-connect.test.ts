@@ -29,7 +29,7 @@ test('the entry is added only while Claude Desktop is closed', async () => {
   let running: boolean | null = true;
   const handle = createHandlers(s, {
     execPath: 'C:/Apps/Meadow/Meadow.exe', bridgeScript: 'C:/Data/Meadow/bridge/meadow-bridge.js', claudeConfigPath: config,
-    claudeRunning: async () => running, copy: () => {}, openExternal: () => {}, saveFile: async () => null, openFile: async () => null,
+    claudeRunning: async () => running, copy: () => {}, openExternal: () => {}, saveFile: async () => null, openFile: async () => null, confirmMove: async () => false,
   });
   assert.deepEqual(await handle('claudeRunning', {}), { running: true });
   const refused: any = await handle('connectClaude', { agent: id });

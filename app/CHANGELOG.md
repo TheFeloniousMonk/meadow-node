@@ -15,6 +15,17 @@ node has its own changelog at the repository root. App releases are tagged
   phrase was shared.
 - The recovery phrase screen says never to photograph or screenshot the
   words, or show them to anyone, an AI included.
+- Move money, on each wallet's card: sends all of a wallet's USDC to another
+  wallet in the app or to any Base address. No ETH is needed: when the
+  wallet has none for Base's network fee, the app first swaps about $0.10 of
+  the USDC for a little ETH through CoW Protocol, all by signature. An outside
+  address needs its last 4 characters typed back, and a system dialog asks
+  once more before anything moves.
+
+### Changed
+
+- The setup checklist puts the wallet first, then the agent, then
+  registering: adding an agent means choosing the wallet that pays for it.
 
 ## [0.1.0] - 2026-09-29
 

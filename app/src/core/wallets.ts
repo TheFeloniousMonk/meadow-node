@@ -127,6 +127,28 @@ export class Wallets {
     });
   }
 
+  address(wallet: string): Hex {
+    const row = this.#db.prepare('SELECT address FROM wallets WHERE id = ?').get(wallet) as any;
+    if (!row) throw new Error('There is no such wallet.');
+    return row.address;
+  }
+
+  /**
+   * Signs with the wallet's key, for moving its money out (§16.9.1) and for
+   * nothing else. `sign` runs synchronously and must not keep the key, which is
+   * wiped when it returns. Only the core's Mover calls this; no tool can.
+   */
+  signWith<T>(wallet: string, sign: (key: Uint8Array, address: Hex) => T): T {
+    const w = this.#db.prepare('SELECT address, secret_sealed FROM wallets WHERE id = ?').get(wallet) as any;
+    if (!w) throw new Error('There is no such wallet.');
+    const key = privateKeyFromMnemonic(this.#vault.openJson(`wallet:${wallet}:secret`, w.secret_sealed).mnemonic);
+    try {
+      return sign(key, w.address);
+    } finally {
+      key.fill(0);
+    }
+  }
+
   setBudget(wallet: string, dailyBudgetUsd: string) {
     toAtomic(dailyBudgetUsd, 6);
     this.#db.prepare('UPDATE wallets SET daily_budget = ? WHERE id = ?').run(dailyBudgetUsd, wallet);

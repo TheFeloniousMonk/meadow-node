@@ -8,7 +8,7 @@ import { GUARD_SERVICE } from '../core/guard.ts';
 import { backupDue, describeBackup, makeBackup, readBackup, restoreBackup } from '../core/backup.ts';
 import { tokenBalance } from '../core/balance.ts';
 import { add, bridgeEntry, claudeDesktopConfigPath, claudeDesktopRunning, entryName, remove, status } from '../server/claude-desktop.ts';
-import { CHANNELS, linkAllowed, type Api, type AppState, type Channel, type MessageView } from '../shared/api.ts';
+import { CHANNELS, linkAllowed, type Api, type AppState, type Channel, type MessageView, type MovePlanView, type MoveStateView } from '../shared/api.ts';
 import type { Services } from './services.ts';
 
 export interface HandlerEnv {
@@ -29,6 +29,11 @@ export interface HandlerEnv {
   openFile(): Promise<{ name: string; data: Buffer } | null>;
   /** Applies settings that belong to the operating system (start at login). */
   applySettings?(s: ReturnType<Services['settings']>): void;
+  /**
+   * Asks the person in a system dialog, outside the window, before money leaves a
+   * wallet (§16.9.1): a window that is not what it seems cannot answer it.
+   */
+  confirmMove(q: { message: string; detail: string }): Promise<boolean>;
 }
 
 const STATUS_WORDS: Record<string, string> = {
@@ -46,6 +51,12 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
   // The backup chosen for a restore, held in memory between the person's steps.
   let restoring: { name: string; data: Buffer } | null = null;
   let balanceCache: { at: number; values: Record<string, string | null> } | null = null;
+  // Each wallet's move in progress or last finished (§16.9.1), for the window to follow.
+  const moves = new Map<string, MoveStateView>();
+  const moveTarget = (walletId: string, to: string) => {
+    const other = s.wallets.list().find((w) => w.id === to && w.id !== walletId);
+    return other ? { address: other.address, name: other.name } : { address: s.mover.destination(walletId, to), name: null };
+  };
 
   const claudeEntry = (agent: string) => {
     const token = s.connections.token(agent);
@@ -155,6 +166,10 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       s.wallets.setBudget(walletId, dailyBudgetUsd);
       return { ok: true };
     },
+
+    movePlan: undefined as any, // async, below
+    moveStart: undefined as any, // async, below
+    moveStatus: undefined as any, // async, below
 
     walletQr: undefined as any, // async, below
 
@@ -285,6 +300,35 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       restoring = await env.openFile();
       return restoring && { file: restoring.name };
     },
+    movePlan: async ({ walletId, to }): Promise<MovePlanView> => {
+      const t = moveTarget(walletId, to);
+      const p = await s.mover.plan(walletId, t.address);
+      return { to: p.to, toWallet: t.name, usdc: formatUsd(p.usdc), swapUsd: p.swap === null ? null : formatUsd(p.swap), arrivesUsd: formatUsd(p.arrives), contract: p.contract };
+    },
+    moveStart: async ({ walletId, to, confirm }) => {
+      const now = moves.get(walletId);
+      if (now && !['done', 'sent', 'failed'].includes(now.step)) return { ok: false, error: 'A move from this wallet is already under way.' };
+      const t = moveTarget(walletId, to);
+      if (!t.name && String(confirm ?? '').trim().toLowerCase() !== t.address.slice(-4).toLowerCase()) {
+        return { ok: false, error: 'Type the last 4 characters of the address to confirm it.' };
+      }
+      const p = await s.mover.plan(walletId, t.address);
+      const from = s.wallets.list().find((w) => w.id === walletId)!;
+      const yes = await env.confirmMove({
+        message: `Move about ${formatUsd(p.arrives)} out of ${from.name}?`,
+        detail: `To ${t.name ? `your wallet ${t.name}, ` : ''}${p.to} on the Base network.\n\n`
+          + (p.swap !== null ? `First, ${formatUsd(p.swap)} of it buys a little ETH for Base's network fee.\n\n` : '')
+          + 'This cannot be undone.',
+      });
+      if (!yes) return { ok: false, error: 'Nothing moved.' };
+      moves.set(walletId, { step: 'checking', to: p.to });
+      void s.mover.run(walletId, p.to, (st) => {
+        moves.set(walletId, { step: st.step, to: st.to, amount: st.amount, tx: st.tx, error: st.error });
+        if (st.step === 'done' || st.step === 'sent') balanceCache = null;
+      });
+      return { ok: true };
+    },
+    moveStatus: async ({ walletId }) => moves.get(walletId) ?? null,
     walletQr: async ({ walletId }) => {
       const w = s.wallets.list().find((x) => x.id === walletId);
       if (!w) throw new Error('There is no such wallet.');

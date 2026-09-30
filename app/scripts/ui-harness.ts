@@ -21,6 +21,8 @@ import { createHandlers } from '../src/app/handlers.ts';
 import { startMockPortal } from '../test/mock-portal.ts';
 import type { Channel } from '../src/shared/api.ts';
 import { seed } from './seed.ts';
+import { Mover } from '../src/core/move.ts';
+import { MOCK_COW, MOCK_RPC, mockBase } from '../test/mock-base.ts';
 import { createPublicServer } from '../src/server/public.ts';
 
 const PORT = 5199;
@@ -54,6 +56,24 @@ const handle = createHandlers(services, {
     return lastSaved;
   },
   openFile: async () => (lastSaved ? { name: basename(lastSaved), data: readFileSync(lastSaved) } : null),
+  // The system dialog, answered here: yes, unless --move-no.
+  confirmMove: async ({ message, detail }) => {
+    console.log('confirm:', message, detail.replace(/\s+/g, ' '));
+    return !process.argv.includes('--move-no');
+  },
+});
+
+// Moving money (§16.9.1) against a mock Base and CoW, never the real ones: every wallet
+// starts with $4.20 and no ETH, and each step waits a second and a half so the window's progress shows.
+const base = mockBase();
+const baseFetch = base.fetchImpl;
+(services as any).mover = new Mover({
+  wallets: services.wallets, db: services.db, rpc: { rpc: MOCK_RPC }, cowApi: MOCK_COW,
+  fetchImpl: (async (url: string, init?: RequestInit) => {
+    for (const w of services.wallets.list()) if (!base.chain.usdc.has(w.address.toLowerCase())) base.chain.usdc.set(w.address.toLowerCase(), 4_200_000n);
+    return baseFetch(url, init);
+  }) as typeof fetch,
+  sleep: (ms) => new Promise((r) => setTimeout(r, Math.min(ms, 1500))),
 });
 
 const seeded = process.argv.includes('--seed') ? await seed(services) : null;

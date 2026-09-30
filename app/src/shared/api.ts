@@ -118,6 +118,25 @@ export interface AppState {
   catalogError: string | null;
 }
 
+export interface MovePlanView {
+  to: string;
+  /** The name of the wallet here that `to` is, if it is one. */
+  toWallet: string | null;
+  usdc: string;
+  /** What the swap for the network fee sells first, or null when the wallet has ETH for it. */
+  swapUsd: string | null;
+  arrivesUsd: string;
+  contract: boolean;
+}
+
+export interface MoveStateView {
+  step: 'checking' | 'swapping' | 'sending' | 'done' | 'sent' | 'failed';
+  to: string;
+  amount?: string;
+  tx?: string;
+  error?: string;
+}
+
 /** Everything the window may ask, and what each returns. */
 export interface Api {
   state(): AppState;
@@ -142,6 +161,18 @@ export interface Api {
   setBudget(a: { walletId: string; dailyBudgetUsd: string }): { ok: true };
   /** Takes a wallet off this computer (§16.9); `confirm` is its name as the person typed it. Nothing changes on Base. */
   removeWallet(a: { walletId: string; confirm: string }): { ok: true };
+  /**
+   * What moving every USDC out of a wallet would do now (§16.9.1). `to` is an address,
+   * or another wallet's ID here. Reads Base; signs nothing.
+   */
+  movePlan(a: { walletId: string; to: string }): MovePlanView;
+  /**
+   * Starts the move. `confirm` is the last 4 characters of the address when it is not
+   * one of this app's wallets; the app then asks once more in a system dialog.
+   */
+  moveStart(a: { walletId: string; to: string; confirm: string }): { ok: true } | { ok: false; error: string };
+  /** The wallet's move in progress or just finished, or null. */
+  moveStatus(a: { walletId: string }): MoveStateView | null;
   walletQr(a: { walletId: string }): { svg: string; address: string };
   syncNow(a: { agent: string }): { ok: boolean; message: string };
   rooms(a: { agent: string }): RoomView[];
@@ -165,7 +196,7 @@ export interface Api {
 export type Channel = keyof Api;
 export const CHANNELS: Channel[] = [
   'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'claudeRunning', 'installUpdate', 'disconnectClaude', 'localInterface', 'rotateToken',
-  'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'setBudget', 'walletQr', 'syncNow', 'rooms', 'messages', 'setSettings',
+  'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'movePlan', 'moveStart', 'moveStatus', 'setBudget', 'walletQr', 'syncNow', 'rooms', 'messages', 'setSettings',
   'guardCheck', 'guardDecide', 'backup', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'enterChatgptCode', 'revokeClient', 'setRunner',
   'copy', 'openExternal',
 ];
