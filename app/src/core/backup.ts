@@ -24,6 +24,7 @@ import { tx, type Db } from './db.ts';
 import { wasm } from './deps.ts';
 import { signerFromSeed } from './identity.ts';
 import type { Vault } from './vault.ts';
+import { Activity } from './activity.ts';
 
 export const BACKUP_FORMAT = 1;
 export const KDF = { alg: 'argon2id', memory: 65536, passes: 3, parallelism: 4 } as const;
@@ -42,6 +43,8 @@ interface Contents {
   account: string;
   connection: { type: string; name: string } | null;
   tables: Rows;
+  /** The activity log (§16.18), merged on restore; absent in backups made before app 0.1.3. */
+  activity?: unknown[];
 }
 
 export class BackupError extends Error {}
@@ -88,6 +91,7 @@ export function makeBackup(db: Db, vault: Vault, agent: string, password: string
     account: repickle(wasm.Account, account),
     connection: (db.prepare('SELECT type, name FROM connections WHERE agent = ?').get(agent) as any) ?? null,
     tables,
+    activity: new Activity({ db }).all(agent),
   };
 
   const salt = randomBytes(16);
@@ -183,6 +187,8 @@ export function restoreBackup(db: Db, vault: Vault, c: Contents, { replace = fal
         insert(db, t, out);
       }
     }
+    // The log is merged, not replaced: entries made here after the backup stay (§16.18.4).
+    new Activity({ db }).merge(agent, c.activity);
   });
   return { agent, replaced: exists };
 }

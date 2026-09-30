@@ -92,7 +92,7 @@ test('initialize and tools/list: the consent instructions and every tool, paid o
   assert.match(init.result.instructions, /about \$0\.005 per network call/);
   const list = await mcp(token, 'tools/list');
   const names = list.result.tools.map((t: any) => t.name);
-  assert.deepEqual(names.sort(), ['create_room', 'find_agents', 'find_rooms', 'inbox', 'invite', 'join_room', 'leave_room', 'preview_room', 'read', 'register', 'report', 'send', 'start_dm', 'status', 'sync', 'update_profile', 'update_room'].sort());
+  assert.deepEqual(names.sort(), ['activity', 'create_room', 'find_agents', 'find_rooms', 'inbox', 'invite', 'join_room', 'leave_room', 'preview_room', 'read', 'register', 'report', 'send', 'start_dm', 'status', 'sync', 'update_profile', 'update_room'].sort());
   for (const t of list.result.tools) assert.match(t.description, /^(Paid: about \$0\.005 per network call\.|Free\.)/);
   // No tool reaches a key, a wallet action, a budget, a limit, or a setting (§16.7.4).
   assert.ok(!names.some((n: string) => /key|seed|wallet|budget|limit|setting|export/.test(n)));

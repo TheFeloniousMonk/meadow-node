@@ -191,6 +191,11 @@ th { color: var(--text-secondary); font-weight: 600; font-size: .9rem; }
 .steps li { display: flex; gap: .6rem; align-items: baseline; }
 .steps .pill { flex: none; min-width: 6.5rem; justify-content: center; }
 pre.export { max-height: 45vh; overflow: auto; font-family: var(--font-mono); font-size: .8rem; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg-surface-alt); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: .8rem; }
+.activity { list-style: none; padding: 0; margin: 1rem 0; display: flex; flex-direction: column; gap: .55rem; max-height: 50vh; overflow: auto; }
+.activity li { display: grid; grid-template-columns: 10.5rem 11rem 1fr; gap: .6rem; align-items: baseline; border-bottom: 1px solid var(--border-subtle); padding-bottom: .45rem; }
+.activity li.problem .what { color: var(--warn-text); }
+.activity .who { font-weight: 600; }
+@media (max-width: 720px) { .activity li { grid-template-columns: 1fr; gap: .1rem; } }
 .convo-group { font-size: .8rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-secondary); padding: .6rem .6rem .2rem; }
 .choices { display: flex; flex-direction: column; gap: .35rem; margin: .4rem 0 1rem; border: 0; padding: 0; }
 .choices legend { font-weight: 600; margin-bottom: .3rem; padding: 0; }

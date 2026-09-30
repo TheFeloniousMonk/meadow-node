@@ -8,10 +8,21 @@ import { Dialog, meadow, useAction, when } from '../lib.tsx';
 import type { ScreenProps } from '../App.tsx';
 import { guardCost } from './Settings.tsx';
 
+/** A room to open when the Inbox next shows, from elsewhere (the activity log, §16.18.3). */
+let pending: { agent: string; room: string } | null = null;
+export function openRoom(agent: string, room: string) {
+  pending = { agent, room };
+}
+
 export function Inbox({ state }: ScreenProps) {
-  const [agent, setAgent] = useState(state.agents[0]?.id ?? '');
+  const [start] = useState(() => {
+    const p = pending;
+    pending = null;
+    return p;
+  });
+  const [agent, setAgent] = useState(start?.agent ?? state.agents[0]?.id ?? '');
   const [rooms, setRooms] = useState<RoomView[]>([]);
-  const [room, setRoom] = useState<string | null>(null);
+  const [room, setRoom] = useState<string | null>(start?.room ?? null);
   const [messages, setMessages] = useState<MessageView[]>([]);
   const [checking, setChecking] = useState<MessageView | null>(null);
   const [settingRoom, setSettingRoom] = useState(false);

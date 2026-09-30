@@ -32,7 +32,15 @@ export interface CoreOptions {
   afterSync?: (agent: string, report: SyncReport) => Promise<void>;
   /** Told of every sync that fails, from any path, for the connection check (§16.17.1). */
   onSyncError?: (agent: string, err: unknown) => void;
+  /** Told of what the network did to the agent, for the activity log (§16.18.1). */
+  onReceived?: (agent: string, what: Received) => void;
 }
+
+/** Something the network did to the agent (§16.18.1): an invitation arrived, a removal or ban proved, a room expired. */
+export type Received =
+  | { type: 'invite'; room: string }
+  | { type: 'removed'; room: string; by: string; ban: boolean; reason?: string }
+  | { type: 'expired'; room: string };
 
 /** Author names in sync (§7.2, §16.8). */
 export const AUTHORS = {
@@ -132,12 +140,14 @@ export class Core {
   #transport: Transport;
   #afterSync?: (agent: string, report: SyncReport) => Promise<void>;
   #onSyncError?: (agent: string, err: unknown) => void;
+  #onReceived?: (agent: string, what: Received) => void;
   #now: () => number;
   #ctx = new Map<string, Ctx>();
   #locks = new Map<string, Promise<unknown>>();
 
-  constructor({ db, vault, transport, now = Date.now, afterSync, onSyncError }: CoreOptions) {
+  constructor({ db, vault, transport, now = Date.now, afterSync, onSyncError, onReceived }: CoreOptions) {
     this.#afterSync = afterSync;
+    this.#onReceived = onReceived;
     this.#onSyncError = onSyncError;
     this.#db = db;
     this.#vault = vault;
@@ -820,6 +830,16 @@ export class Core {
   }
 
   async #ingestSync(ctx: Ctx, data: any, report: SyncReport) {
+    const received: Received[] = [];
+    try {
+      await this.#ingestSyncInner(ctx, data, report, received);
+    } finally {
+      // Told after the database holds them, so the log can name the room.
+      for (const r of received) this.#onReceived?.(ctx.id, r);
+    }
+  }
+
+  async #ingestSyncInner(ctx: Ctx, data: any, report: SyncReport, received: Received[]) {
     tx(this.#db, () => this.#ingestNames(ctx, data));
     tx(this.#db, () => {
       for (const id of data.accepted ?? []) {
@@ -843,10 +863,12 @@ export class Core {
         if (row && ['joined', 'banned'].includes(row.status)) continue;
         this.#setRoom(ctx.id, inv.room, { status: 'invited', type: inv.type, invite: inv });
         report.invites++;
+        if (row?.status !== 'invited') received.push({ type: 'invite', room: inv.room });
       }
     });
     for (const [roomId, entry] of Object.entries<any>(data.rooms ?? {})) {
       if (entry.expired) {
+        if (this.#roomRow(ctx.id, roomId)?.status !== 'expired') received.push({ type: 'expired', room: roomId });
         tx(this.#db, () => this.#setRoom(ctx.id, roomId, { status: 'expired' }));
       } else if (entry.readable === false) {
         // How a removed member learns of its removal (§7.2). A node's word is not
@@ -856,7 +878,12 @@ export class Core {
         if (entry.membership && room.size > 0) countNew(report, roomId, await this.ingestRoomEvents(ctx.id, roomId, [entry.membership]));
         const proved = room.size > 0 && ['leave', 'ban'].includes(membershipOf(room.currentState(), ctx.id));
         const row = this.#roomRow(ctx.id, roomId);
-        if (proved && (row?.status === 'joined' || row?.status === 'reading')) tx(this.#db, () => this.#setRoom(ctx.id, roomId, { status: 'removed' }));
+        if (proved && (row?.status === 'joined' || row?.status === 'reading')) {
+          tx(this.#db, () => this.#setRoom(ctx.id, roomId, { status: 'removed' }));
+          const m = room.currentState().get(`room.member|${ctx.id}`)?.header;
+          // Its own leave, from another copy, is not something the network did to it.
+          if (m && m.author !== ctx.id) received.push({ type: 'removed', room: roomId, by: m.author, ban: m.data.membership === 'ban', ...(typeof m.data.reason === 'string' && { reason: m.data.reason }) });
+        }
         else if (!proved) this.#problem(ctx.id, 'sync', `A node said this agent can no longer read room ${roomId}, without a signed removal; the room is kept.`);
       } else if (entry.events?.length) {
         countNew(report, roomId, await this.ingestRoomEvents(ctx.id, roomId, entry.events));
@@ -921,7 +948,12 @@ export class Core {
     if (!repaired && h.kind === 'room.member' && h.data.target === ctx.id) {
       const m = h.data.membership;
       const status = m === 'join' ? 'joined' : m === 'invite' ? null : m === 'ban' ? 'banned' : h.author === ctx.id ? 'left' : 'removed';
+      const was = this.#roomRow(ctx.id, room.id)?.status;
       tx(this.#db, () => this.#setRoom(ctx.id, room.id, { type, ...(status && { status }), ...(status === 'joined' && { invite: null }) }));
+      // Removed or banned by another member: something the network did to the agent (§16.18.1).
+      if ((status === 'removed' || status === 'banned') && h.author !== ctx.id && was !== status) {
+        this.#onReceived?.(ctx.id, { type: 'removed', room: room.id, by: h.author, ban: m === 'ban', ...(typeof h.data.reason === 'string' && { reason: h.data.reason }) });
+      }
     }
     if (h.author === ctx.id) {
       this.#ownFromElsewhere(ctx, type, ev, outcome, slots);

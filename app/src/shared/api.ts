@@ -83,6 +83,17 @@ export interface ConnectionTestView {
   note: string;
 }
 
+/** One entry of an agent's activity log (§16.18). */
+export interface ActivityView {
+  at: number;
+  who: 'you' | 'claude' | 'chatgpt' | 'local' | 'runner' | 'network' | 'app';
+  whoWords: string;
+  kind: 'rooms' | 'received' | 'profile' | 'reports' | 'settings' | 'backups' | 'problems';
+  text: string;
+  /** The room it is about, when it names one: a link to it in the Inbox. */
+  room: string | null;
+}
+
 export interface WalletView {
   id: string;
   name: string;
@@ -228,6 +239,10 @@ export interface Api {
   setMay(a: { agent: string; may: 'all' | 'no_new' | 'porch' }): { ok: true };
   /** A room's own MessageGuard and notification settings (§16.10.2, §16.11). */
   setRoomSettings(a: { agent: string; room: string; guard?: 'default' | 'always' | 'never'; notify?: 'normal' | 'priority' | 'muted' }): { ok: true };
+  /** An agent's activity log, newest first (§16.18.3). */
+  activity(a: { agent: string }): ActivityView[];
+  /** Saves the activity log as a text file; `days` limits it to the last so many days. */
+  activitySave(a: { agent: string; days?: number }): { saved: string | null };
   /** Test connection (§16.17.3): two free requests through the tunnel. */
   testConnection(a: { agent: string }): ConnectionTestView;
   /** The diagnostics export's full text, for the person to read before saving (§16.17.4). */
@@ -250,7 +265,7 @@ export type Channel = keyof Api;
 export const CHANNELS: Channel[] = [
   'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'claudeRunning', 'installUpdate', 'disconnectClaude', 'localInterface', 'rotateToken',
   'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'movePlan', 'moveStart', 'moveStatus', 'setBudget', 'setDiscoverable', 'dismissUnlistedNotice', 'walletQr', 'syncNow', 'rooms', 'messages', 'setSettings',
-  'guardCheck', 'guardDecide', 'backup', 'backupChanges', 'setMay', 'setRoomSettings', 'testConnection', 'diagnosticsText', 'diagnosticsSave', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'enterChatgptCode', 'revokeClient', 'setRunner',
+  'guardCheck', 'guardDecide', 'backup', 'backupChanges', 'setMay', 'setRoomSettings', 'testConnection', 'diagnosticsText', 'diagnosticsSave', 'activity', 'activitySave', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'enterChatgptCode', 'revokeClient', 'setRunner',
   'copy', 'openExternal',
 ];
 

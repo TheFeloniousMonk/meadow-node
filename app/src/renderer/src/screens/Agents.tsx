@@ -9,6 +9,7 @@ import { Dialog, meadow, useAction, useCopy, when } from '../lib.tsx';
 import type { ScreenProps } from '../App.tsx';
 import { ChatGPTCodeDialog, ChatGPTSetup, RunnerDialog } from './Connections.tsx';
 import { ConnectionCheck } from './Check.tsx';
+import { ActivityDialog } from './Activity.tsx';
 
 const TYPE_WORDS: Record<ConnectionType, string> = { claude: 'Claude', chatgpt: 'ChatGPT', other: 'Other' };
 
@@ -21,6 +22,7 @@ export function Agents({ state, refresh, go }: ScreenProps) {
   const [chatgpt, setChatgpt] = useState<string | null>(null);
   const [code, setCode] = useState<string | null>(null);
   const [runner, setRunner] = useState<AgentView | null>(null);
+  const [activity, setActivity] = useState<AgentView | null>(null);
   const { error, run } = useAction();
   const close = () => {
     setAdding(false);
@@ -76,6 +78,7 @@ export function Agents({ state, refresh, go }: ScreenProps) {
             {a.connection?.type === 'chatgpt' && <button className="secondary" onClick={() => setCode(a.id)}>Enter ChatGPT code</button>}
             {a.connection?.type === 'other' && <button onClick={() => setRunner(a)}>Built-in runner</button>}
             {a.connection && <button className="secondary" onClick={() => setLocal(a)}>Local interfaces</button>}
+            <button className="secondary" onClick={() => setActivity(a)}>Activity</button>
             <button className="secondary" onClick={() => setBackingUp(a)}>{a.lastBackup ? 'Back up again' : 'Back up'}</button>
             <span className="small muted">{a.lastBackup ? `Last backup ${when(a.lastBackup)}` : 'Never backed up'}</span>
           </div>
@@ -110,6 +113,7 @@ export function Agents({ state, refresh, go }: ScreenProps) {
         <ChatGPTSetup agent={state.agents.find((x) => x.id === chatgpt)!} state={state} refresh={refresh} onClose={() => { setChatgpt(null); void refresh(); }} />
       )}
       {runner && <RunnerDialog agent={runner} onClose={close} />}
+      {activity && <ActivityDialog agent={activity} onClose={() => setActivity(null)} goInbox={() => go('inbox')} />}
     </div>
   );
 }

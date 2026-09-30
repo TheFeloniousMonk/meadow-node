@@ -12,6 +12,7 @@ import { add, bridgeEntry, claudeDesktopConfigPath, claudeDesktopRunning, entryN
 import { CHANNELS, linkAllowed, type Api, type AppState, type Channel, type MessageView, type MovePlanView, type MoveStateView } from '../shared/api.ts';
 import type { Services } from './services.ts';
 import { connectionCheck, diagnosticsText, testConnection, type ClaudeState } from './check.ts';
+import { WHO_WORDS, type ActivityKind } from '../core/activity.ts';
 
 export interface HandlerEnv {
   /** The app's executable, which runs the Claude bridge as Node. */
@@ -52,6 +53,9 @@ const STATUS_WORDS: Record<string, string> = {
   deleted: 'Deleted.',
 };
 
+const MAY_NAMES = { all: 'Everything', no_new: 'No new conversations', porch: 'Porch (read only)' } as const;
+const GUARD_NAMES = { default: 'as set in Settings', always: 'always check', never: 'never check' } as const;
+
 export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel, arg: unknown) => Promise<unknown> {
   // The backup chosen for a restore, held in memory between the person's steps.
   let restoring: { name: string; data: Buffer } | null = null;
@@ -81,6 +85,27 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       return { installed: false, upToDate: false, unreadable: true };
     }
   };
+  // The person's own actions, in the activity log (§16.18.2: You).
+  const you = (agent: string, kind: ActivityKind, text: string, room?: string) => {
+    const t = room ? roomTitle(agent, room) : null;
+    s.activity.add(agent, 'you', kind, text.replace('{room}', t?.title ?? ''), { room: room ?? null, ext: !!t?.ext });
+  };
+  const roomTitle = (agent: string, room: string): { title: string; ext: boolean } => {
+    const r = s.core.rooms(agent).find((x) => x.room === room);
+    if (r?.type === 'dm') return { title: `the DM with ${(r.dmWith && s.core.handleOf(agent, r.dmWith)) ?? 'another agent'}`, ext: false };
+    return r?.name ? { title: `“${r.name}”`, ext: true } : { title: 'a room with no name', ext: false };
+  };
+  // The backup nudge, logged once each time it appears (§16.18.1).
+  const nudge = (agent: string, due: string | null) => {
+    if (!due) return due;
+    const last = (s.db.prepare('SELECT last_backup_at FROM agents WHERE id = ?').get(agent) as any)?.last_backup_at ?? 'never';
+    const key = `nudge_logged:${agent}`;
+    if ((s.db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as any)?.value !== String(last)) {
+      s.db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(key, String(last));
+      s.activity.add(agent, 'app', 'backups', `Suggested a fresh backup: ${due}`);
+    }
+    return due;
+  };
   const nameOf = (agent: string) => s.core.agents().find((a) => a.id === agent)?.name ?? '';
 
   const handlers: Api = {
@@ -103,7 +128,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
             unread: messages.filter((m) => !m.guard?.held).length,
             held: s.core.messages(a.id).filter((m) => m.guard?.held === 1).length,
             lastBackup: (s.db.prepare('SELECT last_backup_at FROM agents WHERE id = ?').get(a.id) as any)?.last_backup_at ?? null,
-            backupDue: backupDue(s.db, a.id),
+            backupDue: nudge(a.id, backupDue(s.db, a.id)),
             mcpUrl: conn?.type === 'chatgpt' && s.tunnel.url ? `${s.tunnel.url}/${a.name}/mcp` : null,
             runner: s.runner.config(a.id),
             runnerLog: s.runner.log(a.id, 5),
@@ -148,6 +173,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
 
     disconnectClaude({ agent }) {
       const r = remove(claudePath(), entryName(nameOf(agent)));
+      if (r.ok) you(agent, 'settings', 'Disconnected Claude Desktop.');
       return r.ok ? { ok: true } : { ok: false, error: r.error };
     },
 
@@ -167,7 +193,9 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     },
 
     assignWallet({ agent, walletId }) {
+      const before = s.wallets.walletOf(agent);
       s.wallets.assign(agent, walletId);
+      if (before !== walletId) you(agent, 'settings', `The wallet that pays for it set to “${s.wallets.list().find((w) => w.id === walletId)?.name ?? 'a wallet'}”.`);
       return { ok: true };
     },
 
@@ -248,6 +276,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     guardCheck: undefined as any, // async, below
     testConnection: undefined as any, // async, below
     diagnosticsSave: undefined as any, // async, below
+    activitySave: undefined as any, // async, below
     connectClaude: undefined as any,
     claudeRunning: undefined as any,
     installUpdate: undefined as any,
@@ -255,17 +284,26 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
 
     enterChatgptCode({ agent, code }) {
       if (typeof agent !== 'string' || typeof code !== 'string' || code.length > 40) return { ok: false, error: 'Type the code the ChatGPT page shows.' };
-      return s.oauth.enterCode(agent, code);
+      const r = s.oauth.enterCode(agent, code);
+      if (r.ok) you(agent, 'settings', 'Approved ChatGPT’s sign-in with the code it showed.');
+      return r;
     },
 
     revokeClient({ client, agent }) {
       s.oauth.revoke(client, agent);
+      you(agent, 'settings', 'Revoked ChatGPT’s sign-in.');
       return { ok: true };
     },
 
     setRunner({ agent, ...c }) {
+      const was = s.runner.config(agent)?.enabled ?? false;
       s.runner.configure(agent, c);
+      you(agent, 'settings', was === c.enabled ? 'Changed the built-in runner’s settings.' : `Turned the built-in runner ${c.enabled ? 'on' : 'off'}.`);
       return { ok: true };
+    },
+
+    activity({ agent }) {
+      return s.activity.list(agent).map((e) => ({ at: e.at, who: e.who, whoWords: WHO_WORDS[e.who], kind: e.kind, text: e.text, room: e.room }));
     },
 
     diagnosticsText() {
@@ -273,12 +311,17 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     },
 
     setMay({ agent, may }) {
+      const was = s.core.may(agent);
       s.core.setMay(agent, may);
+      if (was !== may) you(agent, 'settings', `What this agent may do set to ${MAY_NAMES[may]}.`);
       return { ok: true };
     },
 
     setRoomSettings({ agent, room, guard, notify }) {
+      const was = s.core.rooms(agent).find((r) => r.room === room);
       s.core.setRoomSettings(agent, room, { guard, notify });
+      if (guard !== undefined && was?.guard !== guard) you(agent, 'settings', `MessageGuard for {room} set to ${GUARD_NAMES[guard]}.`, room);
+      if (notify !== undefined && was?.notify !== notify) you(agent, 'settings', `Notifications for {room} set to ${notify}.`, room);
       return { ok: true };
     },
 
@@ -295,7 +338,9 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     },
 
     guardDecide({ agent, message, release }) {
+      const m = s.core.messages(agent).find((x) => x.id === message);
       s.guard.decide(agent, message, release);
+      if (m) you(agent, 'settings', `${release ? 'Released to the agent' : 'Kept held'} a message MessageGuard kept aside, in {room}.`, m.room);
       return { ok: true };
     },
 
@@ -310,8 +355,10 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
 
     restoreApply({ password, replace }) {
       if (!restoring) throw new Error('Choose a backup file first.');
-      const { agent } = restoreBackup(s.db, s.vault, readBackup(restoring.data, password), { replace });
+      const contents = readBackup(restoring.data, password);
+      const { agent } = restoreBackup(s.db, s.vault, contents, { replace });
       s.core.forget(agent);
+      you(agent, 'backups', `Restored from a backup made ${new Date(contents.created_at).toISOString().slice(0, 10)}.`);
       // A new connection token; a Claude connection must be connected again from the Agents screen.
       const conn = s.connections.get(agent);
       s.connections.set(agent, (conn?.type ?? 'claude') as any, conn?.name ?? agent);
@@ -349,6 +396,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     connectClaude: async ({ agent }) => {
       if ((await claudeRunning()) === true) return { ok: false, error: 'Claude is still open. Quit it from its icon near the clock first, then add the entry.' };
       const r = add(claudePath(), entryName(nameOf(agent)), claudeEntry(agent));
+      if (r.ok) you(agent, 'settings', 'Connected Claude Desktop.');
       return r.ok ? { ok: true } : { ok: false, error: r.error };
     },
     setTunnel: async (t) => {
@@ -360,6 +408,24 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       return { verdict: r?.verdict ?? null, matches: r?.matches.map((m) => m.label) ?? [] };
     },
     testConnection: async ({ agent }) => testConnection(s, agent),
+    // The person's own record (§16.18.3): it keeps room names and handles, never message text or secrets.
+    activitySave: async ({ agent, days }) => {
+      if (!env.saveText) throw new Error('Saving is not available here.');
+      const a = s.core.agents().find((x) => x.id === agent);
+      if (!a) throw new Error('There is no such agent.');
+      const since = typeof days === 'number' && days > 0 ? Date.now() - days * 24 * 3600 * 1000 : undefined;
+      const entries = s.activity.list(agent, { since, limit: 5000 }).reverse();
+      const lines = [
+        `Meadow activity for ${a.display_name} (${a.handle})`,
+        `Made ${new Date().toISOString().replace(/\.\d+Z$/, 'Z')}, ${since ? `the last ${days} days` : 'everything kept (up to 90 days)'}, oldest first.`,
+        'For "Your AI" entries the app knows which connection acted, not whether you asked for it.',
+        '',
+        ...entries.map((e) => `${new Date(e.at).toISOString().replace(/\.\d+Z$/, 'Z')}  ${WHO_WORDS[e.who]}  [${e.kind}]  ${e.text}`),
+      ];
+      const d = new Date();
+      const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      return { saved: await env.saveText(`${a.name}-activity-${date}.txt`, `${lines.join('\n')}\n`) };
+    },
     diagnosticsSave: async () => {
       if (!env.saveText) throw new Error('Saving is not available here.');
       const d = new Date();
@@ -378,7 +444,10 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       const saved = await env.saveFile(`${name}-${date}.meadow-backup`, file, folder);
       // Cancelled: nothing was saved, so the last backup is still the older one.
       if (!saved) s.db.prepare('UPDATE agents SET last_backup_at = ? WHERE id = ?').run(before, agent);
-      else s.db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(folderKey, dirname(saved));
+      else {
+        s.db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(folderKey, dirname(saved));
+        you(agent, 'backups', 'Backed up.');
+      }
       return { saved, hadOlder: saved !== null && before !== null };
     },
     restoreOpen: async () => {
@@ -418,6 +487,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     setDiscoverable: async ({ agent, on }) => {
       try {
         const r = await s.core.updateProfile(agent, { discoverable: !!on });
+        you(agent, 'profile', `Findable by name turned ${on ? 'on' : 'off'}.${r.sent ? '' : ' It is queued, and goes with the next sync that can be paid for.'}`);
         s.db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(`unlisted_notice_seen:${agent}`, String(Date.now()));
         if (!r.sent) return { ok: false, message: r.refused ? `Saved, but not sent yet: ${r.refused}` : 'Saved; it goes with the next sync.' };
         return { ok: true, message: on ? 'Other agents can now find this agent by name or search word.' : 'Other agents now reach this agent only by its handle.' };

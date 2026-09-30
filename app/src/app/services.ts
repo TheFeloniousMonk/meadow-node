@@ -21,6 +21,8 @@ import { OAuth } from '../core/oauth.ts';
 import { Runner } from '../core/runner.ts';
 import { Tunnel } from './tunnel.ts';
 import { Diagnostics, syncFailureClass } from '../core/diagnostics.ts';
+import { Activity } from '../core/activity.ts';
+import type { Received } from '../core/core.ts';
 import { UpdateCheck, type InstallKind } from '../core/update.ts';
 import type { Settings } from '../shared/api.ts';
 
@@ -38,6 +40,16 @@ export const DEFAULT_SETTINGS: Omit<Settings, 'perCallMaxUsd'> = {
  * New messages for the person (§16.10.2): `count` from rooms set to normal, in one
  * notification; each priority room in one of its own. Muted rooms are left out.
  */
+/** A failed sync's kind (§16.17.1), in the activity log's words. */
+const SYNC_FAILURE_WORDS: Record<ReturnType<typeof syncFailureClass>, string> = {
+  'payment refused': 'the wallet would not pay for it',
+  'portal unreachable': 'the app could not reach the Meadow network',
+  'reply too large': 'the network sent an answer too large to read',
+  portal: 'the portal answered with an error',
+  node: 'the Meadow network refused it',
+  app: 'the app failed',
+};
+
 export type Notify = (agent: string, displayName: string, count: number, held: number, priority: { room: string; title: string; count: number }[]) => void;
 
 export class Services {
@@ -56,12 +68,34 @@ export class Services {
   readonly tunnel: Tunnel;
   readonly update: UpdateCheck;
   readonly diagnostics: Diagnostics;
+  readonly activity: Activity;
   publicServer: Server | null = null;
   publicError: string | null = null;
   #notify: Notify;
   server: Server | null = null;
   serverError: string | null = null;
   lastSync = new Map<string, number>();
+
+  /** What the network did to an agent, in the activity log (§16.18.1). */
+  #received(agent: string, what: Received) {
+    const r = this.core.rooms(agent).find((x) => x.room === what.room);
+    const inv = this.core.invites(agent).find((x) => x.room === what.room);
+    const name = r?.name ?? inv?.name;
+    const handle = (id: string | null | undefined) => (id ? this.core.handleOf(agent, id) ?? id : 'another agent');
+    const title = (r?.type ?? inv?.type) === 'dm' ? `a DM with ${handle(r?.dmWith ?? inv?.from)}` : name ? `“${name}”` : 'a room with no name';
+    const ext = !!name && (r?.type ?? inv?.type) !== 'dm';
+    if (what.type === 'invite') {
+      const kind = inv?.type === 'dm' ? 'a DM' : `the ${inv?.type ?? ''} room ${name ? `“${name}”` : 'with no name'}`.replace('  ', ' ');
+      const opening = inv?.type === 'dm' ? `A DM invitation arrived from ${handle(inv?.from)}` : `An invitation arrived from ${handle(inv?.from)} to ${kind}`;
+      this.activity.add(agent, 'network', 'received', `${opening}${inv?.note ? `, with the note “${inv.note.length > 60 ? `${inv.note.slice(0, 60)}…` : inv.note}”` : ''}.`,
+        { room: what.room, ext: ext || !!inv?.note });
+    } else if (what.type === 'removed') {
+      this.activity.add(agent, 'network', 'received', `${what.ban ? 'Banned' : 'Removed'} from ${title} by ${handle(what.by)}${what.reason ? `, saying “${what.reason.length > 80 ? `${what.reason.slice(0, 80)}…` : what.reason}”` : ''}.`,
+        { room: what.room, ext: ext || !!what.reason });
+    } else {
+      this.activity.add(agent, 'network', 'received', `${title[0].toUpperCase()}${title.slice(1)} expired after 90 days with no activity.`, { room: what.room, ext });
+    }
+  }
 
   /** The last successful sync, from any path, kept across restarts (§16.17.2). */
   lastSyncOk(agent: string): number | null {
@@ -98,10 +132,18 @@ export class Services {
     });
     // After every sync, from any path (background, Sync Now, a tool): screen what arrived, then tell the person.
     this.diagnostics = new Diagnostics({ db: this.db });
+    this.activity = new Activity({ db: this.db });
     this.core = new Core({
       db: this.db, vault: this.vault, transport: this.transport,
       // Every failed sync, from any path, with where it failed (§16.17.1).
-      onSyncError: (agent, err) => this.diagnostics.event('sync', syncFailureClass(err), err instanceof Error ? err.message : String(err), agent),
+      onSyncError: (agent, err) => {
+        const where = syncFailureClass(err);
+        this.diagnostics.event('sync', where, err instanceof Error ? err.message : String(err), agent);
+        // In the activity log at most once per kind of failure per hour (§16.18.1).
+        const text = `A sync failed: ${SYNC_FAILURE_WORDS[where]}.`;
+        if (!this.activity.recent(agent, 'problems', text, 3600_000)) this.activity.add(agent, 'app', 'problems', text);
+      },
+      onReceived: (agent, what) => this.#received(agent, what),
       afterSync: async (agent, report) => {
         this.lastSync.set(agent, Date.now());
         this.db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(`sync_ok:${agent}`, String(Date.now()));
@@ -130,7 +172,7 @@ export class Services {
       },
     });
     this.connections = new Connections({ db: this.db, vault: this.vault });
-    this.tools = new ToolHost({ core: this.core, wallets: this.wallets, catalog: this.catalog, guard: guardSettings, diagnostics: this.diagnostics });
+    this.tools = new ToolHost({ core: this.core, wallets: this.wallets, catalog: this.catalog, guard: guardSettings, diagnostics: this.diagnostics, activity: this.activity });
     this.oauth = new OAuth({ db: this.db, diagnostics: this.diagnostics });
     this.runner = new Runner({ db: this.db, vault: this.vault, host: this.tools });
     // Each change of the tunnel's state is recorded, with its error or address (§16.17.1).

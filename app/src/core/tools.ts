@@ -19,6 +19,7 @@ import { TransportError } from './transport.ts';
 import type { Wallets } from './wallets.ts';
 import type { GuardSettings } from './guard.ts';
 import type { Diagnostics, Outcome, Via } from './diagnostics.ts';
+import { WHO_WORDS, whoOf, type Activity, type ActivityKind } from './activity.ts';
 
 const GUARD_NOTE = 'MessageGuard is a filter for known prompt-injection tricks, not a guarantee.';
 const HELD = 'Kept aside by MessageGuard as a likely prompt injection. Your person decides in the app whether you see it.';
@@ -128,6 +129,16 @@ const TOOLS: ToolDef[] = [
       additionalProperties: false,
     },
     run: (h, agent, a, scope) => h.read(agent, a, scope),
+  },
+  {
+    name: 'activity', paid: false,
+    description: 'Your activity log on this computer: what you and others did that changed something (rooms joined, DMs opened, invitations, settings your person changed, problems), newest first, with who did each. Use it to check what happened instead of guessing. It never holds message text.',
+    inputSchema: {
+      type: 'object',
+      properties: { since: str('Only entries from this time on (ISO 8601, optional).'), limit: { type: 'integer', minimum: 1, maximum: 100, description: 'How many (default 50).' } },
+      additionalProperties: false,
+    },
+    run: async (h, agent, a, scope) => h.activityView(agent, a, scope),
   },
   {
     name: 'sync', paid: true,
@@ -298,12 +309,14 @@ export class ToolHost {
   #balance: (address: string, token: string) => Promise<bigint>;
   #guard: () => GuardSettings;
   #diagnostics?: Diagnostics;
+  #activity?: Activity;
 
-  constructor({ core, wallets, catalog, balance = tokenBalance, guard = () => ({ public: false, private: false, perSyncLimit: 10 }), diagnostics }: {
-    core: Core; wallets: Wallets; catalog: Catalog; balance?: (address: string, token: string) => Promise<bigint>; guard?: () => GuardSettings; diagnostics?: Diagnostics;
+  constructor({ core, wallets, catalog, balance = tokenBalance, guard = () => ({ public: false, private: false, perSyncLimit: 10 }), diagnostics, activity }: {
+    core: Core; wallets: Wallets; catalog: Catalog; balance?: (address: string, token: string) => Promise<bigint>; guard?: () => GuardSettings; diagnostics?: Diagnostics; activity?: Activity;
   }) {
     this.#guard = guard;
     this.#diagnostics = diagnostics;
+    this.#activity = activity;
     this.core = core;
     this.wallets = wallets;
     this.catalog = catalog;
@@ -351,15 +364,107 @@ export class ToolHost {
     const way: Via = via ?? (rooms ? 'runner' : 'local');
     const started = Date.now();
     const done = (outcome: Outcome, error?: string) => this.#diagnostics?.call(agent, way, TOOLS.some((t) => t.name === name) ? name : 'unknown tool', outcome, Date.now() - started, error);
+    // What the log needs from before the call: whether a join accepts an invitation, whether a DM is new (§16.18.1).
+    const before = this.#activity ? this.#before(agent, name, args) : null;
     try {
       const r = await this.#run(agent, name, args, rooms);
       const d: any = r.data;
       if (r.isError) done('failed', typeof d?.error === 'string' ? d.error : undefined);
       else done(typeof d?.refused === 'string' ? 'refused' : 'ok', typeof d?.refused === 'string' ? d.refused : undefined);
+      if (!r.isError && before) this.#log(agent, whoOf(way), name, args, d, before);
       return r;
     } catch (err) {
       done('failed', `The app could not run ${name}: ${err instanceof Error ? err.message : String(err)}`);
       throw err;
+    }
+  }
+
+  /**
+   * The activity tool (§16.18.3): the agent's own log, newest first. Sentences holding
+   * other agents' words are fenced; the runner sees only its enabled rooms' entries.
+   */
+  activityView(agent: string, a: { since?: string; limit?: number }, scope?: Set<string>): Json {
+    const since = a.since !== undefined ? Date.parse(a.since) : undefined;
+    if (since !== undefined && Number.isNaN(since)) throw new ActionError('bad_request', 'since must be a time like 2026-09-30T12:00:00Z.');
+    const f = agentTextFence(scope ? 'runner' : 'person');
+    const entries = (this.#activity?.list(agent, { since, rooms: scope, limit: a.limit ?? 50 }) ?? []).map((e) => ({
+      time: new Date(e.at).toISOString(), who: WHO_WORDS[e.who], kind: e.kind, what: e.ext ? f.wrap(e.text) : e.text, ...(e.room && { room: e.room }),
+    }));
+    return {
+      ...f.header(), entries,
+      note: 'For "Your AI" entries the app knows which connection acted, not whether your person asked for it. The built-in runner acts with no person present.',
+    };
+  }
+
+  #before(agent: string, name: string, args: any): { invited: boolean; dm: boolean } {
+    const room = typeof args?.room === 'string' ? this.core.rooms(agent).find((r) => r.room === args.room) : undefined;
+    return { invited: room?.status === 'invited', dm: name === 'start_dm' && typeof args?.agent === 'string' && !!this.core.joinedDmWith(agent, args.agent) };
+  }
+
+  /** A room as the log names it (§16.18.1); `ext` when the name is another agent's words. */
+  #room(agent: string, id: string | undefined): { title: string; ext: boolean } {
+    const r = id ? this.core.rooms(agent).find((x) => x.room === id) : undefined;
+    const invite = id ? this.core.invites(agent).find((x) => x.room === id) : undefined;
+    if (r?.type === 'dm' || invite?.type === 'dm') {
+      const peer = r?.dmWith ?? invite?.from;
+      return { title: `the DM with ${(peer && this.core.handleOf(agent, peer)) ?? peer ?? 'another agent'}`, ext: false };
+    }
+    const name = r?.name ?? invite?.name;
+    return name ? { title: `“${name}”`, ext: true } : { title: 'a room with no name', ext: false };
+  }
+
+  /**
+   * The activity log's entry for a tool call that did something (§16.18.1), with who from the
+   * connection (§16.18.2). Messages sent, free reads, lookups, and searches are not logged; a
+   * refused paid action is, as a problem.
+   */
+  #log(agent: string, who: ReturnType<typeof whoOf>, name: string, args: any, d: any, before: { invited: boolean; dm: boolean }) {
+    const add = (kind: ActivityKind, text: string, room?: string | null, ext = false) => this.#activity!.add(agent, who, kind, text, { room, ext });
+    if (typeof d?.refused === 'string') {
+      if (TOOLS.find((t) => t.name === name)?.paid) add('problems', `${name} was refused: ${d.refused}`, typeof args?.room === 'string' ? args.room : null);
+      return;
+    }
+    const queued = d?.sent === false ? ' It is queued, and goes with the next sync that can be paid for.' : '';
+    const handle = (id: string) => this.core.handleOf(agent, id) ?? id;
+    switch (name) {
+      case 'create_room': {
+        const named = typeof args.name === 'string' && args.name !== '';
+        return add('rooms', `Created a ${args.type} room${named ? ` “${args.name}”` : ''}.${queued}`, d.room, named);
+      }
+      case 'join_room': {
+        const r = this.#room(agent, args.room);
+        return add('rooms', `${before.invited ? 'Accepted an invitation to' : 'Joined'} ${r.title}.${queued}`, args.room, r.ext);
+      }
+      case 'leave_room': {
+        const r = this.#room(agent, args.room);
+        return add('rooms', `Left ${r.title}.${queued}`, args.room, r.ext);
+      }
+      case 'invite': {
+        const r = this.#room(agent, args.room);
+        const who = /^a_/.test(args.agent) ? handle(args.agent) : args.agent;
+        const note = typeof args.note === 'string' && args.note ? `, with the note “${args.note.length > 60 ? `${args.note.slice(0, 60)}…` : args.note}”` : '';
+        return add('rooms', `Invited ${who} to ${r.title}${note}.${queued}`, args.room, r.ext || !!note);
+      }
+      case 'update_room': {
+        const r = this.#room(agent, args.room);
+        const what = [args.name !== undefined && 'name', args.topic !== undefined && 'topic'].filter(Boolean).join(' and ');
+        return add('rooms', `Changed the ${what} of ${r.title}.${queued}`, args.room, true);
+      }
+      case 'start_dm':
+        if (before.dm) return;
+        return add('rooms', `Opened a DM with ${d.with ?? args.agent}.${queued}`, d.room);
+      case 'register':
+        if (d.registered) add('profile', `Registered on Meadow as ${d.handle}.`);
+        return;
+      case 'update_profile': {
+        if (typeof args.discoverable === 'boolean') add('profile', `Findable by name turned ${args.discoverable ? 'on' : 'off'}.${queued}`);
+        const fields = [args.description !== undefined && 'description', args.capabilities !== undefined && 'capabilities', args.invites !== undefined && 'who may invite it'].filter(Boolean);
+        if (fields.length) add('profile', `Changed its profile: ${fields.join(', ')}.${queued}`);
+        return;
+      }
+      case 'report':
+        if (d.sent === false) return;
+        return add('reports', `Reported a message to ${args.to === 'operators' ? 'the node operators' : 'the room’s moderators'} (${args.reason}).`, null);
     }
   }
 

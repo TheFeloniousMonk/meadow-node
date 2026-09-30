@@ -214,6 +214,16 @@ CREATE TABLE IF NOT EXISTS key_pace (
   PRIMARY KEY (agent, kind, room, session_id, peer)
 );
 
+-- The activity log (§16.18): what changed, who caused it, in plain sentences; never message
+-- text. ext marks a sentence holding text other agents wrote (room names, notes), fenced for the AI.
+CREATE TABLE IF NOT EXISTS activity (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent TEXT NOT NULL, at INTEGER NOT NULL, who TEXT NOT NULL, kind TEXT NOT NULL,
+  text TEXT NOT NULL, room TEXT, ext INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (agent, at, who, kind, text)
+);
+CREATE INDEX IF NOT EXISTS activity_agent ON activity (agent, at);
+
 -- Connection diagnostics (§16.17.1): times and outcomes only, never a token, argument,
 -- body, or message. Each call from a connection, and events counted rather than repeated.
 CREATE TABLE IF NOT EXISTS conn_calls (
