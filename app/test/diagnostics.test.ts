@@ -201,12 +201,30 @@ test('the connection check names the first step that is not working, in order, a
     assert.match(c.verdict.text, /^Last call from ChatGPT: Try again/);
     assert.match(c.steps.at(-1)!.text, /took 25 seconds/);
 
-    // A refused token after the last good call.
+    // A request with no token after the last good call is not a failed sign-in: ChatGPT's
+    // own first request has none, and so does Test connection's (testers, 2026-10-01).
     s.diagnostics.call(chappy, 'chatgpt', 'status', 'ok', 5);
-    await new Promise((r) => setTimeout(r, 5));
+    const tick = () => new Promise((r) => setTimeout(r, 5));
+    await tick();
     await d.viaTunnel(`${TUNNEL}/chappy/mcp`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    assert.equal((await testConnection(s, chappy, d.viaTunnel)).ok, true);
+    c = connectionCheck(s, chappy, null)!;
+    assert.equal(c.steps.find((x) => x.key === 'signin')!.state, 'ok');
+    assert.equal(c.verdict.state, 'ok');
+
+    // A refused token after the last good call is.
+    await tick();
+    await d.viaTunnel(`${TUNNEL}/chappy/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer mat_${'A'.repeat(43)}` }, body: '{}' });
     c = connectionCheck(s, chappy, null)!;
     assert.equal(c.steps.find((x) => x.key === 'signin')!.state, 'warn');
+    assert.match(c.steps.find((x) => x.key === 'signin')!.text, /unknown or revoked/);
+
+    // ChatGPT renewing its sign-in afterwards clears it, before any call.
+    await tick();
+    s.oauth.token({ grant_type: 'refresh_token', refresh_token: t.refresh, client_id: t.client });
+    c = connectionCheck(s, chappy, null)!;
+    assert.equal(c.steps.find((x) => x.key === 'signin')!.state, 'ok');
+    assert.match(c.steps.find((x) => x.key === 'signin')!.text, /last renewed/);
 
     // Revoked in Settings.
     s.oauth.revoke(t.client, chappy);

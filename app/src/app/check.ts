@@ -86,15 +86,20 @@ export function connectionCheck(s: Services, agent: string, claude: ClaudeState)
 
     const approved = s.oauth.authorized().filter((c) => c.agent === agent);
     const signin = s.diagnostics.last('oauth', ['issued', 'refreshed', 'refused', 'revoked'], agent);
-    const refused401 = s.diagnostics.events({ agent, kinds: ['http'], limit: 50 }).find((e) => e.what === '401' && e.agent === agent);
-    const lastOk = s.diagnostics.calls(agent, { via: ['chatgpt'], limit: 200 }).find((c) => c.outcome !== 'failed');
+    // A 401 for a request with no token is not a failed sign-in: ChatGPT's own first
+    // request has none, and so does Test connection's, and so does a stranger's.
+    const refused401 = s.diagnostics.events({ agent, kinds: ['http'], limit: 50 })
+      .find((e) => e.what === '401' && e.agent === agent && e.detail !== 'sign-in token: none');
+    const lastCall = s.diagnostics.calls(agent, { via: ['chatgpt'], limit: 200 }).find((c) => c.outcome !== 'failed');
+    // A call that worked, or a token issued or refreshed since, means ChatGPT holds a working sign-in again.
+    const lastOk = Math.max(lastCall?.at ?? 0, signin && signin.what !== 'refused' ? signin.lastAt : 0);
     if (!approved.length) {
       steps.push(signin && ['issued', 'refreshed', 'refused'].includes(signin.what)
         ? step('signin', 'ChatGPT\'s sign-in', 'bad', signin.what === 'refused' ? `ChatGPT's sign-in was refused: ${signin.detail.replace(/^[a-z_]+: /, '')}` : 'ChatGPT\'s sign-in has expired.',
           { at: signin.lastAt, fix: 'In ChatGPT, connect the Meadow app again; then type the code it shows on this card.' })
         : step('signin', 'ChatGPT\'s sign-in', 'bad', signin?.what === 'revoked' ? 'ChatGPT\'s approval was revoked in Settings.' : 'ChatGPT has not been approved yet.',
           { fix: 'Follow Set up ChatGPT on this card.' }));
-    } else if (refused401 && (!lastOk || refused401.lastAt > lastOk.at)) {
+    } else if (refused401 && refused401.lastAt > lastOk) {
       steps.push(step('signin', 'ChatGPT\'s sign-in', 'warn', `ChatGPT's last call was refused: its ${refused401.detail}.`,
         { at: refused401.lastAt, fix: 'ChatGPT usually renews its sign-in by itself. If this stays, connect the Meadow app again in ChatGPT.' }));
     } else {

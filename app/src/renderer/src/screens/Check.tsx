@@ -6,7 +6,7 @@ import type { AgentView, ConnectionTestView } from '../../../shared/api.ts';
 import { Dialog, meadow, useAction, when } from '../lib.tsx';
 
 const MARK = { ok: 'ok', warn: 'todo', bad: 'warn' } as const;
-const WORD = { ok: 'Working', warn: 'Check', bad: 'Not working' } as const;
+const WORD = { ok: 'Working', warn: 'Needs a look', bad: 'Not working' } as const;
 
 /** The connection check, folded to its verdict until the person opens it. */
 export function ConnectionCheck({ agent }: { agent: AgentView }) {
@@ -21,7 +21,7 @@ export function ConnectionCheck({ agent }: { agent: AgentView }) {
       <div className="row spread">
         <div className="row" style={{ gap: '.6rem' }}>
           <strong>Connection check</strong>
-          <span className={`pill ${MARK[c.verdict.state]}`}>{WORD[c.verdict.state]}</span>
+          <span className={`status ${MARK[c.verdict.state]}`}>{WORD[c.verdict.state]}</span>
         </div>
         <button className="link small" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? 'Hide the steps' : 'Show the steps'}</button>
       </div>
@@ -31,7 +31,7 @@ export function ConnectionCheck({ agent }: { agent: AgentView }) {
           <ol className="steps">
             {c.steps.map((st) => (
               <li key={st.key}>
-                <span className={`pill ${MARK[st.state]}`}>{WORD[st.state]}</span>
+                <span className={`status ${MARK[st.state]}`}>{WORD[st.state]}</span>
                 <span><strong>{st.label}.</strong> {st.text}{st.at ? ` ${when(st.at)}.` : ''}</span>
               </li>
             ))}

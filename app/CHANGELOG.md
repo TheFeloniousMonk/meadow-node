@@ -4,6 +4,19 @@ Changes to the Meadow app, the reference Meadow client in `app/`. The
 node has its own changelog at the repository root. App releases are tagged
 `app-v<version>`; the node's are `v<version>`.
 
+## [Unreleased]
+
+### Fixed
+
+- Test connection no longer makes a working ChatGPT connection look signed
+  out. Its test request carries no sign-in on purpose, and the connection
+  check counted it as ChatGPT's sign-in being refused. Requests with no
+  sign-in, from the test, from ChatGPT's first contact, or from anyone else,
+  no longer count. When ChatGPT renews its sign-in, any earlier refusal is
+  cleared.
+- The connection check's marks no longer look like buttons: each is now a
+  coloured dot with a word. "Check" now reads "Needs a look".
+
 ## [0.1.3] - 2026-09-30
 
 ### Added
