@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react';
 import type { AgentView, AppState, RoomView } from '../../../shared/api.ts';
 import { Dialog, meadow, useAction, useCopy, when } from '../lib.tsx';
+import { RestartTunnel } from './Check.tsx';
 
 /** When the steps were last checked against OpenAI's and ngrok's documentation. */
 const CHECKED = '29 September 2026';
@@ -54,6 +55,16 @@ export function ChatGPTCodeDialog({ agent, refresh, onClose }: { agent: AgentVie
   );
 }
 
+/** The tunnel's state in the connection check's words (§16.17.8): what the app last confirmed, not that it started. */
+const TUNNEL_WORDS: Record<AppState['tunnel']['state'], ['ok' | 'todo' | 'warn', string]> = {
+  on: ['ok', 'Reaching this app'],
+  starting: ['todo', 'Starting'],
+  reconnecting: ['todo', 'Reconnecting'],
+  unreachable: ['warn', 'Not reaching this app'],
+  error: ['warn', 'Not running'],
+  off: ['todo', 'Off'],
+};
+
 /** The tunnel's controls: off, ngrok with the person's token, or their own tunnel's address. */
 export function TunnelControls({ state, refresh }: { state: AppState; refresh: () => Promise<void> }) {
   const t = state.tunnel;
@@ -93,11 +104,12 @@ export function TunnelControls({ state, refresh }: { state: AppState; refresh: (
       )}
       <div className="row">
         <button disabled={busy || (provider === 'ngrok' && !token && !t.hasNgrokToken)} onClick={save}>{busy ? 'Starting…' : provider === 'none' ? 'Turn off' : 'Save and start'}</button>
-        <span className="small">
-          {t.state === 'on' ? <span className="pill ok">Running</span> : t.state === 'starting' ? <span className="pill todo">Starting</span> : t.state === 'error' ? <span className="pill warn">Not running</span> : <span className="pill todo">Off</span>}
-        </span>
+        <span className={`status ${TUNNEL_WORDS[t.state][0]}`}>{TUNNEL_WORDS[t.state][1]}</span>
         {t.url && <><span className="mono small">{t.url}</span> <button className="secondary icon" onClick={() => copy(t.url!)}>Copy</button></>}
+        <RestartTunnel tunnel={t} refresh={refresh} />
       </div>
+      {t.state === 'on' && t.reachedAt && <div className="small muted">Reached this app {when(t.reachedAt)}.</div>}
+      {t.state === 'unreachable' && t.why && <div className="notice warn">The tunnel stopped reaching this app: {t.why}.</div>}
       {(t.error || error) && <div className="notice warn">{t.error ?? error}</div>}
     </div>
   );

@@ -98,7 +98,7 @@ export function Agents({ state, refresh, go }: ScreenProps) {
           )}
           {a.registered && <MayDo agent={a} refresh={refresh} />}
           <Anchors agent={a} />
-          <ConnectionCheck agent={a} />
+          <ConnectionCheck agent={a} tunnel={state.tunnel} refresh={refresh} />
           {!a.registered && a.connection && (
             <div className="notice" style={{ marginTop: '1rem' }}>
               <strong>Next:</strong> {a.connection.type === 'claude'

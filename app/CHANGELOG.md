@@ -6,6 +6,17 @@ node has its own changelog at the repository root. App releases are tagged
 
 ## [Unreleased]
 
+### Added
+
+- The app now watches the ChatGPT tunnel instead of trusting that it is
+  running. When the computer wakes, or ngrok loses its connection, the app
+  checks the tunnel through its public address, and restarts it if it no
+  longer reaches the app (same address, so ChatGPT's setup stays as it is).
+  The tunnel's line in the connection check says when it last reached the
+  app, or what went wrong and what the app already tried.
+- Restart tunnel, on a ChatGPT agent's card and in Settings, for when the
+  automatic restarts are not enough.
+
 ### Fixed
 
 - Test connection no longer makes a working ChatGPT connection look signed

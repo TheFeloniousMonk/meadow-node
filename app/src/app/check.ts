@@ -7,6 +7,7 @@ import { release } from 'node:os';
 import { SLOW_MS, scrub, type EventRow, type Via } from '../core/diagnostics.ts';
 import type { CheckStep, ConnectionCheckView, ConnectionTestView } from '../shared/api.ts';
 import type { Services } from './services.ts';
+import { describeAnswer, describeFailure } from './tunnel.ts';
 
 /** The Claude Desktop entry's state, as the Agents screen already reads it. */
 export type ClaudeState = { installed: boolean; upToDate: boolean; unreadable: boolean } | null;
@@ -29,6 +30,37 @@ const portFix = (error: string | null, where: string) =>
 
 const step = (key: CheckStep['key'], label: string, state: CheckStep['state'], text: string, extra: { at?: number | null; fix?: string } = {}): CheckStep =>
   ({ key, label, state, text, ...(extra.at != null && { at: extra.at }), ...(extra.fix && { fix: extra.fix }) });
+
+const clock = (at: number) => new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+/** Step 3 (§16.17.2, §16.17.8): what the app last confirmed about the tunnel, not that it was started. */
+export function tunnelStep(s: Services): CheckStep {
+  const t = s.tunnel.status;
+  const turnOn = 'Open Settings, then Connections, and turn the tunnel on.';
+  if (t.provider === 'none') return step('tunnel', 'Tunnel', 'bad', 'No tunnel is set up, so ChatGPT cannot reach this computer.', { fix: turnOn });
+  switch (t.state) {
+    case 'on':
+      return step('tunnel', 'Tunnel', 'ok', `On, at ${t.url}; reached this app`, { at: t.reachedAt });
+    case 'starting':
+      return step('tunnel', 'Tunnel', 'warn', 'Starting.', { fix: 'Wait a few seconds.' });
+    case 'reconnecting':
+      return t.restarts > 0
+        ? step('tunnel', 'Tunnel', 'warn', `The tunnel stopped reaching this app${t.why ? `: ${t.why}` : ''}. The app is restarting it (${t.restarts} ${t.restarts === 1 ? 'try' : 'tries'} so far).`, { fix: 'Wait a few minutes; the app keeps trying.' })
+        : step('tunnel', 'Tunnel', 'warn', 'ngrok lost its connection and is reconnecting.', { fix: 'Wait a minute; the app restarts it if it does not come back.' });
+    case 'unreachable': {
+      if (t.heldElsewhere) return step('tunnel', 'Tunnel', 'bad', 'Your ngrok address is open somewhere else, perhaps on another computer.', { fix: 'Close it there, then press Restart tunnel.' });
+      const lead = t.wokeAt ? `After this computer woke at ${clock(t.wokeAt)}, the tunnel` : 'The tunnel';
+      if (t.provider === 'custom') {
+        return step('tunnel', 'Tunnel', 'bad', `${lead} stopped reaching this app: ${t.why ?? 'no answer'}.`, { fix: 'Restart your own tunnel program, then press Test connection.' });
+      }
+      const tried = t.restarts ? ` The app restarted it ${t.restarts} ${t.restarts === 1 ? 'time' : 'times'}.` : '';
+      return step('tunnel', 'Tunnel', 'bad', `${lead} stopped reaching this app: ${t.why ?? 'no answer'}.${tried}`,
+        { fix: 'Press Restart tunnel. If that does not help, check this computer\'s internet connection, or quit Meadow from its icon near the clock and open it again.' });
+    }
+    default:
+      return step('tunnel', 'Tunnel', 'bad', t.error ?? 'The tunnel is off, so ChatGPT cannot reach this computer.', { fix: turnOn });
+  }
+}
 
 /** The connection check for one agent (§16.17.2); null for an agent with no connection. */
 export function connectionCheck(s: Services, agent: string, claude: ClaudeState): ConnectionCheckView | null {
@@ -56,9 +88,13 @@ export function connectionCheck(s: Services, agent: string, claude: ClaudeState)
   // 2. The way in: the ChatGPT door, the Claude Desktop entry, or the local interfaces.
   if (type === 'chatgpt') {
     const port = s.settings().publicPort;
-    steps.push(s.publicServer?.listening
-      ? step('door', 'The app\'s ChatGPT door', 'ok', `Listening on port ${port}.`)
-      : step('door', 'The app\'s ChatGPT door', 'bad', s.publicError ?? 'It is not listening.', { fix: portFix(s.publicError, 'ChatGPT') }));
+    const door = s.tunnel.status.door;
+    steps.push(!s.publicServer?.listening
+      ? step('door', 'The app\'s ChatGPT door', 'bad', s.publicError ?? 'It is not listening.', { fix: portFix(s.publicError, 'ChatGPT') })
+      // Listening, but its own loopback check got the wrong answer (§16.17.8): no tunnel restart fixes that.
+      : door && !door.ok
+        ? step('door', 'The app\'s ChatGPT door', 'bad', `It does not answer as it should: ${door.why}.`, { at: door.at, fix: 'Quit Meadow from its icon near the clock and open it again.' })
+        : step('door', 'The app\'s ChatGPT door', 'ok', `Listening on port ${port}.`));
   } else if (type === 'claude') {
     steps.push(!claude || claude.unreadable
       ? step('bridge', 'Claude Desktop', 'warn', 'The app cannot read Claude Desktop\'s settings file.', { fix: 'Press Connect Claude on this card, with Claude Desktop closed.' })
@@ -75,14 +111,7 @@ export function connectionCheck(s: Services, agent: string, claude: ClaudeState)
 
   // 3 and 4. ChatGPT only: the tunnel, and ChatGPT's sign-in.
   if (type === 'chatgpt') {
-    const t = s.tunnel.status;
-    steps.push(t.provider === 'none'
-      ? step('tunnel', 'Tunnel', 'bad', 'No tunnel is set up, so ChatGPT cannot reach this computer.', { fix: 'Open Settings, then Connections, and turn the tunnel on.' })
-      : t.state === 'on'
-        ? step('tunnel', 'Tunnel', 'ok', `On, at ${t.url}.`)
-        : t.state === 'starting'
-          ? step('tunnel', 'Tunnel', 'warn', 'Starting.', { fix: 'Wait a few seconds.' })
-          : step('tunnel', 'Tunnel', 'bad', t.error ?? 'The tunnel is off, so ChatGPT cannot reach this computer.', { fix: 'Open Settings, then Connections, and turn the tunnel on.' }));
+    steps.push(tunnelStep(s));
 
     const approved = s.oauth.authorized().filter((c) => c.agent === agent);
     const signin = s.diagnostics.last('oauth', ['issued', 'refreshed', 'refused', 'revoked'], agent);
@@ -141,19 +170,14 @@ export async function testConnection(s: Services, agent: string, fetchImpl: type
     return { ok: false, steps: [{ label: 'The tunnel\'s public address', ok: false, text: 'The tunnel is not on, so there is nothing to test.' }], note };
   }
   const headers = { 'ngrok-skip-browser-warning': '1', 'user-agent': 'Meadow connection test' };
-  const describe = async (res: Response) => {
-    const text = (await res.text().catch(() => '')).slice(0, 4000);
-    const ngrok = /ERR_NGROK_\d+/.exec(text)?.[0];
-    if (ngrok) return `the tunnel's own error page (${ngrok}): the tunnel is not reaching this app`;
-    return `an answer that is not this app's (HTTP ${res.status})`;
-  };
+  const describe = describeAnswer;
   const attempt = async (label: string, run: () => Promise<string | null>) => {
     try {
       const why = await run();
       return { label, ok: why === null, text: why ?? 'As expected.' };
     } catch (err) {
-      const e = err as any;
-      return { label, ok: false, text: e?.name === 'TimeoutError' ? 'No answer within 10 seconds.' : `It could not be reached (${e?.cause?.code ?? e?.message ?? 'unknown error'}).` };
+      const why = describeFailure(err);
+      return { label, ok: false, text: `${why[0].toUpperCase()}${why.slice(1)}.` };
     }
   };
   const resource = `${base}/${a.name}/mcp`;
@@ -171,6 +195,8 @@ export async function testConnection(s: Services, agent: string, fetchImpl: type
     }),
   ];
   const ok = steps.every((x) => x.ok);
+  // A pass went through the address to this app: it counts as the tunnel's check (§16.17.8).
+  if (ok) s.tunnel.confirm();
   s.diagnostics.event('test', ok ? 'pass' : 'fail', ok ? '' : steps.filter((x) => !x.ok).map((x) => `${x.label}: ${x.text}`).join('; '), agent);
   return { ok, steps, note };
 }

@@ -186,7 +186,8 @@ export interface AppState {
   pricePerCallUsd: string | null;
   /** The screening service's price, for MessageGuard (§16.11). */
   guardPriceUsd: string | null;
-  tunnel: { provider: 'none' | 'ngrok' | 'custom'; state: 'off' | 'starting' | 'on' | 'error'; url: string | null; error: string | null; hasNgrokToken: boolean; port: number };
+  /** The tunnel as the app last confirmed it (§16.17.8): `reachedAt` is the last check through the address that passed. */
+  tunnel: { provider: 'none' | 'ngrok' | 'custom'; state: 'off' | 'starting' | 'on' | 'reconnecting' | 'unreachable' | 'error'; url: string | null; error: string | null; reachedAt: number | null; why: string | null; hasNgrokToken: boolean; port: number };
   /** Clients the person approved, per agent, with Revoke in Settings. */
   authorized: { client: string; name: string; agent: string; agentName: string; since: number }[];
   catalogError: string | null;
@@ -290,6 +291,8 @@ export interface Api {
   restorePreview(a: { password: string }): { agent: string; displayName: string; name: string; registered: boolean; createdAt: number; rooms: number; privateRooms: number; alreadyHere: boolean };
   restoreApply(a: { password: string; replace: boolean }): { agent: string };
   setTunnel(a: { provider: 'none' | 'ngrok' | 'custom'; ngrokToken?: string; url?: string }): { ok: true };
+  /** Restart tunnel (§16.17.8): closes the ngrok session, opens it again, and checks it through the address. */
+  restartTunnel(): { ok: boolean; text: string };
   /** The code a ChatGPT sign-in page shows, typed on an agent's card (§16.7.2). */
   enterChatgptCode(a: { agent: string; code: string }): { ok: true; client: string } | { ok: false; error: string };
   revokeClient(a: { client: string; agent: string }): { ok: true };
@@ -302,7 +305,7 @@ export type Channel = keyof Api;
 export const CHANNELS: Channel[] = [
   'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'claudeRunning', 'installUpdate', 'disconnectClaude', 'localInterface', 'rotateToken',
   'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'movePlan', 'moveStart', 'moveStatus', 'setBudget', 'setDiscoverable', 'dismissUnlistedNotice', 'walletQr', 'syncNow', 'rooms', 'messages', 'setSettings',
-  'guardCheck', 'guardDecide', 'backup', 'backupChanges', 'setMay', 'setRoomSettings', 'testConnection', 'diagnosticsText', 'diagnosticsSave', 'activity', 'activitySave', 'notes', 'setAnchor', 'setNote', 'removeNote', 'keepNote', 'notesSeen', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'enterChatgptCode', 'revokeClient', 'setRunner',
+  'guardCheck', 'guardDecide', 'backup', 'backupChanges', 'setMay', 'setRoomSettings', 'testConnection', 'diagnosticsText', 'diagnosticsSave', 'activity', 'activitySave', 'notes', 'setAnchor', 'setNote', 'removeNote', 'keepNote', 'notesSeen', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'restartTunnel', 'enterChatgptCode', 'revokeClient', 'setRunner',
   'copy', 'openExternal',
 ];
 

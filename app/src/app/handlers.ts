@@ -148,7 +148,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
         problems: s.core.problems().slice(-20).reverse(),
         pricePerCallUsd: price ? formatUsd(price.atomic, price.decimals) : null,
         guardPriceUsd: guardPrice ? formatUsd(guardPrice.atomic, guardPrice.decimals) : null,
-        tunnel: { ...s.tunnel.status, error: s.publicError ?? s.tunnel.status.error, hasNgrokToken: s.ngrokToken() !== null, port: s.settings().publicPort },
+        tunnel: (({ provider, state, url, error, reachedAt, why }) => ({ provider, state, url, error: s.publicError ?? error, reachedAt, why, hasNgrokToken: s.ngrokToken() !== null, port: s.settings().publicPort }))(s.tunnel.status),
         authorized: s.oauth.authorized().map((c) => ({ ...c, agentName: s.core.agents().find((a) => a.id === c.agent)?.display_name ?? c.agent })),
         catalogError: s.catalog.fetchedAt ? null : 'The app has not read the portal\'s price list yet.',
       };
@@ -286,6 +286,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     claudeRunning: undefined as any,
     installUpdate: undefined as any,
     setTunnel: undefined as any,
+    restartTunnel: undefined as any,
 
     enterChatgptCode({ agent, code }) {
       if (typeof agent !== 'string' || typeof code !== 'string' || code.length > 40) return { ok: false, error: 'Type the code the ChatGPT page shows.' };
@@ -446,6 +447,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       await s.setTunnel(t);
       return { ok: true };
     },
+    restartTunnel: async () => s.restartTunnel(),
     guardCheck: async ({ agent, message }) => {
       const r = await s.guard.checkOne(agent, message);
       return { verdict: r?.verdict ?? null, matches: r?.matches.map((m) => m.label) ?? [] };

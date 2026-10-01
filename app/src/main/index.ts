@@ -9,7 +9,7 @@
 // Always:
 //   --hidden              start in the tray (how start-at-login opens it)
 
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, shell, Tray } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerMonitor, shell, Tray } from 'electron';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, watchFile, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -242,6 +242,11 @@ else {
     // Claude Desktop may rewrite its settings file (and drop Meadow's entry): the Agents card shows what the file holds now.
     if (!screenshot) watchFile(claudeDesktopConfigPath(), { interval: 3000 }, () => changed());
     if (!screenshot) createTray();
+    // After sleep the tunnel may be dead while still marked as running (§16.17.8): check it, and restart it if needed.
+    if (!screenshot) {
+      powerMonitor.on('resume', () => services?.tunnel.wake());
+      powerMonitor.on('unlock-screen', () => services?.tunnel.wake());
+    }
     win = await createWindow();
 
     if (screenshot) {

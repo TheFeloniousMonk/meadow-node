@@ -54,7 +54,6 @@ async function door(s: Services, opts: { explode?: () => boolean } = {}) {
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
   s.publicServer = server;
   const port = (server.address() as AddressInfo).port;
-  await s.tunnel.start({ provider: 'custom', port, customUrl: TUNNEL });
   // A fetch that reaches the door as a tunnel would: to this port, with the tunnel's host name.
   const viaTunnel: typeof fetch = (async (input: any, init: any = {}) => {
     const u = new URL(String(input));
@@ -69,7 +68,11 @@ async function door(s: Services, opts: { explode?: () => boolean } = {}) {
       req.end();
     });
   }) as typeof fetch;
-  return { server, port, viaTunnel, close: () => new Promise<void>((r) => server.close(() => r())) };
+  // The tunnel's own checks go the same way (§16.17.8), and the first one decides its state.
+  s.tunnel.fetchImpl = viaTunnel;
+  await s.tunnel.start({ provider: 'custom', port, customUrl: TUNNEL });
+  await s.tunnel.settled();
+  return { server, port, viaTunnel, close: async () => { await s.tunnel.stop(); await new Promise<void>((r) => server.close(() => r())); } };
 }
 
 /** ChatGPT's sign-in, driven straight through the app's OAuth: register, authorize, the person's code, the token. */

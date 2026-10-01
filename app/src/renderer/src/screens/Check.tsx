@@ -2,14 +2,32 @@
 // diagnostics export (SPEC §16.17). Plain words, one line per step, and the
 // first step that is not working named first, with what to do.
 import { useEffect, useState } from 'react';
-import type { AgentView, ConnectionTestView } from '../../../shared/api.ts';
+import type { AgentView, AppState, ConnectionTestView } from '../../../shared/api.ts';
 import { Dialog, meadow, useAction, when } from '../lib.tsx';
 
 const MARK = { ok: 'ok', warn: 'todo', bad: 'warn' } as const;
 const WORD = { ok: 'Working', warn: 'Needs a look', bad: 'Not working' } as const;
 
+/**
+ * Restart tunnel (§16.17.8): what the app does by itself after a failed check, on demand.
+ * Only for ngrok; a person's own tunnel is restarted where it runs.
+ */
+export function RestartTunnel({ tunnel, refresh }: { tunnel: AppState['tunnel']; refresh?: () => Promise<void> }) {
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const { busy, error, run } = useAction();
+  if (tunnel.provider !== 'ngrok' || tunnel.state === 'off') return null;
+  return (
+    <>
+      <button className="secondary" disabled={busy} onClick={() => run(async () => { setResult(null); setResult(await meadow.restartTunnel()); await refresh?.(); })}>
+        {busy ? 'Restarting…' : 'Restart tunnel'}
+      </button>
+      {(result || error) && <div className={`notice${result?.ok ? '' : ' warn'}`} style={{ flexBasis: '100%' }}>{result?.text ?? error}</div>}
+    </>
+  );
+}
+
 /** The connection check, folded to its verdict until the person opens it. */
-export function ConnectionCheck({ agent }: { agent: AgentView }) {
+export function ConnectionCheck({ agent, tunnel, refresh }: { agent: AgentView; tunnel?: AppState['tunnel']; refresh?: () => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const [test, setTest] = useState<ConnectionTestView | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -42,6 +60,7 @@ export function ConnectionCheck({ agent }: { agent: AgentView }) {
                 {busy ? 'Testing…' : 'Test connection'}
               </button>
             )}
+            {agent.connection?.type === 'chatgpt' && tunnel && <RestartTunnel tunnel={tunnel} refresh={refresh} />}
             <button className="secondary" onClick={() => setExporting(true)}>Export diagnostics</button>
           </div>
           {error && <div className="notice warn">{error}</div>}

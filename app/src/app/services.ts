@@ -207,16 +207,20 @@ export class Services {
     this.tools = new ToolHost({ core: this.core, wallets: this.wallets, catalog: this.catalog, guard: guardSettings, diagnostics: this.diagnostics, activity: this.activity, notes: this.notes });
     this.oauth = new OAuth({ db: this.db, diagnostics: this.diagnostics });
     this.runner = new Runner({ db: this.db, vault: this.vault, host: this.tools });
-    // Each change of the tunnel's state is recorded, with its error or address (§16.17.1).
+    // Each change of the tunnel's state is recorded, with its error or address, and so is
+    // what the watch saw and did: wakes, checks, restarts, the door (§16.17.1, §16.17.8).
     let tunnelWas = '';
-    this.tunnel = new Tunnel(() => {
-      const t = this.tunnel.status;
-      const now = `${t.state}|${t.error ?? t.url ?? ''}`;
-      if (now !== tunnelWas) {
-        tunnelWas = now;
-        this.diagnostics.event('tunnel', t.state, t.error ?? t.url ?? '');
-      }
-      changed();
+    this.tunnel = new Tunnel({
+      changed: () => {
+        const t = this.tunnel.status;
+        const now = `${t.state}|${t.error ?? t.why ?? t.url ?? ''}`;
+        if (now !== tunnelWas) {
+          tunnelWas = now;
+          this.diagnostics.event('tunnel', t.state, t.error ?? t.why ?? t.url ?? '');
+        }
+        changed();
+      },
+      event: (what, detail = '') => this.diagnostics.event('tunnel', what, detail),
     });
     this.update = new UpdateCheck({ version, kind: install });
   }
@@ -342,6 +346,12 @@ export class Services {
     } finally {
       this.#changed();
     }
+  }
+
+  /** Restart tunnel (§16.17.8): the same as the automatic restart, once, now. */
+  async restartTunnel(): Promise<{ ok: boolean; text: string }> {
+    if (!this.publicServer?.listening) return { ok: false, text: 'The app\'s ChatGPT door is not listening, so a tunnel would have nothing to reach. Quit Meadow from its icon near the clock and open it again.' };
+    return this.tunnel.restart();
   }
 
   stop() {
