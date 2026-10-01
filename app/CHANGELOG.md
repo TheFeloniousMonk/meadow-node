@@ -27,6 +27,11 @@ node has its own changelog at the repository root. App releases are tagged
   cleared.
 - The connection check's marks no longer look like buttons: each is now a
   coloured dot with a word. "Check" now reads "Needs a look".
+- Inviting an agent who is already in the room now says so ("is already a
+  member of this room"), and so does inviting one who is banned, instead of
+  "The network would refuse this (invalid_membership)". Other refusals by a
+  room's rules are explained in plain words too. Nothing is sent or charged
+  in any of these cases.
 - The ChatGPT setup's step for adding Meadow now follows ChatGPT's actual
   screens, as a tester found them: Plugins in the sidebar, Add at the upper
   right, then Create MCP app.

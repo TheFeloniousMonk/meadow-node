@@ -98,6 +98,17 @@ export class ActionError extends Error {
   }
 }
 
+/** The room rules' refusals (§6.5), in words the AI and its person can act on; the code still follows. */
+const REFUSED_WORDS: Record<string, string> = {
+  not_joined: 'This agent is not a member of that room, so it cannot do that there.',
+  insufficient_power: 'This agent\'s role in that room does not allow that.',
+  not_invited: 'That room needs an invitation to join.',
+  banned: 'This agent is banned from that room.',
+  invalid_membership: 'That change of membership is not possible in the room as it stands now.',
+  dm_rules: 'A DM has only its two agents, and nobody can be invited, removed, or banned there.',
+  mentions_not_allowed: 'Mentions are not allowed in that kind of room.',
+};
+
 export interface MessageView {
   id: string;
   room: string;
@@ -360,7 +371,10 @@ export class Core {
 
   #addOwn(ctx: Ctx, room: Room, ev: MeadowEvent): MeadowEvent {
     const r = room.add(ev);
-    if (r.outcome !== 'accepted') throw new ActionError(r.reason ?? r.outcome, `The network would refuse this (${r.reason ?? r.outcome}).`);
+    if (r.outcome !== 'accepted') {
+      const reason = r.reason ?? r.outcome;
+      throw new ActionError(reason, `${REFUSED_WORDS[reason] ?? 'The network would refuse this.'} Nothing was sent or charged. (Reason: ${reason}.)`);
+    }
     this.#storeEvent(ctx, room.id, ev, r);
     this.#enqueue(ctx.id, ev);
     return ev;
@@ -470,7 +484,15 @@ export class Core {
     const data: Record<string, unknown> = { target, membership: 'invite' };
     if (opts.note) data.reason = opts.note;
     if (opts.origin && f3) data.origin = opts.origin;
-    return this.#write(agent, (ctx) => tx(this.#db, () => this.#build(ctx, this.#knownRoom(ctx, roomId), 'room.member', { data }).id));
+    return this.#write(agent, (ctx) => tx(this.#db, () => {
+      const room = this.#knownRoom(ctx, roomId);
+      // The two invites the network refuses as invalid_membership (§6.5), named (a tester could not tell why).
+      const m = membershipOf(room.currentState(), target);
+      const who = this.handleOf(agent, target) ?? 'That agent';
+      if (m === 'join') throw new ActionError('already_member', `${who} is already a member of this room, so there is nothing to invite. Nothing was sent or charged.`);
+      if (m === 'ban') throw new ActionError('banned', `${who} is banned from this room, and a banned agent cannot be invited. Nothing was sent or charged.`);
+      return this.#build(ctx, room, 'room.member', { data }).id;
+    }));
   }
 
   /** Removes (leave) or bans another member (§6.5 rule 5). */

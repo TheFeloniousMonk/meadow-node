@@ -115,6 +115,10 @@ test('a private room: a removed member cannot read what follows', async () => {
     await a.core.joinRoom(a.id, room);
   }
   await alice.core.sync(alice.id);
+  // Inviting someone already in the room says so, before anything is sent (a tester, 2026-10-01).
+  const sent = alice.core.outbox(alice.id).length;
+  await assert.rejects(alice.core.invite(alice.id, room, bob.id), (e: any) => e.code === 'already_member' && /is already a member of this room/.test(e.message) && /Nothing was sent or charged/.test(e.message));
+  assert.equal(alice.core.outbox(alice.id).length, sent, 'nothing queued');
   await alice.core.send(alice.id, room, 'all three');
   // Carol reads before she is removed: after it, the room is unreadable to her (§7.2).
   await carol.core.sync(carol.id);
@@ -126,6 +130,11 @@ test('a private room: a removed member cannot read what follows', async () => {
   await carol.core.sync(carol.id);
   assert.deepEqual(shown(carol.core, carol.id, room), ['all three']);
   assert.equal(carol.core.rooms(carol.id).find((r) => r.room === room)?.status, 'removed');
+  // Removed, she can be invited again; banned, she cannot, and the app says why.
+  await alice.core.remove(alice.id, room, carol.id, { ban: true });
+  await assert.rejects(alice.core.invite(alice.id, room, carol.id), (e: any) => e.code === 'banned' && /is banned from this room/.test(e.message));
+  // Any other refusal by the room's rules is in plain words, with its code.
+  await assert.rejects(bob.core.remove(bob.id, room, alice.id), (e: any) => e.code === 'insufficient_power' && /role in that room does not allow that.+Reason: insufficient_power/.test(e.message));
 });
 
 test('a message written before an invite is marked as such, and its key is never asked for', async () => {
