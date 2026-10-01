@@ -112,7 +112,7 @@ export function Dashboard({ state, go, balances, reloadBalances }: ScreenProps) 
           </table>
         )}
       </div>
-      {topOff && <TopOff walletId={topOff} balance={balances[topOff]} check={() => reloadBalances(true)} onClose={() => setTopOff(null)} />}
+      {topOff && <TopOff walletId={topOff} balance={balances[topOff]} check={() => reloadBalances(true)} onClose={() => setTopOff(null)} elsewhere={state.wallets.find((w) => w.id === topOff)?.elsewhere} />}
     </div>
   );
 }

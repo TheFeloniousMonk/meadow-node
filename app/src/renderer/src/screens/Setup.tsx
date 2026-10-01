@@ -4,6 +4,7 @@
 import type { AppState } from '../../../shared/api.ts';
 import type { ScreenProps } from '../App.tsx';
 import { MessageGuardOffer } from './Settings.tsx';
+import { UsdcExplainer } from './Wallets.tsx';
 
 export function checks(state: AppState, balances: Record<string, string | null>) {
   // Configured, not "recently used": the app cannot know Claude is running until Claude calls it.
@@ -52,6 +53,7 @@ export function Setup({ state, go, balances, refresh }: ScreenProps) {
               <div>
                 <h3>{s.title} {s.done ? <span className="pill ok">Done</span> : <span className="pill todo">To do</span>}</h3>
                 <p className="muted" style={{ margin: 0 }}>{s.text}</p>
+                {i === 0 && !s.done && <UsdcExplainer />}
               </div>
               {!s.done && <button onClick={s.action}>{s.button}</button>}
             </li>

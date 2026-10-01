@@ -204,6 +204,13 @@ th { color: var(--text-secondary); font-weight: 600; font-size: .9rem; }
 .status.warn { color: var(--warn-text); }
 .steps .status { flex: none; min-width: 7rem; }
 .status.info { color: var(--text-secondary); }
+/* Top off (§16.9.2): the three things to type at an exchange, labelled. */
+dl.deposit { display: grid; grid-template-columns: auto 1fr; gap: .45rem 1rem; margin: 0; flex: 1; min-width: 15rem; align-items: baseline; }
+dl.deposit dt { color: var(--text-secondary); font-size: .9rem; }
+dl.deposit dd { margin: 0; font-size: 1.05rem; }
+details.explainer { margin: .6rem 0; }
+details.explainer summary { cursor: pointer; color: var(--accent-text); font-weight: 600; }
+details.explainer ul { margin: .5rem 0 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: .35rem; }
 /* Troubleshoot (§16.21): mark, sentence, and its button on one line; the button drops below on a narrow window. */
 .steps.trouble li { flex-wrap: wrap; }
 .steps.trouble .what { flex: 1 1 18rem; }

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meadow v2 — getting USDC on Base</title>
+<meta name="description" content="How to put money in your Meadow wallet: what USDC and Base are, what to choose at an exchange, and what has worked in which countries.">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/v2/brand.css">
+<script>
+(function(){try{var k='meadow-theme',s=localStorage.getItem(k),t=s||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}window.__toggleTheme=function(){var d=document.documentElement,n=d.getAttribute('data-theme')==='dark'?'light':'dark';d.setAttribute('data-theme',n);try{localStorage.setItem('meadow-theme',n);}catch(e){}};})();
+</script>
+<style>
+  dl.deposit { display: grid; grid-template-columns: auto 1fr; gap: .4rem 1.25rem; margin: .75rem 0 0; }
+  dl.deposit dt { color: var(--text-secondary); }
+  dl.deposit dd { margin: 0; font-weight: 600; }
+  .checked { color: var(--text-secondary); font-size: .9rem; }
+</style>
+</head>
+<body>
+<header class="site"><div class="container bar">
+  <a class="brand" href="/"><img src="/favicon.svg" alt=""><span>meadow</span></a>
+  <nav class="nav-links">
+    <a href="/v2/">Protocol</a>
+    <a href="/v2/app">Get the app</a>
+    <a href="/v2/operators">Run a node</a>
+    <a href="/v2/openapi.json">API</a>
+    <a href="https://github.com/TheFeloniousMonk/meadow-node" data-opt>Source</a>
+  </nav>
+  <button class="theme-toggle" type="button" onclick="__toggleTheme()" aria-label="Toggle light and dark theme"><span class="sun">☀</span><span class="moon">☾</span></button>
+</div></header>
+
+<main class="container">
+  <h1>Getting USDC on Base</h1>
+  <p class="lede">Making a wallet in the Meadow app takes a minute. Putting money in it is the part that depends on where you live. This page says exactly what your wallet needs, and what has worked in which countries.</p>
+
+  <div class="callout">
+    <strong>What your wallet needs.</strong> At an exchange or in another wallet, choose exactly this:
+    <dl class="deposit">
+      <dt>Asset</dt><dd>USDC</dd>
+      <dt>Network</dt><dd>Base</dd>
+      <dt>Address</dt><dd>your wallet's address, from <em>Top off</em> in the Meadow app (copy it, or scan its QR code)</dd>
+    </dl>
+  </div>
+
+  <h2>What are USDC and Base?</h2>
+  <ul>
+    <li><strong>USDC</strong> is a digital dollar: one USDC is worth about one US dollar. Meadow's calls are paid in it, half a cent each at the time of writing (the app shows the current price).</li>
+    <li><strong>Base</strong> is the network USDC travels on for Meadow, like choosing which bank a transfer goes through. The same USDC exists on other networks too, so when you send it, you must choose Base.</li>
+    <li><strong>There is nothing to connect to.</strong> The app connects to Base by itself. "Base" matters only when you send money to your wallet: it is the network you pick.</li>
+    <li><strong>Your wallet</strong> is an address, a long code starting with <code>0x</code>. It is like an account number that only the app, and your recovery phrase, can spend from. You do not need any ETH.</li>
+  </ul>
+
+  <h2>Send a small amount first</h2>
+  <p>Send about $1 first. While <em>Top off</em> is open, the app checks the balance every 15 seconds and tells you when it arrives. Then send the rest.</p>
+  <ul>
+    <li>Choose <strong>USDC</strong>, then <strong>Base</strong> as the network. Some exchanges call it "Base Mainnet" or show the Base logo.</li>
+    <li>Do not choose <strong>USDbC</strong>: it is an older copy of USDC on Base, and the app does not use it.</li>
+    <li>No memo or tag is needed.</li>
+  </ul>
+
+  <h2>If you choose the wrong network</h2>
+  <p>The money is not lost if the network you chose uses the same kind of address as Base: Ethereum, Arbitrum, Optimism, Polygon, or BNB Smart Chain (sometimes shown as "BEP20"). Your recovery phrase controls the same address there, so the money is still yours. But the app can only use USDC on Base. It looks on those networks and tells you if it finds your money there. A later version is planned to move it to Base for you.</p>
+  <p>Networks with a different kind of address, such as Solana or Tron, will not accept your wallet's address, so an exchange should refuse to send there.</p>
+
+  <h2>Where to get it</h2>
+  <p>Look for an exchange or app <strong>available in your country</strong> that lets you <strong>withdraw USDC on the Base network</strong>. On 1 October 2026, Coinbase, Binance, OKX, Kraken, Bybit, and Crypto.com all listed "USDC (Base)" as a network for sending USDC. Which ones you can use, how you pay, and what they charge depend on your country and change over time. Check their own pages.</p>
+  <p>Or <strong>ask someone who already has USDC on Base</strong> to send it to your wallet's address. They can scan the QR code in <em>Top off</em>.</p>
+  <p>The app has no "buy" button. Every service that sells crypto inside an app needs that app's makers to run a server in the middle of the purchase. Meadow runs nothing between you and your money.</p>
+
+  <h2>By country</h2>
+  <p class="checked">Each entry says who confirmed it, and when. An entry more than six months old is marked as not checked recently. Tell us what works where you live (see the end of this page).</p>
+
+  <h3>Brazil</h3>
+  <ul>
+    <li><strong>What works:</strong> Pix → Coinbase → buy USDC (Coinbase sells USDC for reais, and takes Pix deposits) → send it, choosing the <strong>Base</strong> network, to your wallet's address.</li>
+    <li><strong>Watch for:</strong> the network. "Send USDC" alone is not enough: choose Base.</li>
+  </ul>
+  <p class="checked">Confirmed by a tester (the route), and by Coinbase's own pages (Pix, USDC for reais, Brazil listed for buying USDC), 1 October 2026.</p>
+
+  <h3>Chile</h3>
+  <ul>
+    <li><strong>Coinbase:</strong> Coinbase's own help page lists Chile among the countries where you can buy USDC with money. But a tester in Chile could not buy on their account. If Coinbase will not sell to you, try another exchange below.</li>
+    <li><strong>Binance:</strong> available from Chile, with card or peer-to-peer (P2P) purchases. Binance lists USDC on Base: check that its withdrawal screen offers Base for USDC before you buy.</li>
+    <li><strong>Buda.com</strong> sells USDC for pesos, but as far as its help pages say, it sends USDC only on Ethereum. USDC sent from Buda would arrive on Ethereum. It would still be yours, but the app cannot use it there yet.</li>
+  </ul>
+  <p class="checked">A tester, Coinbase's help page (USDC regions), and Buda's help pages, 1 October 2026. The Binance withdrawal network is not confirmed yet.</p>
+
+  <h2>Notices</h2>
+  <ul>
+    <li><strong>Bitget</strong> suspended USDC withdrawals on Base on 22 September 2026, for wallet maintenance, with no reopening date announced. Until it reopens, Bitget cannot send USDC on Base.</li>
+  </ul>
+
+  <h2>About this page</h2>
+  <p>Nothing here is a recommendation or financial advice. Meadow takes no fees or referral payments from any of these services, and these links carry none. Prices, fees, and rules change. What a service will do for you depends on your country and your account.</p>
+  <p>Tell us what works, or stopped working, where you live: open an issue on <a href="https://github.com/TheFeloniousMonk/meadow-node/issues">the project's GitHub</a> with your country, the service, and the steps. We add it after checking the service's own help pages.</p>
+</main>
+
+<footer class="site"><div class="container">
+  Meadow · <a href="https://github.com/TheFeloniousMonk/meadow-node">github.com/TheFeloniousMonk/meadow-node</a> · AGPL-3.0
+</div></footer>
+</body>
+</html>

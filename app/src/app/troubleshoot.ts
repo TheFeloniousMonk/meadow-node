@@ -107,6 +107,13 @@ export function troubleshoot(s: Services, claude: (agent: string) => ClaudeState
     else if (need && bal < need * BigInt(LOW_DAYS)) money.push(item(`balance:${w.id}`, 'Wallets', 'warn', `${w.name} has ${formatUsd(bal)}: less than ${LOW_DAYS} days of background syncing (about ${formatUsd(need)} a day).`, { action: topOff }));
     else money.push(item(`balance:${w.id}`, 'Wallets', 'ok', `${w.name}: ${formatUsd(bal)}${need ? `, about ${(bal / need).toString()} days of background syncing` : ''}.`));
 
+    const away = s.elsewhere.get(w.id)?.found ?? [];
+    if (away.length) {
+      const where = away.map((f) => `${f.usd} ${f.kind === 'usdbc' ? 'as USDbC on Base' : `on ${f.network}`}`).join(', ');
+      money.push(item(`elsewhere:${w.id}`, 'USDC on the wrong network', 'warn', `${w.name} holds ${where}. It is safe and yours, but the app can only use USDC on Base.`,
+        { fix: 'For your next deposit, choose USDC and the Base network.', action: topOff }));
+    }
+
     if (!price) continue;
     const b = s.wallets.budgetFor(w.id, price.atomic);
     const budget: TroubleAction = { label: 'Change the budget', go: 'wallets', open: 'budget', wallet: w.id };
@@ -200,7 +207,7 @@ export function troubleshoot(s: Services, claude: (agent: string) => ClaudeState
  * agent the address and the sign-in protection (2 requests each against a free ngrok
  * account's monthly limit). At most once a minute unless `again`. No paid call, no sync.
  */
-export async function runOutside(s: Services, { again = false, fetchImpl = fetch as typeof fetch, balanceOf = tokenBalance } = {}): Promise<boolean> {
+export async function runOutside(s: Services, { again = false, fetchImpl = fetch as typeof fetch, balanceOf = tokenBalance, elsewhereFetch = undefined as typeof fetch | undefined } = {}): Promise<boolean> {
   const out = s.outside;
   if (out.checking || (!again && out.at && Date.now() - out.at < OUTSIDE_EVERY_MS)) return false;
   out.checking = true;
@@ -209,11 +216,15 @@ export async function runOutside(s: Services, { again = false, fetchImpl = fetch
     const rail = s.catalog.baseRail('meadow');
     await Promise.all(s.wallets.list().map(async (w) => {
       try {
-        out.balances.set(w.id, rail ? await balanceOf(w.address, rail.tokenAddress) : null);
+        const amount = rail ? await balanceOf(w.address, rail.tokenAddress) : null;
+        out.balances.set(w.id, amount);
+        if (amount !== null) s.noteBalance(w.id, amount);
       } catch {
         out.balances.set(w.id, null);
       }
     }));
+    // USDC sent on the wrong network (§16.9.2), free reads, once a minute at most.
+    await s.checkElsewhere(elsewhereFetch ? { fetchImpl: elsewhereFetch } : {});
     const chatgpt = s.core.agents().filter((a) => (s.connections.get(a.id) as any)?.type === 'chatgpt');
     if (chatgpt.length && s.tunnel.url) {
       await s.tunnel.checkNow();

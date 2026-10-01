@@ -23,6 +23,8 @@ before(async () => {
 after(() => portal.close());
 
 const TUNNEL = 'https://meadow-trouble.example';
+/** The other networks' RPCs, unreachable here: the wrong-network finder reads nothing (it has its own tests). */
+const offline = (async () => { throw new TypeError('fetch failed'); }) as typeof fetch;
 const claudeOk = (): ClaudeState => ({ installed: true, upToDate: true, unreadable: false });
 
 async function computer(budget = '5.00') {
@@ -62,7 +64,7 @@ test('all working but one amber line: the verdict says everything works and coun
   assert.match(v.verdict.text, /^Everything is working\. One thing could use a look below\.$/);
   assert.equal(line('guard').state, 'info');
   assert.equal(line('login').state, 'info');
-  assert.equal(line('login').action && 'run' in line('login').action! && line('login').action!.run, 'startAtLogin');
+  assert.deepEqual(line('login').action, { label: 'Turn on', run: 'startAtLogin' });
   assert.match(line('balance:' + wallet).text, /^Everyday: \$20\.00, about \d+ days of background syncing\.$/);
   assert.equal(line('backup').state, 'info', 'never backed up, with nothing private, is a choice');
 });
@@ -161,7 +163,7 @@ test('a ChatGPT agent: tunnel off is red with Turn the tunnel on; with the tunne
     assert.equal(line('protection').state, 'info', 'not checked yet');
     const paid = portal.paid.length;
     let balanceReads = 0;
-    const ran = await runOutside(s, { fetchImpl: viaTunnel, balanceOf: async () => (balanceReads++, usdc('20')) });
+    const ran = await runOutside(s, { fetchImpl: viaTunnel, elsewhereFetch: offline, balanceOf: async () => (balanceReads++, usdc('20')) });
     assert.equal(ran, true);
     assert.equal(portal.paid.length, paid, 'no paid call');
     assert.equal(balanceReads, 1);
@@ -172,9 +174,9 @@ test('a ChatGPT agent: tunnel off is red with Turn the tunnel on; with the tunne
     assert.deepEqual(v.verdict.action, { label: 'Pair ChatGPT again', go: 'agents', open: 'chatgpt', agent: id });
 
     // At most once a minute, unless asked again.
-    assert.equal(await runOutside(s, { fetchImpl: viaTunnel, balanceOf: async () => (balanceReads++, 0n) }), false);
+    assert.equal(await runOutside(s, { fetchImpl: viaTunnel, elsewhereFetch: offline, balanceOf: async () => (balanceReads++, 0n) }), false);
     assert.equal(balanceReads, 1);
-    assert.equal(await runOutside(s, { again: true, fetchImpl: viaTunnel, balanceOf: async () => (balanceReads++, 0n) }), true);
+    assert.equal(await runOutside(s, { again: true, fetchImpl: viaTunnel, elsewhereFetch: offline, balanceOf: async () => (balanceReads++, 0n) }), true);
     assert.equal(balanceReads, 2);
     assert.equal(line('balance:' + wallet).state, 'bad');
   } finally {

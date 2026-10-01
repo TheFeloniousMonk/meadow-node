@@ -13,6 +13,7 @@ import { CHANNELS, linkAllowed, type Api, type AppState, type Channel, type Mess
 import type { Services } from './services.ts';
 import { connectionCheck, diagnosticsText, testConnection, type ClaudeState } from './check.ts';
 import { runOutside, troubleshoot } from './troubleshoot.ts';
+import { elsewhereSentence } from '../core/elsewhere.ts';
 import { WHO_WORDS, type ActivityKind } from '../core/activity.ts';
 import type { Note } from '../core/notes.ts';
 
@@ -144,7 +145,11 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
             unlistedNotice: a.registered && s.core.discoverable(a.id) !== true && !s.db.prepare('SELECT 1 FROM meta WHERE key = ?').get(`unlisted_notice_seen:${a.id}`),
           };
         }),
-        wallets: s.wallets.list().map((w) => ({ id: w.id, name: w.name, address: w.address, dailyBudgetUsd: w.dailyBudgetUsd, spent24hUsd: formatUsd(w.spent24h), agents: w.agents })),
+        wallets: s.wallets.list().map((w) => ({
+          id: w.id, name: w.name, address: w.address, dailyBudgetUsd: w.dailyBudgetUsd, spent24hUsd: formatUsd(w.spent24h), agents: w.agents,
+          // USDC on the wrong network (§16.9.2): safe, the person's, but not usable by the app.
+          elsewhere: (s.elsewhere.get(w.id)?.found ?? []).map((f) => ({ network: f.network, kind: f.kind, usd: f.usd, text: elsewhereSentence(f) })),
+        })),
         payments: s.wallets.payments(30).map((p) => ({ at: p.signed_at, service: p.service, path: p.path, usd: formatUsd(BigInt(p.amount)), agent: p.agent, status: p.status, tx: p.tx })),
         problems: s.core.problems().slice(-20).reverse(),
         pricePerCallUsd: price ? formatUsd(price.atomic, price.decimals) : null,
@@ -290,6 +295,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     setTunnel: undefined as any,
     restartTunnel: undefined as any,
     troubleshootRun: undefined as any,
+    checkElsewhere: undefined as any,
 
     enterChatgptCode({ agent, code }) {
       if (typeof agent !== 'string' || typeof code !== 'string' || code.length > 40) return { ok: false, error: 'Type the code the ChatGPT page shows.' };
@@ -452,6 +458,10 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     },
     restartTunnel: async () => s.restartTunnel(),
     troubleshootRun: async ({ again = false }: { again?: boolean } = {}) => ({ ran: await runOutside(s, { again }) }),
+    checkElsewhere: async ({ walletId, force = false }: { walletId?: string; force?: boolean } = {}) => {
+      await s.checkElsewhere({ ...(walletId && { wallet: walletId }), force });
+      return { ok: true };
+    },
     guardCheck: async ({ agent, message }) => {
       const r = await s.guard.checkOne(agent, message);
       return { verdict: r?.verdict ?? null, matches: r?.matches.map((m) => m.label) ?? [] };
@@ -557,7 +567,12 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
         const values: Record<string, string | null> = {};
         for (const w of s.wallets.list()) {
           try {
-            values[w.id] = rail ? formatUsd(await tokenBalance(w.address, rail.tokenAddress), rail.tokenDecimals) : null;
+            if (!rail) values[w.id] = null;
+            else {
+              const amount = await tokenBalance(w.address, rail.tokenAddress);
+              s.noteBalance(w.id, amount); // a rise is a deposit (§16.9.2)
+              values[w.id] = formatUsd(amount, rail.tokenDecimals);
+            }
           } catch {
             values[w.id] = null;
           }

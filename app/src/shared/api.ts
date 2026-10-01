@@ -148,6 +148,8 @@ export interface WalletView {
   dailyBudgetUsd: string;
   spent24hUsd: string;
   agents: string[];
+  /** USDC this wallet holds on another network, or as USDbC on Base (§16.9.2), with the sentence to show. */
+  elsewhere: { network: string; kind: 'usdc' | 'bridged' | 'usdbc'; usd: string; text: string }[];
 }
 
 export interface PaymentView {
@@ -325,6 +327,8 @@ export interface Api {
   restartTunnel(): { ok: boolean; text: string };
   /** Troubleshoot's outside checks (§16.21.4), at most once a minute unless `again`; free, never a paid call. */
   troubleshootRun(a?: { again?: boolean }): { ran: boolean };
+  /** Looks for USDC sent to a wallet on the wrong network (§16.9.2): free reads, at most once a minute unless `force`. */
+  checkElsewhere(a?: { walletId?: string; force?: boolean }): { ok: true };
   /** The code a ChatGPT sign-in page shows, typed on an agent's card (§16.7.2). */
   enterChatgptCode(a: { agent: string; code: string }): { ok: true; client: string } | { ok: false; error: string };
   revokeClient(a: { client: string; agent: string }): { ok: true };
@@ -337,7 +341,7 @@ export type Channel = keyof Api;
 export const CHANNELS: Channel[] = [
   'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'claudeRunning', 'installUpdate', 'disconnectClaude', 'localInterface', 'rotateToken',
   'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'movePlan', 'moveStart', 'moveStatus', 'setBudget', 'setDiscoverable', 'dismissUnlistedNotice', 'walletQr', 'syncNow', 'rooms', 'messages', 'setSettings',
-  'guardCheck', 'guardDecide', 'backup', 'backupChanges', 'setMay', 'setRoomSettings', 'testConnection', 'diagnosticsText', 'diagnosticsSave', 'activity', 'activitySave', 'notes', 'setAnchor', 'setNote', 'removeNote', 'keepNote', 'notesSeen', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'restartTunnel', 'troubleshootRun', 'enterChatgptCode', 'revokeClient', 'setRunner',
+  'guardCheck', 'guardDecide', 'backup', 'backupChanges', 'setMay', 'setRoomSettings', 'testConnection', 'diagnosticsText', 'diagnosticsSave', 'activity', 'activitySave', 'notes', 'setAnchor', 'setNote', 'removeNote', 'keepNote', 'notesSeen', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'restartTunnel', 'troubleshootRun', 'checkElsewhere', 'enterChatgptCode', 'revokeClient', 'setRunner',
   'copy', 'openExternal',
 ];
 

@@ -21,6 +21,21 @@ node has its own changelog at the repository root. App releases are tagged
   connection), with the first thing that blocks named at the top and a
   button that fixes it or opens the place that does. Checking is free. A
   red dot on Troubleshoot means something is not working.
+- Top off now shows exactly what to choose at an exchange (asset USDC,
+  network Base, your address), suggests sending about $1 first, and says
+  when it arrives. "What are USDC and Base?" explains both in plain words,
+  on the Wallets screen, in Top off, and in the setup checklist. Top off
+  links to a page of what has worked in which countries.
+- USDC sent to your wallet on the wrong network (Ethereum, Arbitrum,
+  Optimism, Polygon, or BNB Smart Chain), or as USDbC, is found and shown
+  on the wallet's card. It is not lost: the same recovery phrase controls
+  it there. The app cannot use it there yet.
+- A notification when USDC arrives in a wallet.
+
+### Changed
+
+- Top off no longer says that USDC sent on another network "would be
+  lost". On the networks above it is still yours.
 
 ### Fixed
 

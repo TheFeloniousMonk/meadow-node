@@ -7,7 +7,7 @@
 import type { Server } from 'node:http';
 import { openDb, type Db } from '../core/db.ts';
 import { Vault } from '../core/vault.ts';
-import { Catalog } from '../core/catalog.ts';
+import { Catalog, formatUsd } from '../core/catalog.ts';
 import { Wallets } from '../core/wallets.ts';
 import { Mover } from '../core/move.ts';
 import { PortalTransport } from '../core/portal.ts';
@@ -21,6 +21,7 @@ import { OAuth } from '../core/oauth.ts';
 import { Runner } from '../core/runner.ts';
 import { Tunnel } from './tunnel.ts';
 import { newOutside, type Outside } from './troubleshoot.ts';
+import { findElsewhere, type ElsewhereResult } from '../core/elsewhere.ts';
 import { Diagnostics, syncFailureClass } from '../core/diagnostics.ts';
 import { Activity } from '../core/activity.ts';
 import { Notes } from '../core/notes.ts';
@@ -84,6 +85,48 @@ export class Services {
   lastSync = new Map<string, number>();
   /** Troubleshoot's outside checks: their last results (§16.21.4). */
   readonly outside: Outside = newOutside();
+  /** USDC each wallet holds on another network or as USDbC (§16.9.2), by wallet. */
+  readonly elsewhere = new Map<string, ElsewhereResult>();
+  #elsewhereBusy = new Set<string>();
+  #notifyText: (title: string, body: string) => void;
+  #daily: NodeJS.Timeout | null = null;
+
+  /**
+   * Looks for each wallet's USDC on the wrong network (§16.9.2): at most once a minute per
+   * wallet unless `force`. Free reads; nothing signed.
+   */
+  async checkElsewhere({ wallet, force = false, fetchImpl }: { wallet?: string; force?: boolean; fetchImpl?: typeof fetch } = {}) {
+    const list = this.wallets.list().filter((w) => !wallet || w.id === wallet);
+    await Promise.all(list.map(async (w) => {
+      const last = this.elsewhere.get(w.id);
+      if (this.#elsewhereBusy.has(w.id) || (!force && last && Date.now() - last.at < 60_000)) return;
+      this.#elsewhereBusy.add(w.id);
+      try {
+        this.elsewhere.set(w.id, await findElsewhere(w.address, fetchImpl ? { fetchImpl } : {}));
+      } catch {
+        // Kept as it was: a failed look says nothing new.
+      } finally {
+        this.#elsewhereBusy.delete(w.id);
+      }
+    }));
+    this.#changed();
+  }
+
+  /**
+   * A balance read from Base (§16.9.2): a rise that the app's own moves between its wallets
+   * do not explain is a deposit, and raises a notification. The first read only remembers.
+   */
+  noteBalance(wallet: string, amount: bigint) {
+    const key = `balance_seen:${wallet}`;
+    const prev = (this.db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as any)?.value;
+    this.db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(key, amount.toString());
+    if (prev === undefined || amount <= BigInt(prev)) return;
+    const w = this.wallets.list().find((x) => x.id === wallet);
+    if (!w) return;
+    const moved = this.db.prepare('SELECT 1 FROM moves WHERE lower(to_address) = lower(?) AND at > ?').get(w.address, Date.now() - 6 * 3600 * 1000);
+    if (moved || !this.settings().notifications) return;
+    this.#notifyText(`${formatUsd(amount - BigInt(prev))} of USDC arrived in ${w.name}`, 'It is ready to pay for your agents\' calls.');
+  }
 
   /** Tells the window the state changed (for work done outside the services, such as Troubleshoot's checks). */
   changedNow() {
@@ -142,10 +185,13 @@ export class Services {
 
   readonly version: string;
 
-  constructor({ dbPath, masterKey, version, changed, catalog = new Catalog(), notify = () => {}, install = 'dev' }: {
-    dbPath: string; masterKey: Uint8Array; version: string; changed: () => void; catalog?: Catalog; notify?: Notify; install?: InstallKind;
+  constructor({ dbPath, masterKey, version, changed, catalog = new Catalog(), notify = () => {}, notifyText = () => {}, install = 'dev' }: {
+    dbPath: string; masterKey: Uint8Array; version: string; changed: () => void; catalog?: Catalog; notify?: Notify;
+    /** A plain system notification (a deposit arrived, §16.9.2). */
+    notifyText?: (title: string, body: string) => void; install?: InstallKind;
   }) {
     this.#notify = notify;
+    this.#notifyText = notifyText;
     this.#changed = changed;
     this.version = version;
     this.db = openDb(dbPath);
@@ -332,6 +378,12 @@ export class Services {
     if (this.#timer) clearInterval(this.#timer);
     this.#timer = null;
     const s = this.settings();
+    // Once a day, free: USDC sent to a wallet on the wrong network (§16.9.2); first a minute after start.
+    if (!this.#daily) {
+      setTimeout(() => void this.checkElsewhere().catch(() => {}), 60_000).unref();
+      this.#daily = setInterval(() => void this.checkElsewhere({ force: true }).catch(() => {}), 24 * 3600 * 1000);
+      this.#daily.unref();
+    }
     if (!s.syncEnabled) return;
     this.#timer = setInterval(() => void this.syncAll(), s.syncMinutes * 60_000);
   }
@@ -364,6 +416,7 @@ export class Services {
 
   stop() {
     if (this.#timer) clearInterval(this.#timer);
+    if (this.#daily) clearInterval(this.#daily);
     this.server?.close();
     this.publicServer?.close();
     void this.tunnel.stop();

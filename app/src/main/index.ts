@@ -162,6 +162,13 @@ function notify(_agent: string, name: string, count: number, held: number, prior
   show(`${name} on Meadow`, `${parts.join(', ')}.`);
 }
 
+/** A plain notification, such as a deposit arriving (§16.9.2); clicking it opens the window. */
+function notifyText(title: string, body: string) {
+  if (!Notification.isSupported()) return;
+  const n = new Notification({ title, body, icon: join(resources, 'icon.png') });
+  n.on('click', showWindow);
+  n.show();
+}
 
 const gotLock = screenshot ? true : app.requestSingleInstanceLock();
 if (!gotLock) app.quit();
@@ -171,7 +178,7 @@ else {
   app.whenReady().then(async () => {
     try {
       const dir = app.getPath('userData');
-      services = new Services({ dbPath: join(dir, 'meadow.db'), masterKey: masterKey(dir), version: app.getVersion(), changed, notify, install });
+      services = new Services({ dbPath: join(dir, 'meadow.db'), masterKey: masterKey(dir), version: app.getVersion(), changed, notify, notifyText, install });
     } catch (err) {
       console.error('Meadow could not start:', err);
       dialog.showErrorBox('Meadow could not start', err instanceof Error ? err.message : String(err));

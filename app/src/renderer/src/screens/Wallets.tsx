@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Dialog, meadow, time, useAction, useCopy } from '../lib.tsx';
 import type { ScreenProps } from '../App.tsx';
-import type { AppState, MovePlanView, MoveStateView } from '../../../shared/api.ts';
+import type { AppState, MovePlanView, MoveStateView, WalletView } from '../../../shared/api.ts';
 
 const USD = /^\d+(\.\d{1,6})?$/;
 
@@ -15,6 +15,10 @@ export function Wallets({ state, refresh, balances, balancesAt, reloadBalances, 
   const recheck = () => checking.run(() => reloadBalances(true));
   const copy = useCopy();
   const [dialog, setDialog] = useState<'create' | 'import' | { topOff: string } | { budget: string } | { remove: string } | { move: string } | null>(null);
+  // Opening the screen looks for USDC sent on the wrong network (§16.9.2): free, at most once a minute.
+  useEffect(() => {
+    void meadow.checkElsewhere({}).catch(() => {});
+  }, []);
   // Arriving from Troubleshoot (§16.21): open that wallet's Top off or budget.
   useEffect(() => {
     if (!intent) return;
@@ -29,7 +33,8 @@ export function Wallets({ state, refresh, balances, balancesAt, reloadBalances, 
   };
   return (
     <div className="stack">
-      <p className="lede">Wallets hold USDC on the Base network, which pays for your agents' calls. The app signs payments by itself, but never beyond a wallet's daily budget.</p>
+      <p className="lede">Wallets hold USDC, a digital dollar, on the Base network. Your agents' calls are paid from them. The app signs payments by itself, but never beyond a wallet's daily budget.</p>
+      <UsdcExplainer open={state.wallets.length === 0} />
       <div className="row">
         <button onClick={() => setDialog('create')}>Create wallet</button>
         <button className="secondary" onClick={() => setDialog('import')}>Import wallet</button>
@@ -66,6 +71,7 @@ export function Wallets({ state, refresh, balances, balancesAt, reloadBalances, 
                 <button className="secondary icon" onClick={() => copy(w.address, 'Address copied')}>Copy address</button>
               </div>
             </div>
+            {w.elsewhere.length > 0 && <div style={{ marginTop: '.75rem' }}><Elsewhere items={w.elsewhere} /></div>}
             <div className="row spread" style={{ marginTop: '.75rem' }}>
               <p className="small muted" style={{ margin: 0 }}>
                 Pays for: {w.agents.length ? w.agents.map((a) => agentName(a)).join(', ') : 'no agent yet'}
@@ -98,7 +104,7 @@ export function Wallets({ state, refresh, balances, balancesAt, reloadBalances, 
 
       {dialog === 'create' && <CreateWallet onClose={close} />}
       {dialog === 'import' && <ImportWallet onClose={close} />}
-      {dialog && typeof dialog === 'object' && 'topOff' in dialog && <TopOff walletId={dialog.topOff} balance={balances[dialog.topOff]} check={() => reloadBalances(true)} onClose={close} />}
+      {dialog && typeof dialog === 'object' && 'topOff' in dialog && <TopOff walletId={dialog.topOff} balance={balances[dialog.topOff]} check={() => reloadBalances(true)} onClose={close} elsewhere={state.wallets.find((w) => w.id === dialog.topOff)?.elsewhere} />}
       {dialog && typeof dialog === 'object' && 'budget' in dialog && (
         <Budget walletId={dialog.budget} current={state.wallets.find((w) => w.id === dialog.budget)!.dailyBudgetUsd} onClose={close} />
       )}
@@ -397,34 +403,105 @@ function MoveMoney({ wallet, others, onCreate, onDone, onClose }: {
   );
 }
 
-/** Top off (§16.9): the address as text with a copy button, and as a QR code. No outside wallet is connected. */
-/** The deposit address; while it is open, the balance is read every 15 seconds, so a deposit shows soon after it lands. */
-export function TopOff({ walletId, balance, check, onClose }: { walletId: string; balance: string | null | undefined; check: () => Promise<void>; onClose: () => void }) {
+/** Where to get USDC on Base, by country (§16.9.2): a page that changes without an app release. */
+export const GET_USDC_URL = 'https://meadowprotocol.com/v2/get-usdc';
+
+/**
+ * What are USDC and Base? (§16.9.2), in plain words: a tester had never used crypto
+ * and looked for a "Base network" to connect to. Folded unless `open`.
+ */
+export function UsdcExplainer({ open = false }: { open?: boolean }) {
+  return (
+    <details className="explainer" open={open}>
+      <summary>What are USDC and Base?</summary>
+      <ul>
+        <li><strong>USDC</strong> is a digital dollar: one USDC is worth about one US dollar. Meadow's calls are paid in it.</li>
+        <li><strong>Base</strong> is the network USDC travels on for Meadow, like choosing which bank a transfer goes through. The same USDC exists on other networks too, so when you send it, you must choose Base.</li>
+        <li><strong>There is nothing to connect to.</strong> The app connects to Base by itself. "Base" matters only when you send money to your wallet: it is the network you pick.</li>
+        <li><strong>Your wallet</strong> is an address, a long code starting with 0x. It is like an account number that only this app, and your recovery phrase, can spend from.</li>
+      </ul>
+    </details>
+  );
+}
+
+/** USDC that arrived on the wrong network (§16.9.2): safe, the person's, but not usable here. */
+export function Elsewhere({ items }: { items: WalletView['elsewhere'] | undefined }) {
+  if (!items?.length) return null;
+  return (
+    <div className="notice warn">
+      {items.map((f, i) => <p key={i} style={{ margin: i ? '.5rem 0 0' : 0 }}>{f.text}</p>)}
+      <p className="small" style={{ margin: '.5rem 0 0' }}>The app does not move money between networks yet. A later version is planned to move it to Base for you.</p>
+    </div>
+  );
+}
+
+const usd = (s: string | null | undefined) => (s ? Number(s.replace('$', '')) : null);
+
+/**
+ * Top off (§16.9, §16.9.2): exactly what to type at an exchange (asset, network, address),
+ * a small test amount first, and what happens if the network is wrong. While it is open the
+ * balance is read every 15 seconds and the other networks every minute, so a deposit, or one
+ * on the wrong network, shows soon after it lands. No outside wallet is connected.
+ */
+export function TopOff({ walletId, balance, check, onClose, elsewhere }: { walletId: string; balance: string | null | undefined; check: () => Promise<void>; onClose: () => void; elsewhere?: WalletView['elsewhere'] }) {
   const copy = useCopy();
   const [qr, setQr] = useState<{ svg: string; address: string } | null>(null);
+  // The balance when the dialog opened (once known), to say when the test amount arrives.
+  const [start, setStart] = useState<number | null>(null);
   useEffect(() => {
     meadow.walletQr({ walletId }).then(setQr).catch(() => {});
+    void meadow.checkElsewhere({ walletId }).catch(() => {});
   }, [walletId]);
+  useEffect(() => {
+    if (start === null && usd(balance) !== null) setStart(usd(balance));
+  }, [balance, start]);
   const latest = useRef(check);
   latest.current = check;
   useEffect(() => {
     const t = window.setInterval(() => void latest.current().catch(() => {}), 15_000);
-    return () => window.clearInterval(t);
-  }, []);
+    const e = window.setInterval(() => void meadow.checkElsewhere({ walletId }).catch(() => {}), 60_000);
+    return () => {
+      window.clearInterval(t);
+      window.clearInterval(e);
+    };
+  }, [walletId]);
+  const now = usd(balance);
+  const arrived = start !== null && now !== null && now > start ? now - start : null;
   return (
     <Dialog title="Top off" onClose={onClose}>
-      <p>Send <strong>USDC on the Base network</strong> to this address, from an exchange or another wallet. Nothing else: other coins, or USDC on another network, would be lost.</p>
-      {qr && (
-        <div className="row" style={{ alignItems: 'flex-start' }}>
-          <div className="qr" aria-label="QR code of the address" dangerouslySetInnerHTML={{ __html: qr.svg }} />
-          <div className="stack" style={{ flex: 1, minWidth: '14rem' }}>
-            <div className="mono" style={{ overflowWrap: 'anywhere', fontSize: '1.05rem' }}>{qr.address}</div>
-            <div><button onClick={() => copy(qr.address, 'Address copied')}>Copy address</button></div>
-            <p>Balance now: <strong>{balance ?? '…'}</strong> USDC</p>
-            <p className="small muted">No ETH is needed: payments are signed here and settled by the portal. While this window is open, the balance is checked every 15 seconds.</p>
-          </div>
-        </div>
+      <p>Send USDC to this wallet from an exchange or another wallet. Where it asks, choose exactly this:</p>
+      <div className="row" style={{ alignItems: 'flex-start' }}>
+        <dl className="deposit">
+          <dt>Asset</dt><dd><strong>USDC</strong></dd>
+          <dt>Network</dt><dd><strong>Base</strong></dd>
+          <dt>Address</dt>
+          <dd>
+            <span className="mono" style={{ overflowWrap: 'anywhere' }}>{qr?.address ?? '…'}</span>
+            {qr && <div><button onClick={() => copy(qr.address, 'Address copied')}>Copy address</button></div>}
+          </dd>
+        </dl>
+        {qr && <div className="qr" aria-label="QR code of the address" dangerouslySetInnerHTML={{ __html: qr.svg }} />}
+      </div>
+      {arrived !== null ? (
+        <div className="notice"><strong>Your ${arrived.toFixed(2)} arrived.</strong> Everything is set up correctly: you can send the rest now.</div>
+      ) : (
+        <div className="notice"><strong>Send a small amount first,</strong> about $1. When it arrives here, send the rest. Balance now: <strong>{balance ?? '…'}</strong></div>
       )}
+      <Elsewhere items={elsewhere} />
+      <details className="explainer">
+        <summary>What to pick at the exchange</summary>
+        <ul>
+          <li>Choose <strong>USDC</strong>, then <strong>Base</strong> as the network. Some exchanges call it "Base Mainnet" or show the Base logo.</li>
+          <li>Do not pick <strong>USDbC</strong>: it is an older copy of USDC on Base, and the app does not use it.</li>
+          <li>No memo or tag is needed.</li>
+          <li>If you pick another network by mistake, the money is not lost, but the app cannot use it there. The app will tell you if it finds it. Networks with a different kind of address, such as Solana or Tron, will not accept this address.</li>
+        </ul>
+      </details>
+      <UsdcExplainer />
+      <p>
+        <button className="link" onClick={() => void meadow.openExternal({ url: GET_USDC_URL })}>Where to get USDC on Base</button>, by country. Or ask someone who already has USDC on Base to send it to this address: they can scan the QR code.
+      </p>
+      <p className="small muted">No ETH is needed: payments are signed here and settled by the portal. While this window is open, the balance is checked every 15 seconds.</p>
       <div className="actions"><button className="secondary" onClick={onClose}>Done</button></div>
     </Dialog>
   );
