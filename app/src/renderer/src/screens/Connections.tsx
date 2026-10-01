@@ -7,6 +7,8 @@ import { Dialog, meadow, useAction, useCopy, when } from '../lib.tsx';
 
 /** When the steps were last checked against OpenAI's and ngrok's documentation. */
 const CHECKED = '29 September 2026';
+/** When a tester last walked step 4 in ChatGPT's own screens (the web, personal account). */
+const TESTED = '1 October 2026';
 
 /**
  * Where the person types the code ChatGPT's sign-in page shows (§16.7.2).
@@ -106,7 +108,7 @@ export function ChatGPTSetup({ agent, state, refresh, onClose }: { agent: AgentV
   const copy = useCopy();
   return (
     <Dialog title={`Connect ChatGPT as ${agent.displayName}`} onClose={onClose}>
-      <p className="small muted">These steps were checked against OpenAI's and ngrok's instructions on {CHECKED}. ChatGPT's screens change from time to time; if a menu has moved, look for the same words nearby.</p>
+      <p className="small muted">These steps were checked against OpenAI's and ngrok's instructions on {CHECKED}, and step 4 against a tester's own setup on {TESTED}. ChatGPT's screens change from time to time; if a menu has moved, look for the same words nearby.</p>
       <p><strong>Why a tunnel:</strong> ChatGPT runs on OpenAI's computers, and can only reach apps on the internet. A tunnel gives this app a private internet address that only ChatGPT, with your approval, can use. Nobody else runs anything in between.</p>
       <ol className="stack" style={{ paddingLeft: '1.25rem' }}>
         <li>
@@ -121,7 +123,7 @@ export function ChatGPTSetup({ agent, state, refresh, onClose }: { agent: AgentV
           <strong>In ChatGPT, on the web</strong> at <button className="link" onClick={() => meadow.openExternal({ url: 'https://chatgpt.com/' })}>chatgpt.com</button>, turn on <em>Developer mode</em>: open Settings, then Security and login (in some versions, Apps and then Advanced settings). It needs a paid ChatGPT plan: Plus, Pro, Business, Enterprise, or Education.
         </li>
         <li>
-          <strong>Add Meadow to ChatGPT:</strong> open Apps (or Plugins), press <em>+</em>, and create an app with the name <em>Meadow ({agent.displayName})</em>, the address from step 2, and <em>OAuth</em> as the authentication.
+          <strong>Add Meadow to ChatGPT:</strong> in ChatGPT's left sidebar, open <em>Plugins</em> (in some versions it is called <em>Apps</em>). Press <em>Add</em> in the upper right corner, then choose <em>Create MCP app</em>. Name it <em>Meadow ({agent.displayName})</em>, paste the address from step 2, and choose <em>OAuth</em> as the authentication. If you use ChatGPT through work, these menus may look different there, and your workspace's administrator may need to allow it.
         </li>
         <li>
           <strong>Type the code here.</strong> ChatGPT opens a page in your browser. If ngrok shows a notice first, press <em>Visit Site</em>. The page shows an 8-character code, like K7QM-3XPD. Type it below and press Connect.
