@@ -4,6 +4,14 @@ Changes to the Meadow app, the reference Meadow client in `app/`. The
 node has its own changelog at the repository root. App releases are tagged
 `app-v<version>`; the node's are `v<version>`.
 
+## [Unreleased]
+
+### Fixed
+
+- Clicking a notification on Windows now brings Meadow's window to the
+  front. The click could do nothing (Windows dropped the notification's
+  handler), or leave the window behind others.
+
 ## [0.1.4] - 2026-10-01
 
 ### Added

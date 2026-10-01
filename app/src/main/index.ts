@@ -111,7 +111,7 @@ async function createWindow(): Promise<BrowserWindow> {
     w.hide();
     const told = services!.db.prepare("SELECT 1 FROM meta WHERE key = 'told_tray'").get();
     if (!told && Notification.isSupported()) {
-      new Notification({ title: 'Meadow is still running', body: 'It keeps receiving messages in the background. Open or quit it from its icon near the clock.', icon: join(resources, 'icon.png') }).show();
+      toast('Meadow is still running', 'It keeps receiving messages in the background. Open or quit it from its icon near the clock.');
       services!.db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('told_tray', '1')").run();
     }
   });
@@ -126,7 +126,36 @@ function showWindow() {
   if (!win) return;
   if (win.isMinimized()) win.restore();
   win.show();
-  win.focus();
+  // Windows lets an app in the background only flash its taskbar button; a moment on top
+  // brings the window forward (a tester clicked a notification and the app stayed behind).
+  if (process.platform === 'win32') {
+    win.setAlwaysOnTop(true);
+    win.focus();
+    win.setAlwaysOnTop(false);
+  } else {
+    win.focus();
+  }
+  if (process.platform === 'darwin') app.focus({ steal: true });
+}
+
+/**
+ * Notifications still on screen or in the notification centre. A Notification that is
+ * garbage-collected loses its click handler on Windows, so clicking it did nothing; each is
+ * kept until it is clicked or closed, and only the newest 50.
+ */
+const shown = new Set<Notification>();
+function toast(title: string, body: string) {
+  if (!Notification.isSupported()) return;
+  const n = new Notification({ title, body, icon: join(resources, 'icon.png') });
+  const drop = () => shown.delete(n);
+  n.on('click', () => {
+    drop();
+    showWindow();
+  });
+  n.on('close', drop);
+  shown.add(n);
+  if (shown.size > 50) shown.delete(shown.values().next().value!);
+  n.show();
 }
 
 function createTray() {
@@ -148,11 +177,7 @@ function createTray() {
 // room gets its own, naming it, even then; muted rooms raise none (§16.10.2).
 function notify(_agent: string, name: string, count: number, held: number, priority: { room: string; title: string; count: number }[] = [], mentions?: MentionNote) {
   if (!Notification.isSupported()) return;
-  const show = (title: string, body: string) => {
-    const n = new Notification({ title, body, icon: join(resources, 'icon.png') });
-    n.on('click', showWindow);
-    n.show();
-  };
+  const show = toast;
   // Mentions: their own notifications, in every room, even with the window in front (§16.20.3).
   for (const m of mentions?.rooms ?? []) show(`${name} was mentioned in ${m.title}`, `${m.by} mentioned ${name}${m.count > 1 ? `, with ${m.count} mentions there` : ''}.`);
   if (mentions?.more) show(`${name} was mentioned in ${mentions.more} more room${mentions.more === 1 ? '' : 's'}`, 'Open the Inbox to see where.');
@@ -164,10 +189,7 @@ function notify(_agent: string, name: string, count: number, held: number, prior
 
 /** A plain notification, such as a deposit arriving (§16.9.2); clicking it opens the window. */
 function notifyText(title: string, body: string) {
-  if (!Notification.isSupported()) return;
-  const n = new Notification({ title, body, icon: join(resources, 'icon.png') });
-  n.on('click', showWindow);
-  n.show();
+  toast(title, body);
 }
 
 const gotLock = screenshot ? true : app.requestSingleInstanceLock();
