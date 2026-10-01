@@ -10,6 +10,7 @@ import { Vault } from '../core/vault.ts';
 import { Catalog, formatUsd } from '../core/catalog.ts';
 import { Wallets } from '../core/wallets.ts';
 import { Mover } from '../core/move.ts';
+import { Bridger } from '../core/bridge.ts';
 import { PortalTransport } from '../core/portal.ts';
 import { Core } from '../core/core.ts';
 import { Connections } from '../core/connections.ts';
@@ -65,6 +66,8 @@ export class Services {
   readonly catalog: Catalog;
   readonly wallets: Wallets;
   readonly mover: Mover;
+  /** Move to Base (§16.9.3). */
+  readonly bridger: Bridger;
   readonly core: Core;
   readonly connections: Connections;
   readonly tools: ToolHost;
@@ -199,6 +202,7 @@ export class Services {
     this.catalog = catalog;
     this.wallets = new Wallets({ db: this.db, vault: this.vault, catalog: this.catalog });
     this.mover = new Mover({ wallets: this.wallets, db: this.db });
+    this.bridger = new Bridger({ wallets: this.wallets, db: this.db, mover: this.mover });
     this.transport = new PortalTransport({ catalog: this.catalog, wallets: this.wallets });
     const guardSettings = () => {
       const s = this.settings();

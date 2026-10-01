@@ -115,6 +115,13 @@ export function signDigest(privateKey: Uint8Array, digest: Uint8Array): Hex {
   return `0x${hex(sig.subarray(1, 65))}${(27 + sig[0]).toString(16)}` as Hex;
 }
 
+const RECEIVE_TYPE = keccak_256(utf8('ReceiveWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)'));
+
+/** EIP-3009 ReceiveWithAuthorization: like a transfer authorization, but only `to` can use it (Move to Base, §16.9.3). */
+export function receiveDigest(domain: Domain, a: Authorization): Uint8Array {
+  return typedDigest(domain, keccak_256(concat(RECEIVE_TYPE, address(a.from), address(a.to), uint(a.value), uint(a.validAfter), uint(a.validBefore), bytes32(a.nonce))));
+}
+
 export function signTransfer(privateKey: Uint8Array, domain: Domain, a: Authorization): Hex {
   return signDigest(privateKey, transferDigest(domain, a));
 }
@@ -215,6 +222,11 @@ export function signTx1559(privateKey: Uint8Array, t: Tx1559): { raw: Hex; hash:
 /** Call data of the ERC-20 `transfer(to, amount)`. */
 export function erc20TransferData(to: Hex, amount: bigint): Hex {
   return `0xa9059cbb${hex(concat(address(to), uint(amount)))}` as Hex;
+}
+
+/** Call data of the ERC-20 `approve(spender, amount)`. */
+export function erc20ApproveData(spender: Hex, amount: bigint): Hex {
+  return `0x095ea7b3${hex(concat(address(spender), uint(amount)))}` as Hex;
 }
 
 /** Whether `a` is a well-formed address; mixed case must carry a valid EIP-55 checksum. */

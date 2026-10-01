@@ -149,7 +149,7 @@ export interface WalletView {
   spent24hUsd: string;
   agents: string[];
   /** USDC this wallet holds on another network, or as USDbC on Base (§16.9.2), with the sentence to show. */
-  elsewhere: { network: string; kind: 'usdc' | 'bridged' | 'usdbc'; usd: string; text: string }[];
+  elsewhere: { network: string; kind: 'usdc' | 'bridged' | 'usdbc'; usd: string; text: string; movable: boolean }[];
 }
 
 export interface PaymentView {
@@ -244,6 +244,28 @@ export interface MoveStateView {
   error?: string;
 }
 
+/** Move to Base (§16.9.3): what moving one find would do now. */
+export interface BridgePlanView {
+  network: string;
+  kind: 'usdc' | 'usdbc';
+  route: 'relay' | 'cow';
+  amountUsd: string;
+  feeUsd: string;
+  arrivesUsd: string;
+  high: boolean;
+  gasFromUsdc: boolean;
+}
+
+export interface BridgeStateView {
+  step: 'checking' | 'buying_gas' | 'approving' | 'signing' | 'moving' | 'done' | 'refunded' | 'failed' | 'unknown';
+  network: string;
+  kind: string;
+  amount?: string;
+  arrived?: string;
+  requestId?: string;
+  error?: string;
+}
+
 /** Everything the window may ask, and what each returns. */
 export interface Api {
   state(): AppState;
@@ -283,6 +305,12 @@ export interface Api {
   moveStart(a: { walletId: string; to: string; confirm: string }): { ok: true } | { ok: false; error: string };
   /** The wallet's move in progress or just finished, or null. */
   moveStatus(a: { walletId: string }): MoveStateView | null;
+  /** Move to Base (§16.9.3): a quote checked by the guard; nothing signed. */
+  bridgePlan(a: { walletId: string; network: string; kind: string }): BridgePlanView;
+  /** Starts the move after a system dialog; only the window can. */
+  bridgeStart(a: { walletId: string; network: string; kind: string }): { ok: true } | { ok: false; error: string };
+  /** The wallet's moves to Base in progress or just finished. */
+  bridgeStatus(a: { walletId: string }): BridgeStateView[];
   walletQr(a: { walletId: string }): { svg: string; address: string };
   syncNow(a: { agent: string }): { ok: boolean; message: string };
   rooms(a: { agent: string }): RoomView[];
@@ -340,7 +368,7 @@ export interface Api {
 export type Channel = keyof Api;
 export const CHANNELS: Channel[] = [
   'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'claudeRunning', 'installUpdate', 'disconnectClaude', 'localInterface', 'rotateToken',
-  'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'movePlan', 'moveStart', 'moveStatus', 'setBudget', 'setDiscoverable', 'dismissUnlistedNotice', 'walletQr', 'syncNow', 'rooms', 'messages', 'setSettings',
+  'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'movePlan', 'moveStart', 'moveStatus', 'bridgePlan', 'bridgeStart', 'bridgeStatus', 'setBudget', 'setDiscoverable', 'dismissUnlistedNotice', 'walletQr', 'syncNow', 'rooms', 'messages', 'setSettings',
   'guardCheck', 'guardDecide', 'backup', 'backupChanges', 'setMay', 'setRoomSettings', 'testConnection', 'diagnosticsText', 'diagnosticsSave', 'activity', 'activitySave', 'notes', 'setAnchor', 'setNote', 'removeNote', 'keepNote', 'notesSeen', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'restartTunnel', 'troubleshootRun', 'checkElsewhere', 'enterChatgptCode', 'revokeClient', 'setRunner',
   'copy', 'openExternal',
 ];

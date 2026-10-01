@@ -9,11 +9,12 @@ import { dirname } from 'node:path';
 import { backupChanges, backupDue, describeBackup, makeBackup, readBackup, restoreBackup } from '../core/backup.ts';
 import { tokenBalance } from '../core/balance.ts';
 import { add, bridgeEntry, claudeDesktopConfigPath, claudeDesktopRunning, entryName, remove, status } from '../server/claude-desktop.ts';
-import { CHANNELS, linkAllowed, type Api, type AppState, type Channel, type MessageView, type MovePlanView, type MoveStateView, type NoteView } from '../shared/api.ts';
+import { CHANNELS, linkAllowed, type Api, type AppState, type BridgePlanView, type BridgeStateView, type Channel, type MessageView, type MovePlanView, type MoveStateView, type NoteView } from '../shared/api.ts';
 import type { Services } from './services.ts';
 import { connectionCheck, diagnosticsText, testConnection, type ClaudeState } from './check.ts';
 import { runOutside, troubleshoot } from './troubleshoot.ts';
 import { elsewhereSentence } from '../core/elsewhere.ts';
+import { movable } from '../core/bridge.ts';
 import { WHO_WORDS, type ActivityKind } from '../core/activity.ts';
 import type { Note } from '../core/notes.ts';
 
@@ -65,6 +66,8 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
   let balanceCache: { at: number; values: Record<string, string | null> } | null = null;
   // Each wallet's move in progress or last finished (§16.9.1), for the window to follow.
   const moves = new Map<string, MoveStateView>();
+  // Each Move to Base in progress or last finished (§16.9.3), by wallet, network, and kind.
+  const bridges = new Map<string, BridgeStateView>();
   const moveTarget = (walletId: string, to: string) => {
     const other = s.wallets.list().find((w) => w.id === to && w.id !== walletId);
     return other ? { address: other.address, name: other.name } : { address: s.mover.destination(walletId, to), name: null };
@@ -148,7 +151,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
         wallets: s.wallets.list().map((w) => ({
           id: w.id, name: w.name, address: w.address, dailyBudgetUsd: w.dailyBudgetUsd, spent24hUsd: formatUsd(w.spent24h), agents: w.agents,
           // USDC on the wrong network (§16.9.2): safe, the person's, but not usable by the app.
-          elsewhere: (s.elsewhere.get(w.id)?.found ?? []).map((f) => ({ network: f.network, kind: f.kind, usd: f.usd, text: elsewhereSentence(f) })),
+          elsewhere: (s.elsewhere.get(w.id)?.found ?? []).map((f) => ({ network: f.network, kind: f.kind, usd: f.usd, text: elsewhereSentence(f), movable: !!movable(f.network, f.kind) })),
         })),
         payments: s.wallets.payments(30).map((p) => ({ at: p.signed_at, service: p.service, path: p.path, usd: formatUsd(BigInt(p.amount)), agent: p.agent, status: p.status, tx: p.tx })),
         problems: s.core.problems().slice(-20).reverse(),
@@ -236,6 +239,9 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     movePlan: undefined as any, // async, below
     moveStart: undefined as any, // async, below
     moveStatus: undefined as any, // async, below
+    bridgePlan: undefined as any, // async, below
+    bridgeStart: undefined as any, // async, below
+    bridgeStatus: undefined as any, // async, below
 
     walletQr: undefined as any, // async, below
 
@@ -542,6 +548,37 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       return { ok: true };
     },
     moveStatus: async ({ walletId }) => moves.get(walletId) ?? null,
+    // Move to Base (§16.9.3): a find on another network, or USDbC, to this same wallet's Base USDC.
+    bridgePlan: async ({ walletId, network, kind }): Promise<BridgePlanView> => {
+      const p = await s.bridger.plan(walletId, network, kind);
+      return { network: p.network, kind: p.kind, route: p.route, amountUsd: p.amountUsd, feeUsd: p.feeUsd, arrivesUsd: p.arrivesUsd, high: p.high, gasFromUsdc: p.gasFromUsdc };
+    },
+    bridgeStart: async ({ walletId, network, kind }) => {
+      const key = `${walletId}|${network}|${kind}`;
+      const now = bridges.get(key);
+      if (now && !['done', 'refunded', 'failed', 'unknown'].includes(now.step)) return { ok: false, error: 'This move is already under way.' };
+      const p = await s.bridger.plan(walletId, network, kind);
+      const w = s.wallets.list().find((x) => x.id === walletId)!;
+      const what = kind === 'usdbc' ? `${p.amountUsd} of USDbC` : `${p.amountUsd} of USDC from ${network}`;
+      const yes = await env.confirmMove({
+        message: `Move ${what} to Base, in ${w.name}?`,
+        detail: `At least ${p.arrivesUsd} arrives as USDC on Base, in this same wallet. ${p.route === 'relay' ? 'Relay' : 'CoW Protocol'} takes about ${p.feeUsd}.\n\n`
+          + (p.route === 'relay' ? `Relay, a third-party bridge, carries it. If the move fails, Relay refunds it to this wallet on ${network}, less that network's fee.`
+            : `The app first approves the swap on Base${p.gasFromUsdc ? ', paying its network fee with a little of this wallet\'s USDC' : ''}, then CoW Protocol swaps the USDbC for USDC.`),
+      });
+      if (!yes) return { ok: false, error: 'Nothing moved.' };
+      bridges.set(key, { step: 'checking', network, kind });
+      void s.bridger.run(walletId, network, kind, (st) => {
+        bridges.set(key, st);
+        if (['done', 'refunded', 'failed', 'unknown'].includes(st.step)) {
+          balanceCache = null;
+          void s.checkElsewhere({ wallet: walletId, force: true });
+        }
+        s.changedNow();
+      });
+      return { ok: true };
+    },
+    bridgeStatus: async ({ walletId }) => [...bridges].filter(([k]) => k.startsWith(`${walletId}|`)).map(([, v]) => v),
     // Findable by name (§16.6): a profile change, one paid call, with the answer in plain words.
     setDiscoverable: async ({ agent, on }) => {
       try {

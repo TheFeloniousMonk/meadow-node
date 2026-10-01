@@ -53,6 +53,14 @@ CREATE TABLE IF NOT EXISTS moves (
   status TEXT NOT NULL, error TEXT, at INTEGER NOT NULL
 );
 
+-- Moves to Base from another network or from USDbC (§16.9.3): Relay's request ID or CoW's order.
+CREATE TABLE IF NOT EXISTS bridges (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  wallet TEXT NOT NULL, network TEXT NOT NULL, kind TEXT NOT NULL,
+  amount TEXT, arrived TEXT, request_id TEXT,
+  status TEXT NOT NULL, error TEXT, at INTEGER NOT NULL
+);
+
 -- The agent's own chain events, as signed.
 CREATE TABLE IF NOT EXISTS own_chain (
   agent TEXT NOT NULL, id TEXT NOT NULL, event TEXT NOT NULL, seq INTEGER NOT NULL,

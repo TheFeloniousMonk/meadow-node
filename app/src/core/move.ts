@@ -146,26 +146,20 @@ export class Mover {
       if (usdc === 0n) refuse('This wallet is empty: there is nothing to move.');
       let need = await this.#transferCost(from, dest, usdc);
       if ((await ethBalance(from, this.#rpc)) < need) {
-        const { uid, sell } = await this.#openSwap(from) ?? await this.#placeSwap(wallet, from, usdc, need);
-        record({ step: 'swapping', to: dest, swapOrder: uid });
-        this.#db.prepare('UPDATE moves SET swap_order = ?, swap_sell = ? WHERE seq = ?').run(uid, formatUsd(sell), seq);
-        await this.#waitForSwap(uid);
-        // The swap is settled; wait for the node we read from to show the ETH.
-        for (let i = 0; i < 30 && (await ethBalance(from, this.#rpc)) < need; i++) await this.#sleep(2000);
+        await this.ensureEth(wallet, from, need, (uid, sell) => {
+          record({ step: 'swapping', to: dest, swapOrder: uid });
+          this.#db.prepare('UPDATE moves SET swap_order = ?, swap_sell = ? WHERE seq = ?').run(uid, formatUsd(sell), seq);
+        });
         usdc = await tokenBalance(from, USDC.address, this.#rpc);
         need = await this.#transferCost(from, dest, usdc);
         if ((await ethBalance(from, this.#rpc)) < need) refuse('The swap settled, but the wallet still has too little ETH for the fee. Network fees may have jumped; try again in a few minutes.');
       }
       const amount = formatUsd(usdc);
       record({ step: 'sending', to: dest, amount });
-      const tx = await this.#send(wallet, from, dest, usdc);
-      for (let i = 0; i < 45; i++) {
-        const receipt = await rpcCall('eth_getTransactionReceipt', [tx], this.#rpc).catch(() => null);
-        if (receipt?.status === '0x1') return record({ step: 'done', to: dest, amount, tx });
-        if (receipt?.status === '0x0') refuse('Base did not accept the transfer. No USDC moved; the fee was spent. Try again.');
-        await this.#sleep(2000);
-      }
-      return record({ step: 'sent', to: dest, amount, tx });
+      const tx = await this.sendCall(wallet, from, USDC.address, erc20TransferData(dest, usdc));
+      const ok = await this.waitReceipt(tx);
+      if (ok === false) refuse('Base did not accept the transfer. No USDC moved; the fee was spent. Try again.');
+      return record({ step: ok ? 'done' : 'sent', to: dest, amount, tx });
     } catch (err) {
       const error = err instanceof MoveError ? err.message : `The move stopped: ${err instanceof Error ? err.message : String(err)}`;
       return record({ step: 'failed', to: dest, error });
@@ -174,25 +168,30 @@ export class Mover {
 
   /** The most a USDC transfer can cost now, in wei: gas at twice today's base fee, plus Base's L1 fee, with room. */
   async #transferCost(from: Hex, to: Hex, amount: bigint): Promise<bigint> {
-    const t = await this.#txFor(from, to, amount);
+    return this.callCost(from, USDC.address, erc20TransferData(to, amount));
+  }
+
+  /** The most a call on Base can cost now, in wei (also for Move to Base's approval, §16.9.3). */
+  async callCost(from: Hex, target: Hex, data: Hex): Promise<bigint> {
+    const t = await this.#txFor(from, target, data);
     const l1 = await callUint(GAS_ORACLE, l1FeeCall(signTx1559(this.#probeKey, t).raw), this.#rpc);
     return t.gas * t.maxFeePerGas + l1 * 2n;
   }
 
-  async #txFor(from: Hex, to: Hex, amount: bigint): Promise<Tx1559> {
-    const data = erc20TransferData(to, amount);
+  async #txFor(from: Hex, target: Hex, data: Hex): Promise<Tx1559> {
     const [block, tip, nonce, estimate] = await Promise.all([
       rpcCall('eth_getBlockByNumber', ['latest', false], this.#rpc),
       rpcCall('eth_maxPriorityFeePerGas', [], this.#rpc).then(rpcQuantity),
       rpcCall('eth_getTransactionCount', [from, 'pending'], this.#rpc).then(rpcQuantity),
-      rpcCall('eth_estimateGas', [{ from, to: USDC.address, data }], this.#rpc).then(rpcQuantity).catch(() => 90_000n),
+      rpcCall('eth_estimateGas', [{ from, to: target, data }], this.#rpc).then(rpcQuantity).catch(() => 90_000n),
     ]);
     const base = rpcQuantity(block?.baseFeePerGas);
-    return { chainId: BASE.chainId, nonce, maxPriorityFeePerGas: tip, maxFeePerGas: base * 2n + tip, gas: (estimate * 13n) / 10n, to: USDC.address, value: 0n, data };
+    return { chainId: BASE.chainId, nonce, maxPriorityFeePerGas: tip, maxFeePerGas: base * 2n + tip, gas: (estimate * 13n) / 10n, to: target, value: 0n, data };
   }
 
-  async #send(wallet: string, from: Hex, to: Hex, amount: bigint): Promise<Hex> {
-    const t = await this.#txFor(from, to, amount);
+  /** Signs and sends one call on Base from the wallet; the core's own calls only. */
+  async sendCall(wallet: string, from: Hex, target: Hex, data: Hex): Promise<Hex> {
+    const t = await this.#txFor(from, target, data);
     const { raw, hash } = this.#wallets.signWith(wallet, (key, address) => {
       if (!sameAddress(address, from)) throw new Error('wallet changed');
       return signTx1559(key, t);
@@ -200,6 +199,36 @@ export class Mover {
     const sent = await rpcCall('eth_sendRawTransaction', [raw], this.#rpc);
     if (typeof sent === 'string' && sent.toLowerCase() !== hash.toLowerCase()) throw new Error('the Base RPC reported a different transaction');
     return hash;
+  }
+
+  /** Waits up to 90 s for a transaction: true in a block, false refused by Base, null not seen yet. */
+  async waitReceipt(tx: Hex): Promise<boolean | null> {
+    for (let i = 0; i < 45; i++) {
+      const receipt = await rpcCall('eth_getTransactionReceipt', [tx], this.#rpc).catch(() => null);
+      if (receipt?.status === '0x1') return true;
+      if (receipt?.status === '0x0') return false;
+      await this.#sleep(2000);
+    }
+    return null;
+  }
+
+  /**
+   * Makes sure the wallet holds `need` wei for a fee, by selling a little of its Base USDC for
+   * ETH through CoW (or waiting on such a swap already open). `onSwap` hears the order.
+   */
+  async ensureEth(wallet: string, from: Hex, need: bigint, onSwap: (uid: string, sell: bigint) => void = () => {}) {
+    if ((await ethBalance(from, this.#rpc)) >= need) return;
+    const usdc = await tokenBalance(from, USDC.address, this.#rpc);
+    const { uid, sell } = await this.#openSwap(from) ?? await this.#placeSwap(wallet, from, usdc, need);
+    onSwap(uid, sell);
+    await this.#waitForSwap(uid);
+    // The swap is settled; wait for the node we read from to show the ETH.
+    for (let i = 0; i < 30 && (await ethBalance(from, this.#rpc)) < need; i++) await this.#sleep(2000);
+  }
+
+  /** CoW Protocol's API on Base, for Move to Base's USDbC swap (§16.9.3). */
+  cow(path: string, init?: RequestInit): Promise<any> {
+    return this.#cow(path, init);
   }
 
   // --- The swap for gas, through CoW Protocol ---------------------------------------

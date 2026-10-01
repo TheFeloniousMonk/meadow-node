@@ -11,6 +11,8 @@
 //   node scripts/paid-call.ts phrase     prints the recovery phrase: run it yourself, to move leftover funds
 //   node scripts/paid-call.ts move-plan  makes the next test wallet if needed; shows what moving to it would do
 //   node scripts/paid-call.ts move       moves everything to it with the app's Mover (SPEC §16.9.1); it becomes the test wallet
+//   node scripts/paid-call.ts bridge-plan <network> [usdc|usdbc]  what Move to Base (§16.9.3) would do; a quote, nothing signed
+//   node scripts/paid-call.ts bridge <network> [usdc|usdbc]       moves it to Base with the app's Bridger, in this same wallet
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
@@ -24,6 +26,8 @@ import { PortalTransport } from '../src/core/portal.ts';
 import { Core } from '../src/core/core.ts';
 import { ethBalance, tokenBalance } from '../src/core/balance.ts';
 import { Mover } from '../src/core/move.ts';
+import { Bridger } from '../src/core/bridge.ts';
+import { findElsewhere } from '../src/core/elsewhere.ts';
 
 const dir = join(homedir(), '.meadow-app-dev', 'paid-call');
 mkdirSync(dir, { recursive: true });
@@ -99,6 +103,25 @@ switch (process.argv[2]) {
     }
     break;
   }
+  case 'bridge-plan':
+  case 'bridge': {
+    const [network = 'Arbitrum', kind = 'usdc'] = process.argv.slice(3);
+    const found = await findElsewhere(wallet.address);
+    console.log('found elsewhere:', found.found.map((f) => `${f.network} ${f.kind} ${f.usd}`));
+    const bridger = new Bridger({ wallets, db, mover: new Mover({ wallets, db }) });
+    if (process.argv[2] === 'bridge-plan') {
+      const p = await bridger.plan(wallet.id, network, kind);
+      console.log(JSON.stringify({ ...p, amount: p.amount.toString() }, null, 2));
+      break;
+    }
+    const before = await tokenBalance(wallet.address, rail.tokenAddress);
+    const started = Date.now();
+    const end = await bridger.run(wallet.id, network, kind, (st) => console.log(`${((Date.now() - started) / 1000).toFixed(1)}s`, st.step, JSON.stringify(st)));
+    const after = await tokenBalance(wallet.address, rail.tokenAddress);
+    console.log(`Base USDC before ${formatUsd(before)}, after ${formatUsd(after)}; end ${end.step}`);
+    console.log('record', JSON.stringify(db.prepare('SELECT * FROM bridges ORDER BY seq DESC LIMIT 1').get()));
+    break;
+  }
   default:
-    console.log('usage: node scripts/paid-call.ts new | balance | call | phrase | move-plan | move');
+    console.log('usage: node scripts/paid-call.ts new | balance | call | phrase | move-plan | move | bridge-plan <network> [kind] | bridge <network> [kind]');
 }

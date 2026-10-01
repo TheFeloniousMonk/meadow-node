@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Dialog, meadow, time, useAction, useCopy } from '../lib.tsx';
 import type { ScreenProps } from '../App.tsx';
-import type { AppState, MovePlanView, MoveStateView, WalletView } from '../../../shared/api.ts';
+import type { AppState, BridgePlanView, BridgeStateView, MovePlanView, MoveStateView, WalletView } from '../../../shared/api.ts';
 
 const USD = /^\d+(\.\d{1,6})?$/;
 
@@ -71,7 +71,7 @@ export function Wallets({ state, refresh, balances, balancesAt, reloadBalances, 
                 <button className="secondary icon" onClick={() => copy(w.address, 'Address copied')}>Copy address</button>
               </div>
             </div>
-            {w.elsewhere.length > 0 && <div style={{ marginTop: '.75rem' }}><Elsewhere items={w.elsewhere} /></div>}
+            {w.elsewhere.length > 0 && <div style={{ marginTop: '.75rem' }}><Elsewhere items={w.elsewhere} walletId={w.id} /></div>}
             <div className="row spread" style={{ marginTop: '.75rem' }}>
               <p className="small muted" style={{ margin: 0 }}>
                 Pays for: {w.agents.length ? w.agents.map((a) => agentName(a)).join(', ') : 'no agent yet'}
@@ -424,14 +424,100 @@ export function UsdcExplainer({ open = false }: { open?: boolean }) {
   );
 }
 
-/** USDC that arrived on the wrong network (§16.9.2): safe, the person's, but not usable here. */
-export function Elsewhere({ items }: { items: WalletView['elsewhere'] | undefined }) {
+/**
+ * USDC that arrived on the wrong network (§16.9.2): safe, the person's, but not usable here.
+ * Native USDC and USDbC can be moved to Base from here (§16.9.3); the rest not yet.
+ */
+export function Elsewhere({ items, walletId }: { items: WalletView['elsewhere'] | undefined; walletId?: string }) {
+  const [moving, setMoving] = useState<WalletView['elsewhere'][number] | null>(null);
   if (!items?.length) return null;
+  const stuck = items.some((f) => !f.movable);
   return (
     <div className="notice warn">
-      {items.map((f, i) => <p key={i} style={{ margin: i ? '.5rem 0 0' : 0 }}>{f.text}</p>)}
-      <p className="small" style={{ margin: '.5rem 0 0' }}>The app does not move money between networks yet. A later version is planned to move it to Base for you.</p>
+      {items.map((f, i) => (
+        <div key={i} style={{ margin: i ? '.6rem 0 0' : 0 }}>
+          <p style={{ margin: 0 }}>{f.text}</p>
+          {f.movable && walletId && <button style={{ marginTop: '.4rem' }} onClick={() => setMoving(f)}>Move to Base</button>}
+        </div>
+      ))}
+      {stuck && <p className="small" style={{ margin: '.5rem 0 0' }}>The app cannot move bridged USDC, or USDC on BNB Smart Chain, yet: each needs a network fee paid on its own network. It is still yours.</p>}
+      {moving && walletId && <BridgeDialog walletId={walletId} item={moving} onClose={() => setMoving(null)} />}
     </div>
+  );
+}
+
+const BRIDGE_WORDS: Record<BridgeStateView['step'], string> = {
+  checking: 'Checking…',
+  buying_gas: 'Buying a little ETH for Base\'s network fee…',
+  approving: 'Approving the swap on Base…',
+  signing: 'Signing…',
+  moving: 'Moving it to Base…',
+  done: 'Done.',
+  refunded: 'Refunded.',
+  failed: 'It did not move.',
+  unknown: 'Not finished yet.',
+};
+
+/**
+ * Move to Base (§16.9.3): the quote, checked by the core's guard, with its fee and what
+ * arrives; then a system dialog; then progress. Only the core signs.
+ */
+function BridgeDialog({ walletId, item, onClose }: { walletId: string; item: WalletView['elsewhere'][number]; onClose: () => void }) {
+  const [plan, setPlan] = useState<BridgePlanView | null>(null);
+  const [state, setState] = useState<BridgeStateView | null>(null);
+  const [started, setStarted] = useState(false);
+  const { busy, error, run } = useAction();
+  useEffect(() => {
+    void run(async () => setPlan(await meadow.bridgePlan({ walletId, network: item.network, kind: item.kind })));
+  }, []);
+  useEffect(() => {
+    if (!started) return;
+    const t = window.setInterval(async () => {
+      const all = await meadow.bridgeStatus({ walletId }).catch(() => []);
+      const s = all.find((x) => x.network === item.network && x.kind === item.kind);
+      if (s) setState(s);
+    }, 2000);
+    return () => window.clearInterval(t);
+  }, [started]);
+  const finished = state && ['done', 'refunded', 'failed', 'unknown'].includes(state.step);
+  const what = item.kind === 'usdbc' ? 'USDbC' : `USDC on ${item.network}`;
+  return (
+    <Dialog title="Move to Base" onClose={onClose}>
+      {!plan && !error && <p>Asking for a price…</p>}
+      {plan && !started && (
+        <>
+          <p>Moves all <strong>{plan.amountUsd}</strong> of {what} to this same wallet, as USDC on Base.</p>
+          <dl className="deposit">
+            <dt>Fee</dt><dd>about {plan.feeUsd}</dd>
+            <dt>Arrives</dt><dd>at least {plan.arrivesUsd}</dd>
+          </dl>
+          {plan.high && <p><strong>That is more than 5% in fees. Moving later, or with more there, costs less in proportion.</strong></p>}
+          {plan.route === 'relay'
+            ? <p className="small">Relay, a third-party bridge, carries it, usually in seconds. If the move fails, Relay refunds it to this wallet on {item.network}, less that network's fee. The wallet's address is sent to Relay.</p>
+            : <p className="small">The app approves the swap on Base{plan.gasFromUsdc ? ', paying its network fee with a little of this wallet\'s USDC' : ''}, then CoW Protocol swaps the USDbC for USDC, usually within a minute or two.</p>}
+          <p className="small muted">This is not a payment: it does not count against the daily budget.</p>
+        </>
+      )}
+      {state && (
+        <div className={`notice${state.step === 'failed' || state.step === 'unknown' ? ' warn' : ''}`}>
+          <strong>{BRIDGE_WORDS[state.step]}</strong>
+          {state.step === 'done' && state.arrived && <> {state.arrived} arrived as USDC on Base.</>}
+          {state.error && <> {state.error}</>}
+        </div>
+      )}
+      {error && <div className="notice warn">{error}</div>}
+      <div className="actions">
+        <button className="secondary" onClick={onClose}>{finished ? 'Done' : started ? 'Close (it keeps going)' : 'Cancel'}</button>
+        {plan && !started && (
+          <button disabled={busy} onClick={() => run(async () => {
+            const r = await meadow.bridgeStart({ walletId, network: item.network, kind: item.kind });
+            if (!r.ok) throw new Error(r.error);
+            setStarted(true);
+            setState({ step: 'checking', network: item.network, kind: item.kind });
+          })}>Move</button>
+        )}
+      </div>
+    </Dialog>
   );
 }
 
@@ -487,7 +573,7 @@ export function TopOff({ walletId, balance, check, onClose, elsewhere }: { walle
       ) : (
         <div className="notice"><strong>Send a small amount first,</strong> about $1. When it arrives here, send the rest. Balance now: <strong>{balance ?? '…'}</strong></div>
       )}
-      <Elsewhere items={elsewhere} />
+      <Elsewhere items={elsewhere} walletId={walletId} />
       <details className="explainer">
         <summary>What to pick at the exchange</summary>
         <ul>

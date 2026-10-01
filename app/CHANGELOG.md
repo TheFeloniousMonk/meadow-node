@@ -6,6 +6,16 @@ node has its own changelog at the repository root. App releases are tagged
 
 ## [Unreleased]
 
+### Added
+
+- **Move to Base.** USDC that arrived on Ethereum, Arbitrum, Polygon, or
+  Optimism can be moved to Base from the wallet's card or Top off, with no
+  ETH on that network. You sign once, Relay (a third-party bridge) carries
+  it in seconds, and its fee comes out of the USDC; the dialog shows the fee
+  and what arrives first. If a move fails, Relay refunds it to the same
+  wallet on the original network. USDbC on Base is swapped for USDC through
+  CoW Protocol. Bridged USDC and USDC on BNB Smart Chain cannot move yet.
+
 ### Fixed
 
 - Clicking a notification on Windows now brings Meadow's window to the
