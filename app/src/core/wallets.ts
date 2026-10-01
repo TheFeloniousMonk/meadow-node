@@ -179,6 +179,25 @@ export class Wallets {
       .reduce((sum, p) => sum + BigInt(p.amount), 0n);
   }
 
+  /**
+   * The wallet's budget against a next payment of `next` (§16.9 check 4), for Troubleshoot
+   * (§16.21): spent in the last 24 hours, the budget, and, when `next` would not fit, when
+   * enough frees up (null when one call is more than the whole budget).
+   */
+  budgetFor(wallet: string, next: bigint): { spent: bigint; budget: bigint; fits: boolean; frees: number | null } {
+    const w: any = this.#db.prepare('SELECT daily_budget FROM wallets WHERE id = ?').get(wallet);
+    const budget = toAtomic(w.daily_budget, USDC.decimals);
+    const recent = this.#db.prepare('SELECT amount, signed_at FROM payments WHERE wallet = ? AND signed_at > ? ORDER BY signed_at').all(wallet, this.#now() - DAY_MS) as any[];
+    const spent = recent.reduce((s, p) => s + BigInt(p.amount), 0n);
+    if (spent + next <= budget) return { spent, budget, fits: true, frees: null };
+    let left = spent;
+    for (const p of recent) {
+      left -= BigInt(p.amount);
+      if (left + next <= budget) return { spent, budget, fits: false, frees: p.signed_at + DAY_MS };
+    }
+    return { spent, budget, fits: false, frees: null };
+  }
+
   /** How many payments the wallet has signed, ever. */
   paymentCount(wallet: string): number {
     return (this.#db.prepare('SELECT COUNT(*) AS n FROM payments WHERE wallet = ?').get(wallet) as any).n;

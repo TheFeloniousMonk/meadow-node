@@ -158,6 +158,20 @@ export function connectionCheck(s: Services, agent: string, claude: ClaudeState)
 }
 
 /**
+ * Test connection's second request (§16.17.3), also Troubleshoot's sign-in protection (§16.21.3):
+ * an agent's tools through the address with no token must get this app's own 401. Null when
+ * they do; otherwise what came back. Throws when nothing answered.
+ */
+export async function protectionCheck(base: string, name: string, fetchImpl: typeof fetch = fetch): Promise<string | null> {
+  const res = await fetchImpl(`${base}/${name}/mcp`, {
+    method: 'POST', body: '{}', signal: AbortSignal.timeout(10_000),
+    headers: { 'ngrok-skip-browser-warning': '1', 'user-agent': 'Meadow connection test', 'content-type': 'application/json' },
+  });
+  if (res.status !== 401) return describeAnswer(res);
+  return /resource_metadata=/.test(res.headers.get('www-authenticate') ?? '') ? null : 'a refusal that is not this app\'s';
+}
+
+/**
  * Test connection (§16.17.3): from this computer, what a stranger on the internet could
  * do, through the tunnel's public address. Sends no token and makes no paid call.
  */
@@ -188,11 +202,7 @@ export async function testConnection(s: Services, agent: string, fetchImpl: type
       const j: any = await res.json().catch(() => null);
       return j?.resource === resource ? null : 'an answer from something other than this app';
     }),
-    await attempt('Meadow\'s tools, without signing in (must be refused)', async () => {
-      const res = await fetchImpl(resource, { method: 'POST', headers: { ...headers, 'content-type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(10_000) });
-      if (res.status !== 401) return describe(res);
-      return /resource_metadata=/.test(res.headers.get('www-authenticate') ?? '') ? null : 'a refusal that is not this app\'s';
-    }),
+    await attempt('Meadow\'s tools, without signing in (must be refused)', () => protectionCheck(base, a.name, fetchImpl)),
   ];
   const ok = steps.every((x) => x.ok);
   // A pass went through the address to this app: it counts as the tunnel's check (§16.17.8).

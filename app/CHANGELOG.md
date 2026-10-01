@@ -16,6 +16,11 @@ node has its own changelog at the repository root. App releases are tagged
   app, or what went wrong and what the app already tried.
 - Restart tunnel, on a ChatGPT agent's card and in Settings, for when the
   automatic restarts are not enough.
+- Troubleshoot, at the bottom of the sidebar: everything Meadow depends on,
+  checked in order (this computer, money, then each agent and its
+  connection), with the first thing that blocks named at the top and a
+  button that fixes it or opens the place that does. Checking is free. A
+  red dot on Troubleshoot means something is not working.
 
 ### Fixed
 

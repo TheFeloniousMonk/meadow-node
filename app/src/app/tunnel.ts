@@ -279,6 +279,30 @@ export class Tunnel {
     this.#begin('wake', epoch, false);
   }
 
+  /**
+   * A check now, for Troubleshoot (§16.21.4): one request through the address. A failure
+   * starts the same restarts as any failed check. Resolves with what came back.
+   */
+  async checkNow(): Promise<{ ok: boolean; why: string | null }> {
+    if (!this.url) return { ok: false, why: this.#status.error ?? 'the tunnel is not on' };
+    const epoch = this.#epoch;
+    try {
+      return await this.#serial(async () => {
+        if (this.#episode) return { ok: false, why: this.#status.why }; // already being fixed
+        const r = await this.#check(epoch);
+        if (r.ok) {
+          this.#reached();
+          return { ok: true, why: null };
+        }
+        this.#set({ why: r.why });
+        this.#begin('reconnected', epoch, true);
+        return { ok: false, why: r.why };
+      });
+    } catch {
+      return { ok: false, why: 'the tunnel was changed while it was checked' };
+    }
+  }
+
   /** Test connection passed through the address (§16.17.3): it counts as a check. */
   confirm() {
     if (this.url) this.#reached();

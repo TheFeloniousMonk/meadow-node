@@ -10,9 +10,16 @@ import { Inbox } from './screens/Inbox.tsx';
 import { Agents } from './screens/Agents.tsx';
 import { Wallets } from './screens/Wallets.tsx';
 import { SettingsScreen } from './screens/Settings.tsx';
+import { Troubleshoot } from './screens/Troubleshoot.tsx';
 
-export type Route = 'setup' | 'dashboard' | 'inbox' | 'agents' | 'wallets' | 'settings';
-export type Go = (r: Route) => void;
+export type Route = 'setup' | 'dashboard' | 'inbox' | 'agents' | 'wallets' | 'settings' | 'troubleshoot';
+/** What to open on arrival, for Troubleshoot's buttons (§16.21): the screen's own dialog, for one agent or wallet. */
+export interface Intent {
+  open?: 'topOff' | 'budget' | 'backup' | 'chatgpt' | 'claude' | 'chooseWallet';
+  agent?: string;
+  wallet?: string;
+}
+export type Go = (r: Route, intent?: Intent) => void;
 
 const ICONS: Record<string, string> = {
   setup: 'M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11',
@@ -20,6 +27,7 @@ const ICONS: Record<string, string> = {
   inbox: 'M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z',
   agents: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm14 10v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75',
   wallets: 'M21 12V7H5a2 2 0 0 1 0-4h14v4M3 5v14a2 2 0 0 0 2 2h16v-5M18 12a2 2 0 0 0 0 4h4v-4z',
+  troubleshoot: 'M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z',
   settings: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z',
 };
 
@@ -31,7 +39,7 @@ function Icon({ name }: { name: string }) {
   );
 }
 
-const LABELS: Record<Route, string> = { setup: 'Setup', dashboard: 'Dashboard', inbox: 'Inbox', agents: 'Agents', wallets: 'Wallets', settings: 'Settings' };
+const LABELS: Record<Route, string> = { setup: 'Setup', dashboard: 'Dashboard', inbox: 'Inbox', agents: 'Agents', wallets: 'Wallets', settings: 'Settings', troubleshoot: 'Troubleshoot' };
 
 export function App() {
   return (
@@ -47,6 +55,11 @@ function Shell() {
   const balances = bal.values;
   const asked = new URLSearchParams(location.search).get('route') as Route | null;
   const [route, setRoute] = useState<Route | null>(asked);
+  const [intent, setIntent] = useState<Intent | null>(null);
+  const go: Go = (r, i) => {
+    setIntent(i ?? null);
+    setRoute(r);
+  };
   const status = useMemo(() => (state ? checks(state, balances) : null), [state, balances]);
 
   // Open on the Dashboard when setup is complete, else on the checklist (§16.5). "Funded" needs a
@@ -73,19 +86,26 @@ function Shell() {
   const unread = state.agents.reduce((n, a) => n + a.unread, 0);
   const nav: Route[] = status.allDone ? ['dashboard', 'inbox', 'agents', 'wallets', 'settings'] : ['setup', 'dashboard', 'inbox', 'agents', 'wallets', 'settings'];
   const toggleTheme = () => meadow.setSettings({ theme: state.settings.theme === 'dark' ? 'light' : 'dark' }).then(refresh);
-  const props = { state, refresh, go: setRoute, balances, balancesAt: bal.at, reloadBalances: bal.reload };
+  const props = { state, refresh, go, balances, balancesAt: bal.at, reloadBalances: bal.reload, intent, clearIntent: () => setIntent(null) };
+  const blocked = state.troubleshoot.verdict.state === 'bad';
 
   return (
     <div className="app">
       <nav className="sidebar" aria-label="Main">
         <div className="brand"><img src={logo} alt="" /><span>meadow</span></div>
         {nav.map((r) => (
-          <button key={r} className="nav" aria-current={route === r ? 'page' : undefined} onClick={() => setRoute(r)}>
+          <button key={r} className="nav" aria-current={route === r ? 'page' : undefined} onClick={() => go(r)}>
             <Icon name={r} />
             {LABELS[r]}
             {r === 'inbox' && unread > 0 && <span className="count" aria-label={`${unread} unread`}>{unread}</span>}
           </button>
         ))}
+        {/* Set apart at the bottom (§16.21.1); a red dot only while something blocks, never for amber. */}
+        <button className="nav apart" aria-current={route === 'troubleshoot' ? 'page' : undefined} onClick={() => go('troubleshoot')}>
+          <Icon name="troubleshoot" />
+          {LABELS.troubleshoot}
+          {blocked && <span className="dot" aria-label="something is not working" />}
+        </button>
         <div className="spacer" />
         <div className="foot">Version {state.version}</div>
       </nav>
@@ -103,6 +123,7 @@ function Shell() {
         {route === 'agents' && <Agents {...props} />}
         {route === 'wallets' && <Wallets {...props} />}
         {route === 'settings' && <SettingsScreen {...props} />}
+        {route === 'troubleshoot' && <Troubleshoot {...props} />}
       </main>
     </div>
   );
@@ -155,4 +176,7 @@ export interface ScreenProps {
   /** When the balances were last read, and a way to read them again now (§16.10.4). */
   balancesAt: number | null;
   reloadBalances: (fresh?: boolean) => Promise<void>;
+  /** What to open on arrival (from Troubleshoot), and how to say it was handled. */
+  intent?: Intent | null;
+  clearIntent?: () => void;
 }

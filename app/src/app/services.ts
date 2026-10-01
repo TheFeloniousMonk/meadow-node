@@ -20,6 +20,7 @@ import { createPublicServer } from '../server/public.ts';
 import { OAuth } from '../core/oauth.ts';
 import { Runner } from '../core/runner.ts';
 import { Tunnel } from './tunnel.ts';
+import { newOutside, type Outside } from './troubleshoot.ts';
 import { Diagnostics, syncFailureClass } from '../core/diagnostics.ts';
 import { Activity } from '../core/activity.ts';
 import { Notes } from '../core/notes.ts';
@@ -81,6 +82,13 @@ export class Services {
   server: Server | null = null;
   serverError: string | null = null;
   lastSync = new Map<string, number>();
+  /** Troubleshoot's outside checks: their last results (§16.21.4). */
+  readonly outside: Outside = newOutside();
+
+  /** Tells the window the state changed (for work done outside the services, such as Troubleshoot's checks). */
+  changedNow() {
+    this.#changed();
+  }
 
   /**
    * Mentions not yet notified (§16.20.3), by room, and marks them notified. A message

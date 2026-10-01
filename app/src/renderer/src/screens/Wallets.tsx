@@ -10,11 +10,18 @@ import type { AppState, MovePlanView, MoveStateView } from '../../../shared/api.
 
 const USD = /^\d+(\.\d{1,6})?$/;
 
-export function Wallets({ state, refresh, balances, balancesAt, reloadBalances }: ScreenProps) {
+export function Wallets({ state, refresh, balances, balancesAt, reloadBalances, intent, clearIntent }: ScreenProps) {
   const checking = useAction();
   const recheck = () => checking.run(() => reloadBalances(true));
   const copy = useCopy();
   const [dialog, setDialog] = useState<'create' | 'import' | { topOff: string } | { budget: string } | { remove: string } | { move: string } | null>(null);
+  // Arriving from Troubleshoot (§16.21): open that wallet's Top off or budget.
+  useEffect(() => {
+    if (!intent) return;
+    if (intent.wallet && intent.open === 'topOff') setDialog({ topOff: intent.wallet });
+    if (intent.wallet && intent.open === 'budget') setDialog({ budget: intent.wallet });
+    clearIntent?.();
+  }, [intent]);
   const agentName = (id: string | null) => state.agents.find((a) => a.id === id)?.displayName ?? '—';
   const close = () => {
     setDialog(null);

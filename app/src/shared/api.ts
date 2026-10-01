@@ -78,6 +78,34 @@ export interface ConnectionCheckView {
   steps: CheckStep[];
 }
 
+/** Troubleshoot (§16.21): a line's state. Grey (`info`) is a choice, not a fault. */
+export type TroubleState = 'ok' | 'warn' | 'bad' | 'info';
+/** What a line's button does: an action here, or the place in the app that does it (opening its dialog). */
+export type TroubleAction =
+  | { label: string; run: 'syncNow' | 'restartTunnel' | 'startAtLogin' | 'updateNow'; agent?: string }
+  | { label: string; go: 'agents' | 'wallets' | 'settings' | 'inbox'; open?: 'topOff' | 'budget' | 'backup' | 'chatgpt' | 'claude' | 'chooseWallet'; agent?: string; wallet?: string };
+export interface TroubleItem {
+  key: string;
+  label: string;
+  state: TroubleState;
+  text: string;
+  at?: number | null;
+  fix?: string;
+  action?: TroubleAction;
+}
+export interface TroubleGroup {
+  title: string;
+  agent?: string;
+  items: TroubleItem[];
+}
+export interface TroubleshootView {
+  /** The first red line, in dependency order, with its fix; or everything working (and how many lines are amber). */
+  verdict: { state: 'ok' | 'bad'; text: string; action?: TroubleAction; more: number; amber: number };
+  groups: TroubleGroup[];
+  /** The checks that leave this computer (balances, the address, sign-in protection): when they last ran. */
+  outside: { checking: boolean; at: number | null };
+}
+
 /** Test connection (§16.17.3): each request made through the tunnel, and whether the app answered it. */
 export interface ConnectionTestView {
   ok: boolean;
@@ -191,6 +219,8 @@ export interface AppState {
   /** Clients the person approved, per agent, with Revoke in Settings. */
   authorized: { client: string; name: string; agent: string; agentName: string; since: number }[];
   catalogError: string | null;
+  /** Troubleshoot (§16.21), from local records and the outside checks' last results. */
+  troubleshoot: TroubleshootView;
 }
 
 export interface MovePlanView {
@@ -293,6 +323,8 @@ export interface Api {
   setTunnel(a: { provider: 'none' | 'ngrok' | 'custom'; ngrokToken?: string; url?: string }): { ok: true };
   /** Restart tunnel (§16.17.8): closes the ngrok session, opens it again, and checks it through the address. */
   restartTunnel(): { ok: boolean; text: string };
+  /** Troubleshoot's outside checks (§16.21.4), at most once a minute unless `again`; free, never a paid call. */
+  troubleshootRun(a?: { again?: boolean }): { ran: boolean };
   /** The code a ChatGPT sign-in page shows, typed on an agent's card (§16.7.2). */
   enterChatgptCode(a: { agent: string; code: string }): { ok: true; client: string } | { ok: false; error: string };
   revokeClient(a: { client: string; agent: string }): { ok: true };
@@ -305,7 +337,7 @@ export type Channel = keyof Api;
 export const CHANNELS: Channel[] = [
   'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'claudeRunning', 'installUpdate', 'disconnectClaude', 'localInterface', 'rotateToken',
   'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'movePlan', 'moveStart', 'moveStatus', 'setBudget', 'setDiscoverable', 'dismissUnlistedNotice', 'walletQr', 'syncNow', 'rooms', 'messages', 'setSettings',
-  'guardCheck', 'guardDecide', 'backup', 'backupChanges', 'setMay', 'setRoomSettings', 'testConnection', 'diagnosticsText', 'diagnosticsSave', 'activity', 'activitySave', 'notes', 'setAnchor', 'setNote', 'removeNote', 'keepNote', 'notesSeen', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'restartTunnel', 'enterChatgptCode', 'revokeClient', 'setRunner',
+  'guardCheck', 'guardDecide', 'backup', 'backupChanges', 'setMay', 'setRoomSettings', 'testConnection', 'diagnosticsText', 'diagnosticsSave', 'activity', 'activitySave', 'notes', 'setAnchor', 'setNote', 'removeNote', 'keepNote', 'notesSeen', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'restartTunnel', 'troubleshootRun', 'enterChatgptCode', 'revokeClient', 'setRunner',
   'copy', 'openExternal',
 ];
 

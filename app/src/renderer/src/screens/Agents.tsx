@@ -14,7 +14,7 @@ import { Anchors, NotesDialog } from './Notes.tsx';
 
 const TYPE_WORDS: Record<ConnectionType, string> = { claude: 'Claude', chatgpt: 'ChatGPT', other: 'Other' };
 
-export function Agents({ state, refresh, go }: ScreenProps) {
+export function Agents({ state, refresh, go, intent, clearIntent }: ScreenProps) {
   const [adding, setAdding] = useState(false);
   const [claude, setClaude] = useState<AgentView | null>(null);
   const [local, setLocal] = useState<AgentView | null>(null);
@@ -26,6 +26,20 @@ export function Agents({ state, refresh, go }: ScreenProps) {
   const [activity, setActivity] = useState<AgentView | null>(null);
   const [notes, setNotes] = useState<AgentView | null>(null);
   const { error, run } = useAction();
+  // Arriving from Troubleshoot (§16.21): open that agent's dialog, or point at its wallet choice.
+  useEffect(() => {
+    if (!intent) return;
+    const a = state.agents.find((x) => x.id === intent.agent);
+    if (a && intent.open === 'backup') setBackingUp(a);
+    if (a && intent.open === 'chatgpt') setChatgpt(a.id);
+    if (a && intent.open === 'claude') setClaude(a);
+    if (a && intent.open === 'chooseWallet') {
+      const el = document.getElementById(`w-${a.id}`);
+      el?.scrollIntoView({ block: 'center' });
+      el?.focus();
+    }
+    clearIntent?.();
+  }, [intent]);
   const close = () => {
     setAdding(false);
     setClaude(null);

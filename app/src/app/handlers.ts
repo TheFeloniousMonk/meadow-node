@@ -12,6 +12,7 @@ import { add, bridgeEntry, claudeDesktopConfigPath, claudeDesktopRunning, entryN
 import { CHANNELS, linkAllowed, type Api, type AppState, type Channel, type MessageView, type MovePlanView, type MoveStateView, type NoteView } from '../shared/api.ts';
 import type { Services } from './services.ts';
 import { connectionCheck, diagnosticsText, testConnection, type ClaudeState } from './check.ts';
+import { runOutside, troubleshoot } from './troubleshoot.ts';
 import { WHO_WORDS, type ActivityKind } from '../core/activity.ts';
 import type { Note } from '../core/notes.ts';
 
@@ -151,6 +152,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
         tunnel: (({ provider, state, url, error, reachedAt, why }) => ({ provider, state, url, error: s.publicError ?? error, reachedAt, why, hasNgrokToken: s.ngrokToken() !== null, port: s.settings().publicPort }))(s.tunnel.status),
         authorized: s.oauth.authorized().map((c) => ({ ...c, agentName: s.core.agents().find((a) => a.id === c.agent)?.display_name ?? c.agent })),
         catalogError: s.catalog.fetchedAt ? null : 'The app has not read the portal\'s price list yet.',
+        troubleshoot: troubleshoot(s, claudeState),
       };
     },
 
@@ -287,6 +289,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     installUpdate: undefined as any,
     setTunnel: undefined as any,
     restartTunnel: undefined as any,
+    troubleshootRun: undefined as any,
 
     enterChatgptCode({ agent, code }) {
       if (typeof agent !== 'string' || typeof code !== 'string' || code.length > 40) return { ok: false, error: 'Type the code the ChatGPT page shows.' };
@@ -448,6 +451,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       return { ok: true };
     },
     restartTunnel: async () => s.restartTunnel(),
+    troubleshootRun: async ({ again = false }: { again?: boolean } = {}) => ({ ran: await runOutside(s, { again }) }),
     guardCheck: async ({ agent, message }) => {
       const r = await s.guard.checkOne(agent, message);
       return { verdict: r?.verdict ?? null, matches: r?.matches.map((m) => m.label) ?? [] };

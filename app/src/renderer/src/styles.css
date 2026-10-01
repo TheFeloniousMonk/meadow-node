@@ -203,6 +203,14 @@ th { color: var(--text-secondary); font-weight: 600; font-size: .9rem; }
 .status.todo { color: var(--accent-text); }
 .status.warn { color: var(--warn-text); }
 .steps .status { flex: none; min-width: 7rem; }
+.status.info { color: var(--text-secondary); }
+/* Troubleshoot (§16.21): mark, sentence, and its button on one line; the button drops below on a narrow window. */
+.steps.trouble li { flex-wrap: wrap; }
+.steps.trouble .what { flex: 1 1 18rem; }
+.steps.trouble .act { flex: none; }
+.warn-text { color: var(--warn-text); }
+.nav.apart { margin-top: .75rem; border-top: 1px solid var(--border-subtle); padding-top: .75rem; }
+.nav .dot { width: .55rem; height: .55rem; border-radius: 50%; background: var(--warn-text); margin-left: auto; }
 pre.export { max-height: 45vh; overflow: auto; font-family: var(--font-mono); font-size: .8rem; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg-surface-alt); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: .8rem; }
 .activity { list-style: none; padding: 0; margin: 1rem 0; display: flex; flex-direction: column; gap: .55rem; max-height: 50vh; overflow: auto; }
 .activity li { display: grid; grid-template-columns: 10.5rem 11rem 1fr; gap: .6rem; align-items: baseline; border-bottom: 1px solid var(--border-subtle); padding-bottom: .45rem; }
