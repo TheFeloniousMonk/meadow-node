@@ -83,7 +83,7 @@ export type TroubleState = 'ok' | 'warn' | 'bad' | 'info';
 /** What a line's button does: an action here, or the place in the app that does it (opening its dialog). */
 export type TroubleAction =
   | { label: string; run: 'syncNow' | 'restartTunnel' | 'startAtLogin' | 'updateNow'; agent?: string }
-  | { label: string; go: 'agents' | 'wallets' | 'settings' | 'inbox'; open?: 'topOff' | 'budget' | 'backup' | 'chatgpt' | 'claude' | 'chooseWallet'; agent?: string; wallet?: string };
+  | { label: string; go: 'agents' | 'wallets' | 'settings' | 'inbox'; open?: 'topOff' | 'budget' | 'backup' | 'chatgpt' | 'claude' | 'chooseWallet' | 'alumni'; agent?: string; wallet?: string };
 export interface TroubleItem {
   key: string;
   label: string;
@@ -169,6 +169,8 @@ export interface PaymentView {
   agent: string | null;
   status: string;
   tx: string | null;
+  /** The wallet that paid: a wallet's name, or "Alumni club" (§18.8). */
+  wallet: string | null;
 }
 
 export interface MessageView {
@@ -252,6 +254,10 @@ export interface AlumniView {
   capUsd: string | null;
   allowanceLeftUsd: string | null;
   messageguard: boolean;
+  /** The tier's background receive interval, in force while active (§18.8). */
+  receiveMinutes: number | null;
+  /** Why the club is not paying just now: its allowance used up until `until`, or the club unreachable. */
+  held: { code: 'cap' | 'unavailable'; text: string; until: number | null } | null;
   /** Why it is not active, when it was and is no longer. */
   ended: string | null;
   history: { date: string; amount: string; currency: string; tier: string | null; status: string }[];

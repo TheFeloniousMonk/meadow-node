@@ -344,7 +344,7 @@ export class ToolHost {
   readonly wallets: Wallets;
   readonly catalog: Catalog;
   #balance: (address: string, token: string) => Promise<bigint>;
-  #club: () => { capUsd: string } | null;
+  #club: () => { capUsd: string; allowanceLeftUsd: string | null } | null;
 
   /** What pays for an agent's calls: the alumni club while a membership is active, else its own wallet. */
   #walletOf(agent: string): string | null {
@@ -355,7 +355,12 @@ export class ToolHost {
   #walletView(id: string | null): { id: string; name: string; address: string | null; dailyBudgetUsd: string; spent24h: bigint } | undefined {
     if (!id) return undefined;
     const club = id === ALUMNI_WALLET ? this.#club() : null;
-    if (club) return { id, name: ALUMNI_WALLET_NAME, address: null, dailyBudgetUsd: club.capUsd, spent24h: this.wallets.spent(id) };
+    if (club) {
+      // The club's own count is the truth: the cap is per member, and the member may have other computers.
+      const cap = toAtomic(club.capUsd, 6);
+      const spent24h = club.allowanceLeftUsd ? maxZero(cap - toAtomic(club.allowanceLeftUsd.replace('$', ''), 6)) : this.wallets.spent(id);
+      return { id, name: ALUMNI_WALLET_NAME, address: null, dailyBudgetUsd: club.capUsd, spent24h };
+    }
     return this.wallets.list().find((x) => x.id === id);
   }
   #guard: () => GuardSettings;
@@ -368,7 +373,7 @@ export class ToolHost {
   constructor({ core, wallets, catalog, balance = tokenBalance, guard = () => ({ public: false, private: false, perSyncLimit: 10 }), diagnostics, activity, notes, club = () => null }: {
     core: Core; wallets: Wallets; catalog: Catalog; balance?: (address: string, token: string) => Promise<bigint>; guard?: () => GuardSettings; diagnostics?: Diagnostics; activity?: Activity; notes?: Notes;
     /** The alumni club while a membership is active (§18.8): it pays for every agent, up to its daily cap. */
-    club?: () => { capUsd: string } | null;
+    club?: () => { capUsd: string; allowanceLeftUsd: string | null } | null;
   }) {
     this.#club = club;
     this.#notes = notes;
@@ -712,7 +717,7 @@ export class ToolHost {
     if (!wallet) return {};
     const now = Date.now();
     const w = this.#walletView(wallet)!;
-    const left = toAtomic(w.dailyBudgetUsd, 6) - this.wallets.spent(wallet);
+    const left = toAtomic(w.dailyBudgetUsd, 6) - (wallet === ALUMNI_WALLET ? w.spent24h : this.wallets.spent(wallet));
     // What else the wallet paid since this agent's last paid call, and during this one, so the
     // budget's drop is explained (a tester saw $0.135 go while results said $0.06, 2026-10-02).
     const own = this.wallets.paymentsBySeq(seqs);
@@ -809,6 +814,7 @@ export class ToolHost {
       rooms: joined,
       invites,
       wallet: w ? {
+        ...(w.id === ALUMNI_WALLET && { name: ALUMNI_WALLET_NAME, paid_by: "Your person's alumni club membership pays for your calls, up to a daily allowance." }),
         balance, budget_left_today: formatUsd(maxZero(toAtomic(w.dailyBudgetUsd, 6) - w.spent24h)),
         // The whole wallet's last 24 hours, by cause: other agents and background receiving share it (§16.9.4).
         ...((rows) => rows.length ? { spent_last_24h: this.#spending(agent, rows, 'ai') } : {})(this.wallets.paymentsBetween(w.id, Date.now() - 24 * 3600 * 1000, Date.now())),

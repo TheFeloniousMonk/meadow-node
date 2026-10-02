@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import { networkName } from '../../../core/names.ts';
 import type { AgentView, ConnectionType } from '../../../shared/api.ts';
-import { Dialog, meadow, useAction, useCopy, when } from '../lib.tsx';
+import { ClubSet, Dialog, meadow, useAction, useCopy, when } from '../lib.tsx';
 import type { ScreenProps } from '../App.tsx';
 import { ChatGPTCodeDialog, ChatGPTSetup, RunnerDialog } from './Connections.tsx';
 import { ConnectionCheck } from './Check.tsx';
@@ -74,13 +74,23 @@ export function Agents({ state, refresh, go, intent, clearIntent }: ScreenProps)
                 <div className="small">{a.claude?.installed ? (a.claude.upToDate ? <span className="pill ok">Connected</span> : <span className="pill todo">Needs updating</span>) : <span className="pill todo">Not connected</span>}</div>
               )}
             </div>
-            <div>
-              <label className="small muted" htmlFor={`w-${a.id}`}>Wallet</label>
-              <select id={`w-${a.id}`} value={a.walletId ?? ''} onChange={(e) => run(async () => { await meadow.assignWallet({ agent: a.id, walletId: e.target.value }); await refresh(); })}>
-                {!a.walletId && <option value="">Choose a wallet</option>}
-                {state.wallets.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-              </select>
-            </div>
+            {state.alumni.active ? (
+              // The club pays while the membership is active (§18.8); the agent's own wallet is kept for when it ends.
+              <div>
+                <label className="small muted" htmlFor={`w-${a.id}`}>Wallet</label>
+                <select id={`w-${a.id}`} className="club-fixed" value="alumni" disabled><option value="alumni">Alumni club</option></select>
+                <div><ClubSet go={go} /></div>
+                {state.alumni.fallback && <div className="small muted">Past the allowance: {state.wallets.find((w) => w.id === a.walletId)?.name ?? 'no wallet of its own'}</div>}
+              </div>
+            ) : (
+              <div>
+                <label className="small muted" htmlFor={`w-${a.id}`}>Wallet</label>
+                <select id={`w-${a.id}`} value={a.walletId ?? ''} onChange={(e) => run(async () => { await meadow.assignWallet({ agent: a.id, walletId: e.target.value }); await refresh(); })}>
+                  {!a.walletId && <option value="">Choose a wallet</option>}
+                  {state.wallets.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                </select>
+              </div>
+            )}
             <div><div className="label muted small">Last sync</div><div>{when(a.lastSync)}</div></div>
           </div>
           <div className="row" style={{ marginTop: '1rem' }}>
@@ -186,7 +196,9 @@ function AddAgent({ state, onClose, goWallets }: { state: ScreenProps['state']; 
   const [walletId, setWalletId] = useState(state.wallets[0]?.id ?? '');
   const { busy, error, run } = useAction();
   const name = networkName(display);
-  if (!state.wallets.length) {
+  // While an alumni membership is active the club pays, so no wallet is needed (§18.8).
+  const club = state.alumni.active;
+  if (!state.wallets.length && !club) {
     return (
       <Dialog title="Add an agent" onClose={onClose}>
         <p>An agent needs a wallet to pay for its calls. Create a wallet first; it takes a minute.</p>
@@ -214,14 +226,21 @@ function AddAgent({ state, onClose, goWallets }: { state: ScreenProps['state']; 
       </fieldset>
       <div className="field">
         <label htmlFor="wsel">Wallet that pays for it</label>
-        <select id="wsel" value={walletId} onChange={(e) => setWalletId(e.target.value)}>
-          {state.wallets.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-        </select>
+        {club ? (
+          <>
+            <select id="wsel" className="club-fixed" value="alumni" disabled><option value="alumni">Alumni club</option></select>
+            <div className="hint">Your alumni membership pays for it. {state.wallets.length ? `It also gets ${state.wallets.find((w) => w.id === walletId)?.name ?? 'your first wallet'} for when the membership ends; you can change that later.` : 'Choose a wallet of its own on this screen before the membership ends.'}</div>
+          </>
+        ) : (
+          <select id="wsel" value={walletId} onChange={(e) => setWalletId(e.target.value)}>
+            {state.wallets.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+          </select>
+        )}
       </div>
       {error && <div className="notice warn">{error}</div>}
       <div className="actions">
         <button className="secondary" onClick={onClose}>Cancel</button>
-        <button disabled={busy || !name || !walletId} onClick={() => run(async () => { await meadow.createAgent({ displayName: display.trim(), type, walletId }); onClose(); })}>Add agent</button>
+        <button disabled={busy || !name || (!walletId && !club)} onClick={() => run(async () => { await meadow.createAgent({ displayName: display.trim(), type, walletId }); onClose(); })}>Add agent</button>
       </div>
     </Dialog>
   );

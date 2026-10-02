@@ -101,6 +101,26 @@ export function dailySyncCost(minutes: number, price: string | null): string | n
   return `${n} syncs a day, about $${(n * per).toFixed(2)} a day per agent`;
 }
 
+const CLUB_TIP = 'Your alumni club membership sets this. It changes back when the membership ends.';
+
+/** An info mark with a tooltip that shows on hover and on keyboard focus. */
+export function InfoTip({ text }: { text: string }) {
+  return <span className="info" tabIndex={0} role="note" aria-label={text} data-tip={text}>i</span>;
+}
+
+/**
+ * "Set by Alumni status" (SPEC §18.8): beside a setting the alumni membership fixes while it is
+ * active. The link opens the membership in Settings; the mark says why the setting is greyed.
+ */
+export function ClubSet({ go }: { go: (r: 'settings', i: { open: 'alumni' }) => void }) {
+  return (
+    <span className="club-set">
+      <button className="link small" onClick={() => go('settings', { open: 'alumni' })}>Set by Alumni status</button>
+      <InfoTip text={CLUB_TIP} />
+    </span>
+  );
+}
+
 /** Runs an action and turns a failure into a message for the person. */
 export function useAction() {
   const [busy, setBusy] = useState(false);

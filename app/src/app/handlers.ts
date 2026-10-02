@@ -5,6 +5,7 @@
 import QRCode from 'qrcode';
 import { formatUsd } from '../core/catalog.ts';
 import { GUARD_SERVICE } from '../core/guard.ts';
+import { ALUMNI_WALLET, ALUMNI_WALLET_NAME } from '../core/alumni.ts';
 import { dirname } from 'node:path';
 import { backupChanges, backupDue, describeBackup, makeBackup, readBackup, restoreBackup } from '../core/backup.ts';
 import { tokenBalance } from '../core/balance.ts';
@@ -81,6 +82,8 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       changesTo: st?.changes_to ?? null, changesOn: st?.changes_on ?? null,
       capUsd: active && st?.settings ? `$${st.settings.daily_cap_usd}` : null, allowanceLeftUsd: active ? st?.allowance_left_usd ?? null : null,
       messageguard: active && !!st?.settings?.messageguard, ended: !active && st ? st.ended ?? null : null,
+      receiveMinutes: active ? st?.settings?.receive_interval_min ?? null : null,
+      held: ((h) => h && { code: h.code, text: h.text, until: h.until })(s.alumni.held()),
       history: st?.history ?? [], fallback: s.alumni.fallback(), checkedAt: c?.at ?? null,
       linking: alumniLinking.busy, linkError: alumniLinking.error,
     };
@@ -170,7 +173,10 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
           // USDC on the wrong network (§16.9.2): safe, the person's, but not usable by the app.
           elsewhere: (s.elsewhere.get(w.id)?.found ?? []).map((f) => ({ network: f.network, kind: f.kind, usd: f.usd, text: elsewhereSentence(f), movable: !!movable(f.network, f.kind) })),
         })),
-        payments: s.wallets.payments(30).map((p) => ({ at: p.signed_at, service: p.service, path: p.path, usd: formatUsd(BigInt(p.amount)), agent: p.agent, status: p.status, tx: p.tx })),
+        payments: s.wallets.payments(30).map((p) => ({
+          at: p.signed_at, service: p.service, path: p.path, usd: formatUsd(BigInt(p.amount)), agent: p.agent, status: p.status, tx: p.tx,
+          wallet: p.wallet === ALUMNI_WALLET ? ALUMNI_WALLET_NAME : s.wallets.list().find((w) => w.id === p.wallet)?.name ?? null,
+        })),
         problems: s.core.problems().slice(-20).reverse(),
         pricePerCallUsd: price ? formatUsd(price.atomic, price.decimals) : null,
         guardPriceUsd: guardPrice ? formatUsd(guardPrice.atomic, guardPrice.decimals) : null,
@@ -189,7 +195,8 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     createAgent({ displayName, type, walletId }) {
       const { id } = s.core.createAgent(displayName);
       s.connections.set(id, type, displayName);
-      s.wallets.assign(id, walletId);
+      // While an alumni membership is active the club pays, so an agent may start with no wallet of its own (§18.8).
+      if (walletId || !s.alumni.active()) s.wallets.assign(id, walletId);
       return { id, handle: s.core.agents().find((a) => a.id === id)!.handle };
     },
 

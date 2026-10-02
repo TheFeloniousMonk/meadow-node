@@ -51,7 +51,37 @@ export interface ClubStatus {
 }
 
 /** A refusal the club gave that the fallback setting may answer with the agent's own wallet (§18.8). */
-export class ClubFallback extends Error {}
+export class ClubFallback extends Error {
+  readonly code: 'cap' | 'unavailable' | 'rate' | 'nokey';
+  constructor(message: string, code: 'cap' | 'unavailable' | 'rate' | 'nokey' = 'unavailable') {
+    super(message);
+    this.code = code;
+  }
+}
+
+/** Why the club is not paying just now (§18.8): its allowance used up until `until`, or the club unreachable. */
+export interface ClubHeld {
+  code: 'cap' | 'unavailable';
+  text: string;
+  /** When the allowance frees up (the cap); null when unknown. */
+  until: number | null;
+  at: number;
+}
+
+/** An unreachable club is reported for this long after the last failed attempt. */
+const UNAVAILABLE_MS = 3600_000;
+
+/** When the allowance frees up: the club's `frees_at`, else the "HH:MM UTC" in its refusal, next after `now`. */
+export function freesAt(j: { frees_at?: unknown; refused?: unknown }, now: number): number | null {
+  const given = typeof j.frees_at === 'number' ? j.frees_at : typeof j.frees_at === 'string' ? Date.parse(j.frees_at) : NaN;
+  if (Number.isFinite(given)) return given;
+  const m = /\b(\d{2}):(\d{2}) UTC\b/.exec(String(j.refused ?? ''));
+  if (!m) return null;
+  const d = new Date(now);
+  let t = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), Number(m[1]), Number(m[2]));
+  if (t <= now) t += DAY_MS;
+  return t;
+}
 
 export class Alumni {
   #db: Db;
@@ -121,6 +151,26 @@ export class Alumni {
 
   setFallback(on: boolean) {
     this.#setMeta('alumni_fallback', on ? '1' : null);
+    this.#changed();
+  }
+
+  /** Why the club is not paying just now, while that holds: the cap until it frees up, or the club unreachable for the last hour. */
+  held(): ClubHeld | null {
+    if (!this.active()) return null;
+    const raw = this.#meta('alumni_held');
+    if (!raw) return null;
+    const h: ClubHeld = JSON.parse(raw);
+    const now = this.#now();
+    // A cap with no known end is tried again after an hour, like an unreachable club.
+    if (h.code === 'cap' && h.until !== null ? now >= h.until : now - h.at > UNAVAILABLE_MS) return null;
+    return h;
+  }
+
+  #setHeld(h: ClubHeld | null) {
+    const was = this.#meta('alumni_held') ?? null;
+    const now = h ? JSON.stringify(h) : null;
+    if (was === now) return;
+    this.#setMeta('alumni_held', now);
     this.#changed();
   }
 
@@ -248,7 +298,7 @@ export class Alumni {
    */
   async authorize(req: { agent: string | null; serviceId: string; path: string; offer: any }): Promise<Authorized> {
     const key = this.key();
-    if (!key) throw new ClubFallback('No alumni membership key on this computer.');
+    if (!key) throw new ClubFallback('No alumni membership key on this computer.', 'nokey');
     const rail = this.#catalog.baseRail(req.serviceId);
     const service = this.#catalog.service(req.serviceId);
     if (!rail || !service) throw new TransportError('refused', `${req.serviceId} is not in the portal's price list with a USDC on Base price, so nothing was paid.`, { catalogMismatch: true });
@@ -257,9 +307,20 @@ export class Alumni {
         terms.extra.name !== USDC.name || terms.extra.version !== USDC.version) {
       throw new TransportError('refused', 'The portal asked for a payment its price list does not show, so nothing was paid.', { catalogMismatch: true });
     }
-    const j = await this.#post('pay', { key, service: req.serviceId, term: terms });
+    let j: any;
+    try {
+      j = await this.#post('pay', { key, service: req.serviceId, term: terms });
+    } catch (err) {
+      if (err instanceof ClubFallback) this.#setHeld({ code: 'unavailable', text: err.message, until: null, at: this.#now() });
+      throw err;
+    }
     if (j.refused) {
-      if (j.code === 'cap' || j.code === 'unavailable' || j.code === 'rate') throw new ClubFallback(j.refused);
+      if (j.code === 'cap') {
+        this.#noteAllowance('$0.00');
+        this.#setHeld({ code: 'cap', text: String(j.refused), until: freesAt(j, this.#now()), at: this.#now() });
+      }
+      if (j.code === 'unavailable') this.#setHeld({ code: 'unavailable', text: String(j.refused), until: null, at: this.#now() });
+      if (j.code === 'cap' || j.code === 'unavailable' || j.code === 'rate') throw new ClubFallback(j.refused, j.code);
       if (j.code === 'membership_ended' || j.code === 'key') void this.refresh();
       throw new TransportError('refused', j.refused);
     }
@@ -277,6 +338,7 @@ export class Alumni {
       .run(ALUMNI_WALLET, req.agent, req.serviceId, req.path, terms.amount, terms.asset, terms.network, terms.payTo, a.nonce, Number(a.validBefore) * 1000, this.#now(), currentCause());
     notePayment(Number(r.lastInsertRowid));
     if (typeof j.allowance_left_usd === 'string') this.#noteAllowance(j.allowance_left_usd);
+    this.#setHeld(null);
     return { seq: Number(r.lastInsertRowid), header: Buffer.from(JSON.stringify(payload), 'utf8').toString('base64'), amount: BigInt(terms.amount), decimals: USDC.decimals, wallet: ALUMNI_WALLET };
   }
 

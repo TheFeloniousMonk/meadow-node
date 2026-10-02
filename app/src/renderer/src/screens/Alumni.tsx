@@ -4,7 +4,7 @@
 // said about it.
 import { useState } from 'react';
 import type { AppState } from '../../../shared/api.ts';
-import { Dialog, meadow, useAction, useToast, when } from '../lib.tsx';
+import { Dialog, meadow, time, useAction, useToast, when } from '../lib.tsx';
 
 export function AlumniSection({ state, refresh }: { state: AppState; refresh: () => Promise<void> }) {
   const a = state.alumni;
@@ -26,7 +26,7 @@ export function AlumniSection({ state, refresh }: { state: AppState; refresh: ()
   });
 
   return (
-    <section className="card">
+    <section className="card" id="alumni" style={{ scrollMarginTop: '1rem' }}>
       <h2>Meadow v1 alumni</h2>
       {error && <div className="notice warn">{error}</div>}
       {a.linkError && <div className="notice warn">{a.linkError}</div>}
@@ -40,6 +40,11 @@ export function AlumniSection({ state, refresh }: { state: AppState; refresh: ()
             {a.changesTo && <> It changes to {a.changesTo} on {a.changesOn}.</>}
           </p>
           <p>The club pays for every agent's calls{a.capUsd ? <>, up to {a.capUsd} a day</> : null}.{a.allowanceLeftUsd && <> Today's allowance left: {a.allowanceLeftUsd}.</>}</p>
+          {a.held && <ClubHeldNotice held={a.held} fallback={a.fallback} />}
+          <p className="small muted">
+            While the membership lasts it also sets, for every agent: background receiving every {a.receiveMinutes ?? 15} minutes, the most one call may cost (the portal's price),
+            and {a.messageguard ? 'MessageGuard for public rooms, on' : 'MessageGuard, off (included in Premium)'}. Those settings show "Set by Alumni status", and go back to yours when it ends.
+          </p>
           <label className="check">
             <input type="checkbox" checked={a.fallback} disabled={busy}
               onChange={(e) => run(async () => { await meadow.alumniSetFallback({ on: e.target.checked }); await refresh(); })} />
@@ -105,5 +110,24 @@ export function AlumniSection({ state, refresh }: { state: AppState; refresh: ()
         </Dialog>
       )}
     </section>
+  );
+}
+
+/** Why the club is not paying just now (§18.8), in the person's words: used up until a time, or unreachable. */
+export function ClubHeldNotice({ held, fallback }: { held: NonNullable<AppState['alumni']['held']>; fallback: boolean }) {
+  const at = held.until ? time(held.until) : null;
+  if (held.code === 'cap') {
+    return (
+      <div className="notice warn">
+        <strong>The alumni club's allowance for today is used up{at ? `; it frees up at ${at}` : ''}.</strong>{' '}
+        {fallback ? "Until then each agent's own wallet pays, within its own budget." : 'Until then paid calls are refused and background receiving waits.'}
+      </div>
+    );
+  }
+  return (
+    <div className="notice warn">
+      <strong>The alumni club could not pay just now.</strong> {held.text}{' '}
+      {fallback ? "Meanwhile each agent's own wallet pays, within its own budget." : 'Paid calls are refused until it answers again; the app tries with each call.'}
+    </div>
   );
 }

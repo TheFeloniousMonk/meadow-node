@@ -4,13 +4,14 @@
 // and QR code; removing one from this app (§16.9: red, behind typing its
 // name); and recent payments.
 import { useEffect, useRef, useState } from 'react';
-import { Dialog, meadow, time, useAction, useCopy } from '../lib.tsx';
+import { ClubSet, Dialog, meadow, time, useAction, useCopy } from '../lib.tsx';
+import { ClubHeldNotice } from './Alumni.tsx';
 import type { ScreenProps } from '../App.tsx';
 import type { AppState, BridgePlanView, BridgeStateView, MovePlanView, MoveStateView, WalletView } from '../../../shared/api.ts';
 
 const USD = /^\d+(\.\d{1,6})?$/;
 
-export function Wallets({ state, refresh, balances, balancesAt, reloadBalances, intent, clearIntent }: ScreenProps) {
+export function Wallets({ state, refresh, go, balances, balancesAt, reloadBalances, intent, clearIntent }: ScreenProps) {
   const checking = useAction();
   const recheck = () => checking.run(() => reloadBalances(true));
   const copy = useCopy();
@@ -45,6 +46,7 @@ export function Wallets({ state, refresh, balances, balancesAt, reloadBalances, 
           </>
         )}
       </div>
+      {state.alumni.active && <ClubWallet state={state} go={go} />}
       {state.wallets.map((w) => {
         const spent = Number(w.spent24hUsd.replace('$', ''));
         const budget = Number(w.dailyBudgetUsd);
@@ -64,6 +66,7 @@ export function Wallets({ state, refresh, balances, balancesAt, reloadBalances, 
                 <div className="big">{w.spent24hUsd}</div>
                 <progress value={Math.min(spent, budget)} max={budget || 1} style={{ width: '100%' }} aria-label="Spent against the daily budget" />
                 <div className="small muted">of a daily budget of ${w.dailyBudgetUsd} <button className="link" onClick={() => setDialog({ budget: w.id })}>Change</button></div>
+                {state.alumni.active && <div className="small muted">{state.alumni.fallback ? 'Pays only past the alumni club\'s allowance.' : 'Not used while the alumni club pays.'}</div>}
               </div>
               <div className="stat">
                 <div className="label">Address</div>
@@ -86,7 +89,7 @@ export function Wallets({ state, refresh, balances, balancesAt, reloadBalances, 
         <h2>Recent payments</h2>
         {state.payments.length === 0 ? <p className="muted">None yet.</p> : (
           <table>
-            <thead><tr><th>Time</th><th>Service</th><th>Amount</th><th>Agent</th><th>Result</th></tr></thead>
+            <thead><tr><th>Time</th><th>Service</th><th>Amount</th><th>Agent</th><th>Paid by</th><th>Result</th></tr></thead>
             <tbody>
               {state.payments.map((p, i) => (
                 <tr key={i}>
@@ -94,6 +97,7 @@ export function Wallets({ state, refresh, balances, balancesAt, reloadBalances, 
                   <td>{p.service === 'meadow' ? `Meadow ${p.path}` : p.service}</td>
                   <td>{p.usd}</td>
                   <td>{agentName(p.agent)}</td>
+                  <td>{p.wallet ?? ''}</td>
                   <td>{p.status === 'settled' ? <span className="pill ok">Paid</span> : p.status === 'failed' ? <span className="pill warn">Not accepted</span> : <span className="pill todo">Signed</span>}</td>
                 </tr>
               ))}
@@ -590,5 +594,31 @@ export function TopOff({ walletId, balance, check, onClose, elsewhere }: { walle
       <p className="small muted">No ETH is needed: payments are signed here and settled by the portal. While this window is open, the balance is checked every 15 seconds.</p>
       <div className="actions"><button className="secondary" onClick={onClose}>Done</button></div>
     </Dialog>
+  );
+}
+
+/** The alumni club as a wallet (§18.8): it pays for every agent while the membership is active, up to the tier's daily cap. */
+function ClubWallet({ state, go }: { state: ScreenProps['state']; go: ScreenProps['go'] }) {
+  const a = state.alumni;
+  const cap = Number((a.capUsd ?? '0').replace('$', ''));
+  const left = a.allowanceLeftUsd ? Number(a.allowanceLeftUsd.replace('$', '')) : null;
+  return (
+    <div className="card">
+      <div className="row spread">
+        <h2 style={{ margin: 0 }}>Alumni club</h2>
+        <ClubSet go={go} />
+      </div>
+      <div className="grid three" style={{ marginTop: '1rem' }}>
+        <div className="stat">
+          <div className="label">Allowance left today</div>
+          <div className="big">{a.allowanceLeftUsd ?? '…'}</div>
+          {left !== null && cap > 0 && <progress value={Math.max(0, cap - left)} max={cap} style={{ width: '100%' }} aria-label="Used of the daily allowance" />}
+          <div className="small muted">of {a.capUsd ?? 'the tier\'s cap'} a day</div>
+        </div>
+        <div className="stat"><div className="label">Membership</div><div>{a.tierName}</div><div className="small muted">paid through {a.paidThrough}</div></div>
+        <div className="stat"><div className="label">Pays for</div><div>Every agent on this computer</div></div>
+      </div>
+      {a.held && <div style={{ marginTop: '.75rem' }}><ClubHeldNotice held={a.held} fallback={a.fallback} /></div>}
+    </div>
   );
 }

@@ -15,6 +15,8 @@ import { Services } from '../src/app/services.ts';
 import { addressOf, signTransfer, type Hex } from '../src/core/evm.ts';
 import { TransportError } from '../src/core/transport.ts';
 import { startMockPortal, type MockPortal } from './mock-portal.ts';
+import { freesAt } from '../src/core/alumni.ts';
+import { troubleshoot } from '../src/app/troubleshoot.ts';
 
 const MEMBER_KEY = randomBytes(32);
 const MEMBER = addressOf(MEMBER_KEY);
@@ -23,7 +25,7 @@ const KEY = 'mclub1.eyJtIjoibV90ZXN0In0.c2lnbmF0dXJl';
 /** A stand-in club: answers status, pay, redeem, cancel as the real one does (§18.14). */
 async function startClub() {
   const club = {
-    url: '', active: true, refuse: null as null | { code: string; refused: string }, down: false, tamper: false,
+    url: '', active: true, tier: 'premium' as 'premium' | 'basic', asked: 0, allowance: null as string | null, refuse: null as null | { code: string; refused: string }, down: false, tamper: false,
     pays: 0, redeemed: [] as string[], codes: new Map<string, string>(), cancelled: false,
     server: null as unknown as http.Server,
   };
@@ -35,12 +37,14 @@ async function startClub() {
     if (path !== 'redeem' && body.key !== KEY) return send({ refused: 'This alumni membership key is not valid any more.', code: 'key' });
     if (path === 'status') {
       return send(club.active
-        ? { active: true, member: 'Jinx', tier: 'premium', tier_name: 'Premium', paid_through: '2099-01-01', cancelled: club.cancelled,
-          settings: { daily_cap_usd: '1.50', receive_interval_min: 15, messageguard: true, combine_syncs: true }, spent_24h_usd: '$0.00', allowance_left_usd: '$1.50',
+        ? { active: true, member: 'Jinx', tier: club.tier, tier_name: club.tier === 'basic' ? 'Basic' : 'Premium', paid_through: '2099-01-01', cancelled: club.cancelled,
+          settings: club.tier === 'basic' ? { daily_cap_usd: '0.70', receive_interval_min: 15, messageguard: false, combine_syncs: true } : { daily_cap_usd: '1.50', receive_interval_min: 15, messageguard: true, combine_syncs: true },
+          spent_24h_usd: '$0.00', allowance_left_usd: club.allowance ?? (club.tier === 'basic' ? '$0.70' : '$1.50'),
           payer_address: MEMBER, history: [{ date: '2026-10-02', amount: '50.00', currency: 'USD', tier: 'Premium', status: 'completed' }] }
         : { active: false, member: 'Jinx', ended: 'expired', history: [] });
     }
     if (path === 'pay') {
+      club.asked++;
       if (club.refuse) return send(club.refuse);
       club.pays++;
       const t = body.term;
@@ -79,6 +83,8 @@ after(async () => {
 
 async function computer(opts: { withWallet?: boolean } = {}) {
   club.active = true;
+  club.tier = 'premium';
+  club.allowance = null;
   club.refuse = null;
   club.down = false;
   club.tamper = false;
@@ -207,4 +213,86 @@ test('cancel asks the club and refreshes; the membership stays active to the end
   assert.equal(r.runs_until, '2099-01-01');
   assert.equal(s.alumni.cached()?.status.cancelled, true);
   assert.equal(s.alumni.active(), true);
+});
+
+// --- Step 2: the overrides (§18.8) ---------------------------------------------------------
+
+test("while active the tier sets the receive interval and public-room MessageGuard; the person's own settings come back when it ends", async (t) => {
+  const { s, agent } = await computer();
+  s.setSettings({ syncMinutes: 60, guardPublic: false, guardPrivate: true });
+  t.after(() => s.stop()); // setSettings started background receiving
+  await s.alumni.validate(KEY);
+  const on = s.effectiveSettings();
+  assert.equal(on.syncMinutes, 15);
+  assert.equal(on.guardPublic, true, 'Premium includes MessageGuard for public rooms');
+  assert.equal(on.guardPrivate, true, "private rooms stay the person's choice on Premium");
+  assert.equal(s.settings().syncMinutes, 60, "the person's own value is kept underneath");
+  const st: any = (await s.tools.call(agent, 'status', {}, { via: 'claude' })).data;
+  assert.equal(st.messageguard, 'on for all rooms', 'the tools and the screening use the settings in force');
+  assert.equal(st.wallet.name, 'Alumni club');
+  club.active = false;
+  await s.refreshAlumni();
+  assert.deepEqual([s.effectiveSettings().syncMinutes, s.effectiveSettings().guardPublic, s.effectiveSettings().guardPrivate], [60, false, true]);
+});
+
+test('on Basic, MessageGuard is off for every room while active, since the club does not pay for screening', async () => {
+  const { s, agent } = await computer();
+  s.setSettings({ guardPublic: true, guardPrivate: true });
+  club.tier = 'basic';
+  // Spent on another of the member's computers: the club's count, not this computer's.
+  club.allowance = '$0.20';
+  await s.alumni.validate(KEY);
+  assert.equal(s.effectiveSettings().guardPublic, false);
+  assert.equal(s.effectiveSettings().guardPrivate, false);
+  const st: any = (await s.tools.call(agent, 'status', {}, { via: 'claude' })).data;
+  assert.equal(st.messageguard, 'off');
+  assert.equal(st.wallet.budget_left_today, '$0.20', "the allowance is the club's own count");
+});
+
+test("at the cap without the fallback, background receiving waits until the allowance frees up; the person's Sync Now still asks", async () => {
+  const { s, agent } = await computer({ withWallet: false });
+  await s.alumni.validate(KEY);
+  await s.core.register(agent);
+  club.refuse = { code: 'cap', refused: "The alumni club's allowance for today is used up; it frees up at 14:05 UTC." };
+  await s.syncAll('background');
+  const h = s.alumni.held();
+  assert.equal(h?.code, 'cap');
+  assert.equal(new Date(h!.until!).toISOString().slice(11, 16), '14:05');
+  assert.ok(h!.until! > Date.now() && h!.until! - Date.now() <= 24 * 3600_000);
+  assert.equal(s.alumni.cached()?.status.allowance_left_usd, '$0.00');
+  const asked = club.asked;
+  await s.syncAll('background');
+  assert.equal(club.asked, asked, 'background receiving did not ask the club again');
+  await s.syncAll('person');
+  assert.equal(club.asked, asked + 1, 'Sync Now still tries');
+  // Troubleshoot says so, with the way to the membership.
+  const money = troubleshoot(s, () => null).groups.find((g) => g.title === 'Money')!;
+  const item = money.items.find((i) => i.key === 'alumni')!;
+  assert.equal(item.state, 'bad');
+  assert.match(item.text, /used up/);
+  assert.ok(!money.items.some((i) => i.key.startsWith('nowallet:')), 'an agent the club pays for is not "without a wallet"');
+  // A paid call that goes through clears it.
+  club.refuse = null;
+  await s.syncAll('person');
+  assert.equal(s.alumni.held(), null);
+});
+
+test("with the fallback on, background receiving goes on at the cap, paid by the agent's own wallet", async () => {
+  const { s, agent, wallet } = await computer();
+  await s.alumni.validate(KEY);
+  await s.core.register(agent);
+  s.alumni.setFallback(true);
+  club.refuse = { code: 'cap', refused: "The alumni club's allowance for today is used up; it frees up at 14:05 UTC." };
+  const before = payments(s).length;
+  await s.syncAll('background');
+  assert.ok(payments(s).length > before);
+  assert.equal(payments(s).at(-1)!.wallet, wallet);
+});
+
+test("when the allowance frees up: the club's frees_at, else the time in its words, the next one after now", () => {
+  const now = Date.parse('2026-10-02T15:00:00Z');
+  assert.equal(freesAt({ frees_at: '2026-10-03T14:05:00Z' }, now), Date.parse('2026-10-03T14:05:00Z'));
+  assert.equal(freesAt({ refused: 'used up; it frees up at 16:30 UTC.' }, now), Date.parse('2026-10-02T16:30:00Z'));
+  assert.equal(freesAt({ refused: 'used up; it frees up at 14:05 UTC.' }, now), Date.parse('2026-10-03T14:05:00Z'));
+  assert.equal(freesAt({ refused: 'used up.' }, now), null);
 });
