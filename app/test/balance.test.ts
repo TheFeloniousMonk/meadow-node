@@ -1,4 +1,4 @@
-// The Base RPC fallback (SPEC §16.9): Pocket's public endpoint first, for at most
+// The Base RPC fallback (SPEC §16.9): the default endpoint first, for at most
 // PRIMARY_TIMEOUT_MS, then Base's own. A slow, failing, or "0x" answer goes to the
 // fallback; a send never does; another RPC has no fallback unless given one. A fake
 // RPC: nothing here reaches the networks.
@@ -31,19 +31,19 @@ function fakeRpc(answers: Record<string, Answer>) {
   return { fetchImpl, asked };
 }
 
-test('Pocket answering: Base is never asked', async () => {
+test('the default endpoint answering: the fallback is never asked', async () => {
   const { fetchImpl, asked } = fakeRpc({ [BASE_RPC]: 7n });
   assert.equal(await tokenBalance(ADDRESS, USDC, { fetchImpl }), 7n);
   assert.deepEqual(asked, [BASE_RPC]);
 });
 
-test('the fallback is 5 seconds behind Pocket', () => {
+test('the fallback is asked after 5 seconds', () => {
   assert.equal(PRIMARY_TIMEOUT_MS, 5_000);
   assert.equal(BASE_RPC_FALLBACK, 'https://mainnet.base.org');
 });
 
 for (const fault of ['hang', 'down', 'error', 'empty'] as const) {
-  test(`Pocket ${fault}: the read goes to Base's own endpoint`, async () => {
+  test(`the default endpoint ${fault}: the read goes to the fallback`, async () => {
     const { fetchImpl, asked } = fakeRpc({ [BASE_RPC]: fault, [BASE_RPC_FALLBACK]: 9n });
     const started = Date.now();
     assert.equal(await tokenBalance(ADDRESS, USDC, { fetchImpl, primaryTimeoutMs: 50 }), 9n);

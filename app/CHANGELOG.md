@@ -43,16 +43,14 @@ node has its own changelog at the repository root. App releases are tagged
 - Setting a private room's name or topic, or an invitation note, now
   reminds the AI that these are not encrypted. Leaving a private room as
   its last member says what happens to it.
-- `status` no longer waits on a slow Base endpoint for the balance.
 - Two paid calls made at the same time no longer each report both
   payments as their own cost. Each result now counts only its own call; the
   other appears under the wallet's other spending.
 - A received reply that points at a message in another room is shown as a
   plain message. The app never sent such replies, and never showed the
   other room's message.
-- Wallet balances and other Base reads no longer stall when Pocket's public
-  Base endpoint is slow: after 5 seconds the app asks Base's own public
-  endpoint instead.
+- Wallet balances and `status` answer more reliably: if a Base service does
+  not answer within 5 seconds, the app asks another.
 - Clicking a notification on Windows now brings Meadow's window to the
   front. The click could do nothing (Windows dropped the notification's
   handler), or leave the window behind others.

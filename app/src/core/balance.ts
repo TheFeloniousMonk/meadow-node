@@ -6,7 +6,7 @@
 import { REPLY_LIMITS, readJson } from './deps.ts';
 
 export const BASE_RPC = 'https://base.api.pocket.network';
-/** Base's own public endpoint: asked when Pocket's does not answer in time, or answers badly. */
+/** Base's own public endpoint: a second source, asked when the first does not answer in time, or answers badly. */
 export const BASE_RPC_FALLBACK = 'https://mainnet.base.org';
 
 export interface RpcOptions {
@@ -20,9 +20,9 @@ export interface RpcOptions {
   primaryTimeoutMs?: number;
 }
 
-/** No RPC read waits longer than this: the public endpoint once took 50 s to answer one (2026-10-02). */
+/** No RPC read waits longer than this, fallback included. */
 export const RPC_TIMEOUT_MS = 15_000;
-/** How long Pocket's Base endpoint gets before a read goes to the fallback. */
+/** How long the first endpoint gets before a read goes to the fallback. */
 export const PRIMARY_TIMEOUT_MS = 5_000;
 
 async function call1(rpc: string, method: string, params: unknown[], fetchImpl: typeof fetch, timeoutMs: number): Promise<any> {

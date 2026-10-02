@@ -763,8 +763,8 @@ export class ToolHost {
     let balance = 'unknown';
     const rail = this.catalog.baseRail('meadow');
     if (w && rail) {
-      // status is free and must answer quickly: a slow Base endpoint gives "unknown", not a wait
-      // longer than the AI's host allows (it once took 50 s, 2026-10-02).
+      // status is free and must answer quickly: a balance that takes too long gives "unknown",
+      // not a wait longer than the AI's host allows.
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
         const late = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('slow')), STATUS_BALANCE_MS); });
