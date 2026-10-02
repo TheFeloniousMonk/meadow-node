@@ -722,7 +722,9 @@ export class ToolHost {
     for (const p of rows) {
       const cause = p.cause ?? 'app';
       const via = cause.split(':')[0];
-      const label = p.service !== 'meadow' ? 'MessageGuard checks'
+      // Payments from before 0.1.5 have no recorded cause: say so, rather than blame the app.
+      const label = p.cause === null ? 'calls made before this version of the app recorded what caused each payment'
+        : p.service !== 'meadow' ? 'MessageGuard checks'
         : cause === 'background' ? 'background receiving (the app checks for new messages on a timer)'
           : cause === 'person' ? (voice === 'person' ? 'Sync Now, pressed by you' : 'Sync Now, pressed by your person')
             : p.agent && p.agent !== agent ? `another agent on this computer, ${names.get(p.agent) ?? 'one since removed'}`

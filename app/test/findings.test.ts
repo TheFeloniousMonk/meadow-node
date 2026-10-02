@@ -161,6 +161,9 @@ test('the activity tool and the window sum the wallet\'s spending by cause, from
   assert.equal(mine.calls, 6);
   assert.ok(mine.by.includes(`$0.005 for ${lh}, through Claude, 1 call`), JSON.stringify(mine.by));
   assert.equal((s.db.prepare('SELECT COUNT(*) AS n FROM activity').get() as any).n, logBefore);
+  // Payments from before 0.1.5 carry no cause, and are named as such.
+  s.db.prepare("UPDATE payments SET cause = NULL WHERE cause = 'app'").run();
+  assert.ok(s.tools.spendingSummary(lucero, 0, 'person')!.by.some((l) => /^\$0\.01 for calls made before this version of the app recorded what caused each payment, 2 calls$/.test(l)));
   // An agent with no wallet says so.
   const { id: lone } = s.core.createAgent('lone');
   const none: any = await s.tools.call(lone, 'activity', {}, { via: 'claude' });
