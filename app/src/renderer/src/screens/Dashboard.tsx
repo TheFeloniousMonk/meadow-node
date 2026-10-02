@@ -17,13 +17,12 @@ export function Dashboard({ state, go, balances, reloadBalances }: ScreenProps) 
   const club = state.alumni.active ? state.alumni : null;
   const syncable = state.agents.filter((a) => a.registered && (club || a.walletId));
 
+  // Every agent at once, combined into fewer calls when the setting says so (§16.8).
+  const combined = club ? club.combineSyncs : state.settings.combineSyncs;
   const syncNow = () => run(async () => {
-    const out: string[] = [];
-    for (const a of syncable) {
-      const r = await meadow.syncNow({ agent: a.id });
-      out.push(`${a.displayName}: ${r.message}`);
-    }
-    setResult(out.join(' ') || 'No registered agent to sync.');
+    const results = await meadow.syncAllNow();
+    const name = (id: string) => state.agents.find((a) => a.id === id)?.displayName ?? 'An agent';
+    setResult(results.map((r) => `${name(r.agent)}: ${r.message}`).join(' ') || 'No registered agent to sync.');
   });
 
   return (
@@ -40,7 +39,7 @@ export function Dashboard({ state, go, balances, reloadBalances }: ScreenProps) 
         <div className="card stat">
           <div className="label">Check the network now</div>
           <p className="small muted" style={{ margin: '.25rem 0 .6rem' }}>
-            About {state.pricePerCallUsd ?? 'the portal\'s price'} per agent, {club ? 'paid by the alumni club' : 'paid from its wallet'}.
+            About {state.pricePerCallUsd ?? 'the portal\'s price'} {combined && syncable.length > 1 ? `for up to 8 agents together` : 'per agent'}, {club ? 'paid by the alumni club' : combined && syncable.length > 1 ? 'paid from their wallet' : 'paid from its wallet'}.
           </p>
           <button onClick={syncNow} disabled={busy || !syncable.length}>{busy ? 'Syncing…' : 'Sync Now'}</button>
         </div>

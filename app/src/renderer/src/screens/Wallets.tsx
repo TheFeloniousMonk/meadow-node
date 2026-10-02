@@ -96,7 +96,8 @@ export function Wallets({ state, refresh, go, balances, balancesAt, reloadBalanc
                   <td className="small">{time(p.at)}</td>
                   <td>{p.service === 'meadow' ? `Meadow ${p.path}` : p.service}</td>
                   <td>{p.usd}</td>
-                  <td>{agentName(p.agent)}</td>
+                  {/* A combined sync (§7.9) is paid as its first agent but serves several. */}
+                  <td>{p.path === '/v2/sync-batch' ? 'Several agents' : agentName(p.agent)}</td>
                   <td>{p.wallet ?? ''}</td>
                   <td>{p.status === 'settled' ? <span className="pill ok">Paid</span> : p.status === 'failed' ? <span className="pill warn">Not accepted</span> : <span className="pill todo">Signed</span>}</td>
                 </tr>

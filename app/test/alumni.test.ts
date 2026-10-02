@@ -224,6 +224,8 @@ test("while active the tier sets the receive interval and public-room MessageGua
   await s.alumni.validate(KEY);
   const on = s.effectiveSettings();
   assert.equal(on.syncMinutes, 15);
+  assert.equal(on.combineSyncs, true, "the tier combines agents' syncs");
+  assert.equal(s.settings().combineSyncs, false, "the person's own setting stays off underneath");
   assert.equal(on.guardPublic, true, 'Premium includes MessageGuard for public rooms');
   assert.equal(on.guardPrivate, true, "private rooms stay the person's choice on Premium");
   assert.equal(s.settings().syncMinutes, 60, "the person's own value is kept underneath");
@@ -295,4 +297,18 @@ test("when the allowance frees up: the club's frees_at, else the time in its wor
   assert.equal(freesAt({ refused: 'used up; it frees up at 16:30 UTC.' }, now), Date.parse('2026-10-02T16:30:00Z'));
   assert.equal(freesAt({ refused: 'used up; it frees up at 14:05 UTC.' }, now), Date.parse('2026-10-03T14:05:00Z'));
   assert.equal(freesAt({ refused: 'used up.' }, now), null);
+});
+
+test("the club's members combine syncs: one call, paid by the club, for every agent, wallet or not", async () => {
+  const { s, agent } = await computer({ withWallet: false });
+  const { id: second } = s.core.createAgent('pip');
+  s.connections.set(second, 'claude', 'pip');
+  await s.alumni.validate(KEY);
+  await s.core.register(agent);
+  await s.core.register(second);
+  const before = payments(s).length;
+  const results = await s.syncAll('background');
+  assert.deepEqual(results.map((r) => r.ok), [true, true]);
+  const paid = s.db.prepare('SELECT wallet, path FROM payments ORDER BY seq').all().slice(before) as any[];
+  assert.deepEqual(paid.map((p) => [p.wallet, p.path]), [['alumni', '/v2/sync-batch']]);
 });

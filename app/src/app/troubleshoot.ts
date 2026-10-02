@@ -95,6 +95,8 @@ export function troubleshoot(s: Services, claude: (agent: string) => ClaudeState
   const money: TroubleItem[] = [];
   const wallets = s.wallets.list();
   const paying = (w: { agents: string[] }) => agents.filter((a) => w.agents.includes(a.id) && a.registered).length;
+  // Background calls a day: one per agent, or one per 8 agents when syncs are combined (§7.9).
+  const calls = (w: { agents: string[] }) => (settings.combineSyncs ? Math.ceil(paying(w) / 8) : paying(w));
   if (club) {
     // The club pays for every agent (§18.8); the agents' own wallets matter only past its allowance, if allowed.
     const st = s.alumni.cached()?.status;
@@ -117,7 +119,7 @@ export function troubleshoot(s: Services, claude: (agent: string) => ClaudeState
   }
   for (const w of club && !s.alumni.fallback() ? [] : wallets.filter((x) => x.agents.length)) {
     const bal = out.balances.get(w.id);
-    const need = perDay !== null ? perDay * BigInt(paying(w)) : null;
+    const need = perDay !== null ? perDay * BigInt(calls(w)) : null;
     const topOff: TroubleAction = { label: 'Top off', go: 'wallets', open: 'topOff', wallet: w.id };
     if (bal === undefined) money.push(item(`balance:${w.id}`, 'Wallets', 'info', `${w.name}: checking its balance…`));
     else if (bal === null) money.push(item(`balance:${w.id}`, 'Wallets', 'warn', `The app could not read ${w.name}'s balance from Base just now.`, { fix: 'Check this computer\'s internet connection; Check again tries once more.' }));

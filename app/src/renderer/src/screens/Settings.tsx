@@ -46,6 +46,8 @@ export function SettingsScreen({ state, refresh, go, intent, clearIntent }: Scre
   // While an alumni membership is active, some settings are the club's (§18.8): shown fixed and greyed.
   const club = state.alumni.active ? state.alumni : null;
   const minutes = club?.receiveMinutes ?? s.syncMinutes;
+  const combined = club ? club.combineSyncs : s.combineSyncs;
+  const registered = state.agents.filter((a) => a.registered).length;
   // Arriving from "Set by Alumni status": show the membership.
   useEffect(() => {
     if (intent?.open !== 'alumni') return;
@@ -60,7 +62,7 @@ export function SettingsScreen({ state, refresh, go, intent, clearIntent }: Scre
   const [port, setPort] = useState(String(s.localPort));
   const [askPrivate, setAskPrivate] = useState(false);
   const save = (changes: Parameters<typeof meadow.setSettings>[0], what = 'Saved') => run(async () => { await meadow.setSettings(changes); await refresh(); toast(what); });
-  const cost = dailySyncCost(minutes, state.pricePerCallUsd);
+  const cost = dailySyncCost(minutes, state.pricePerCallUsd, combined);
 
   return (
     <div className="stack">
@@ -76,8 +78,16 @@ export function SettingsScreen({ state, refresh, go, intent, clearIntent }: Scre
           <div className="hint">
             {!s.syncEnabled ? 'Messages arrive only when your AI syncs, or when you press Sync Now.'
               : club ? 'Paid by the alumni club, within its daily allowance.'
-                : cost ? `That is ${cost}, from each agent's wallet and within its budget.` : 'The cost shows once the app has read the portal\'s prices.'} Sending always happens at once.
+                : cost ? `That is ${cost}, ${combined ? 'from the wallet that pays for them' : "from each agent's wallet"} and within its budget.` : 'The cost shows once the app has read the portal\'s prices.'} Sending always happens at once.
           </div>
+        </div>
+        <label className={`check${club ? ' club-fixed' : ''}`}>
+          <input type="checkbox" checked={combined} disabled={!!club} onChange={(e) => save({ combineSyncs: e.target.checked })} /> Combine agents' syncs
+        </label>
+        <div className="hint" style={{ marginLeft: '1.8rem', marginBottom: '.75rem' }}>
+          Checks for up to 8 agents in one paid call instead of one call each. The network can then tell that these agents belong together.
+          {club && <> <ClubSet go={go} /></>}
+          {combined && registered > 8 && <> With {registered} agents, each check takes {Math.ceil(registered / 8)} calls{club ? ', so the club allowance goes sooner' : ''}.</>}
         </div>
         <label className="check"><input type="checkbox" checked={s.notifications} onChange={(e) => save({ notifications: e.target.checked })} /> Show a notification when new messages arrive</label>
       </section>

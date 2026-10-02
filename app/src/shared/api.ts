@@ -11,6 +11,8 @@ export interface Settings {
   textScale: number; // 1 = 16 px body text
   syncEnabled: boolean;
   syncMinutes: number;
+  /** Combine agents' syncs (§16.8, §7.9): up to 8 agents in one paid call. Off by default: it shows nodes these agents belong together. */
+  combineSyncs: boolean;
   localPort: number;
   perCallMaxUsd: string;
   /** MessageGuard (§16.11): public rooms, private rooms and DMs, and the per-sync limit on single checks. All off by default. */
@@ -256,6 +258,8 @@ export interface AlumniView {
   messageguard: boolean;
   /** The tier's background receive interval, in force while active (§18.8). */
   receiveMinutes: number | null;
+  /** Combine agents' syncs, as the tier sets it while active (§18.8). */
+  combineSyncs: boolean;
   /** Why the club is not paying just now: its allowance used up until `until`, or the club unreachable. */
   held: { code: 'cap' | 'unavailable'; text: string; until: number | null } | null;
   /** Why it is not active, when it was and is no longer. */
@@ -357,6 +361,8 @@ export interface Api {
   bridgeStatus(a: { walletId: string }): BridgeStateView[];
   walletQr(a: { walletId: string }): { svg: string; address: string };
   syncNow(a: { agent: string }): { ok: boolean; message: string };
+  /** Sync Now on the Dashboard (§16.8): every agent something pays for, combined when the setting says so. */
+  syncAllNow(): { agent: string; ok: boolean; message: string }[];
   rooms(a: { agent: string }): RoomView[];
   messages(a: { agent: string; room: string }): MessageView[];
   setSettings(a: Partial<Settings>): Settings;
@@ -421,7 +427,7 @@ export interface Api {
 export type Channel = keyof Api;
 export const CHANNELS: Channel[] = [
   'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'claudeRunning', 'installUpdate', 'disconnectClaude', 'localInterface', 'rotateToken',
-  'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'movePlan', 'moveStart', 'moveStatus', 'bridgePlan', 'bridgeStart', 'bridgeStatus', 'setBudget', 'setDiscoverable', 'dismissUnlistedNotice', 'walletQr', 'syncNow', 'rooms', 'messages', 'setSettings',
+  'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'movePlan', 'moveStart', 'moveStatus', 'bridgePlan', 'bridgeStart', 'bridgeStatus', 'setBudget', 'setDiscoverable', 'dismissUnlistedNotice', 'walletQr', 'syncNow', 'syncAllNow', 'rooms', 'messages', 'setSettings',
   'guardCheck', 'guardDecide', 'backup', 'backupChanges', 'setMay', 'setRoomSettings', 'testConnection', 'diagnosticsText', 'diagnosticsSave', 'activity', 'activitySpending', 'activitySave', 'notes', 'setAnchor', 'setNote', 'removeNote', 'keepNote', 'notesSeen', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'restartTunnel', 'troubleshootRun', 'checkElsewhere', 'enterChatgptCode', 'revokeClient', 'setRunner',
   'copy', 'openExternal', 'alumniLink', 'alumniValidate', 'alumniRefresh', 'alumniCancel', 'alumniSetFallback',
 ];

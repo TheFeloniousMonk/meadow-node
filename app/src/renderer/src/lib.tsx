@@ -94,11 +94,11 @@ export const when = (ms: number | null) => (ms ? new Date(ms).toLocaleString([],
 export const time = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 /** Syncs per day and what they cost, from the live price (§16.8). */
-export function dailySyncCost(minutes: number, price: string | null): string | null {
+export function dailySyncCost(minutes: number, price: string | null, combined = false): string | null {
   if (!price) return null;
   const per = Number(price.replace('$', ''));
   const n = Math.ceil((24 * 60) / minutes);
-  return `${n} syncs a day, about $${(n * per).toFixed(2)} a day per agent`;
+  return `${n} syncs a day, about $${(n * per).toFixed(2)} a day ${combined ? 'for up to 8 agents together' : 'per agent'}`;
 }
 
 const CLUB_TIP = 'Your alumni club membership sets this. It changes back when the membership ends.';

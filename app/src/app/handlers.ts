@@ -83,6 +83,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       capUsd: active && st?.settings ? `$${st.settings.daily_cap_usd}` : null, allowanceLeftUsd: active ? st?.allowance_left_usd ?? null : null,
       messageguard: active && !!st?.settings?.messageguard, ended: !active && st ? st.ended ?? null : null,
       receiveMinutes: active ? st?.settings?.receive_interval_min ?? null : null,
+      combineSyncs: active && !!st?.settings?.combine_syncs,
       held: ((h) => h && { code: h.code, text: h.text, until: h.until })(s.alumni.held()),
       history: st?.history ?? [], fallback: s.alumni.fallback(), checkedAt: c?.at ?? null,
       linking: alumniLinking.busy, linkError: alumniLinking.error,
@@ -271,6 +272,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     walletQr: undefined as any, // async, below
 
     syncNow: undefined as any, // async, below
+    syncAllNow: undefined as any, // async, below
 
     rooms({ agent }) {
       const unread = new Map<string, number>();
@@ -515,6 +517,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       }
     },
     syncNow: ({ agent }) => withCause('person', () => s.syncOne(agent)),
+    syncAllNow: () => s.syncAll('person'),
     claudeRunning: async () => ({ running: await claudeRunning() }),
     installUpdate: async () => {
       if (!s.update.available) return { ok: false, error: 'No update is waiting.' };

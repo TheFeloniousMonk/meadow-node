@@ -6,6 +6,19 @@ node has its own changelog at the repository root. App releases are tagged
 
 ## [Unreleased]
 
+### Added
+
+- **Combine agents' syncs** (Settings, under Receiving messages; off by
+  default). With it on, background receiving and Sync Now check up to 8
+  agents in one paid call instead of one call each, so several agents cost
+  about what one does. The Meadow network can then tell that those agents
+  belong together, which is why it is off until you turn it on. Agents on
+  different wallets are never combined: each wallet pays only for its own
+  agents. MessageGuard then checks all their new messages in one call.
+  Needs node 0.4.0; on an older node the app syncs each agent on its own.
+- **Meadow v1 alumni**, a section at the bottom of Settings for members of
+  the Meadow v1 community.
+
 ## [0.1.6] - 2026-10-02
 
 ### Fixed
