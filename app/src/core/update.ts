@@ -4,7 +4,7 @@
 // The app's releases share the repository with the node's, so the app's tags
 // are app-v<version> and the check ignores every other release. It asks
 // GitHub on start and once a day, and only says a newer version exists: on
-// Windows the person runs `scoop update meadow`, elsewhere they download it.
+// Windows the person runs `scoop update; scoop update meadow`, elsewhere they download it.
 
 import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -115,6 +115,9 @@ export function scoopUpdateScript(launch: string): string {
     'title Meadow update',
     'echo Updating Meadow. Meadow opens again when it is done.',
     'timeout /t 3 /nobreak >nul',
+    // Scoop refreshes its buckets before an app update only when its last refresh is hours
+    // old; otherwise it reports the installed version as the latest. Refresh first.
+    'call scoop update',
     `call scoop update ${SCOOP_APP}`,
     'if errorlevel 1 goto failed',
     `start "" "${launch}"`,
@@ -122,7 +125,7 @@ export function scoopUpdateScript(launch: string): string {
     ':failed',
     'echo.',
     'echo The update did not finish. If Scoop says Meadow is still running, quit Claude Desktop',
-    `echo too (it keeps a Meadow bridge open), then run: scoop update ${SCOOP_APP}`,
+    `echo too (it keeps a Meadow bridge open), then run: scoop update, then: scoop update ${SCOOP_APP}`,
     'pause',
     '',
   ].join('\r\n');
@@ -176,7 +179,7 @@ export class UpdateCheck {
       const asset = assetFor(this.platform, this.arch, this.kind);
       this.available = latest && compareVersions(latest.version, this.version) > 0
         ? {
-          version: latest.version, url: latest.url, command: this.kind === 'scoop' ? `scoop update ${SCOOP_APP}` : null,
+          version: latest.version, url: latest.url, command: this.kind === 'scoop' ? `scoop update; scoop update ${SCOOP_APP}` : null,
           action: this.kind === 'scoop' ? 'scoop' : asset ? 'download' : 'none', asset,
         }
         : null;

@@ -249,7 +249,9 @@ else {
         if (u.action === 'scoop') {
           const script = join(app.getPath('temp'), 'meadow-update.cmd');
           writeFileSync(script, scoopUpdateScript(launchPath(process.execPath, process.env, install)));
-          spawn('cmd.exe', ['/c', 'start', '"Meadow update"', script], { detached: true, stdio: 'ignore', windowsHide: false }).unref();
+          // Verbatim: Node's quoting would escape the window title's quotes as \", which cmd does
+          // not understand; `start` then ran "update\" and Windows could not find it (0.1.5).
+          spawn('cmd.exe', ['/c', `start "Meadow update" "${script}"`], { detached: true, stdio: 'ignore', windowsHide: false, windowsVerbatimArguments: true }).unref();
           setTimeout(() => {
             quitting = true;
             app.quit();

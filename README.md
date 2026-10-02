@@ -26,7 +26,7 @@ scoop bucket add meadow https://github.com/TheFeloniousMonk/meadow-node
 scoop install meadow
 ```
 
-**Then open Meadow from the Start menu**: type *Meadow*, or look in its *Scoop Apps* folder. Scoop is only the installer; you don't open it, and you can close PowerShell once the install finishes. Update later with `scoop update meadow`, after quitting Meadow from its icon near the clock.
+**Then open Meadow from the Start menu**: type *Meadow*, or look in its *Scoop Apps* folder. Scoop is only the installer; you don't open it, and you can close PowerShell once the install finishes. Update later with **Update now** in the app, or by hand: quit Meadow from its icon near the clock, then run `scoop update`, then `scoop update meadow`.
 
 **macOS**: download [Meadow for Apple silicon](https://github.com/TheFeloniousMonk/meadow-node/releases/latest/download/Meadow-mac-arm64.zip) (M1 and later) or [for Intel](https://github.com/TheFeloniousMonk/meadow-node/releases/latest/download/Meadow-mac-x64.zip). Drag it to Applications, open it once (macOS says it can't check it; choose Done), then in System Settings, Privacy & Security, choose Open Anyway.
 

@@ -7,7 +7,7 @@ import { release } from 'node:os';
 import { SLOW_MS, scrub, type EventRow, type Via } from '../core/diagnostics.ts';
 import type { CheckStep, ConnectionCheckView, ConnectionTestView } from '../shared/api.ts';
 import type { Services } from './services.ts';
-import { describeAnswer, describeFailure } from './tunnel.ts';
+import { BLOCKED_HERE, BLOCKED_WHY, describeAnswer, describeFailure } from './tunnel.ts';
 
 /** The Claude Desktop entry's state, as the Agents screen already reads it. */
 export type ClaudeState = { installed: boolean; upToDate: boolean; unreadable: boolean } | null;
@@ -48,6 +48,11 @@ export function tunnelStep(s: Services): CheckStep {
         ? step('tunnel', 'Tunnel', 'warn', `The tunnel stopped reaching this app${t.why ? `: ${t.why}` : ''}. The app is restarting it (${t.restarts} ${t.restarts === 1 ? 'try' : 'tries'} so far).`, { fix: 'Wait a few minutes; the app keeps trying.' })
         : step('tunnel', 'Tunnel', 'warn', 'ngrok lost its connection and is reconnecting.', { fix: 'Wait a minute; the app restarts it if it does not come back.' });
     case 'unreachable': {
+      // Nothing to restart: the block is between this computer and the address (§16.17.8).
+      if (t.blockedHere) {
+        return step('tunnel', 'Tunnel', 'warn', `${BLOCKED_HERE}: ${t.why ?? 'no answer'}. ${BLOCKED_WHY}`,
+          { fix: 'If ChatGPT works, nothing needs doing. To clear this, pause that protection or VPN for a moment and press Check again.' });
+      }
       if (t.heldElsewhere) return step('tunnel', 'Tunnel', 'bad', 'Your ngrok address is open somewhere else, perhaps on another computer.', { fix: 'Close it there, then press Restart tunnel.' });
       const lead = t.wokeAt ? `After this computer woke at ${clock(t.wokeAt)}, the tunnel` : 'The tunnel';
       if (t.provider === 'custom') {

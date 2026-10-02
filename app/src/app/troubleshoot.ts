@@ -152,12 +152,16 @@ export function troubleshoot(s: Services, claude: (agent: string) => ClaudeState
           const t = s.tunnel.status;
           items.push(fromStep(st, t.provider === 'none' || t.state === 'off' || t.state === 'error'
             ? { label: 'Turn the tunnel on', go: 'settings' }
-            : t.provider === 'ngrok' ? { label: 'Restart tunnel', run: 'restartTunnel' } : undefined));
+            // Blocked on this computer's side: a restart cannot help, so no button but Check again (§16.17.8).
+            : t.provider === 'ngrok' && !t.blockedHere ? { label: 'Restart tunnel', run: 'restartTunnel' } : undefined));
           // Sign-in protection (§16.21.3): the tools, through the address, must refuse a caller with no token.
           if (s.tunnel.url) {
             const p = out.protection.get(a.id);
             items.push(p === undefined
               ? item('protection', 'Sign-in protection', 'info', 'Checking…')
+              // Its request could not leave this computer either: not a fault of the protection.
+              : p !== null && t.blockedHere
+                ? item('protection', 'Sign-in protection', 'info', 'Cannot be checked from this computer while it cannot reach the tunnel\'s address (see Tunnel).', { at: out.at })
               : p === null
                 ? item('protection', 'Sign-in protection', 'ok', 'Without signing in, the app refuses, as it must.', { at: out.at })
                 : item('protection', 'Sign-in protection', 'bad', `A call without signing in did not get this app's refusal: ${p}.`, { at: out.at, fix: 'Check that the tunnel points at this app (port ' + settings.publicPort + '), then press Check again.' }));

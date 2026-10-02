@@ -7,7 +7,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Tunnel, WATCH, type NgrokOpener, type Timers } from '../src/app/tunnel.ts';
+import { Tunnel, WATCH, isLocalFailure, type NgrokOpener, type Timers } from '../src/app/tunnel.ts';
 import { tunnelStep } from '../src/app/check.ts';
 
 const URL_ = 'https://abc.ngrok-free.app';
@@ -85,8 +85,10 @@ function fakeNgrok() {
 
 /** The network: the address reaches the app while `up` says so; otherwise ngrok's offline page. */
 function fakeNet() {
-  const net = { up: (() => true) as () => boolean, impostor: false, doorUp: true };
+  const net = { up: (() => true) as () => boolean, impostor: false, doorUp: true, local: null as string | null };
   const fetchImpl = (async (input: any) => {
+    // Something on this computer answers for the address (a VPN, antivirus, a filter): the request never reaches ngrok.
+    if (net.local) throw Object.assign(new TypeError('fetch failed'), { cause: { code: net.local } });
     if (net.impostor) return Response.json({ issuer: 'https://elsewhere.example' });
     if (!net.up()) return new Response('<html>ERR_NGROK_3200 The endpoint is offline</html>', { status: 404 });
     assert.match(String(input), /\/\.well-known\/oauth-authorization-server$/);
@@ -278,6 +280,66 @@ test('Restart tunnel reports a tunnel that still does not reach the app', async 
   assert.equal(r.ok, false);
   assert.match(r.text, /^The tunnel restarted but still does not reach this app: the tunnel's own error page/);
   assert.equal(t.status.state, 'unreachable');
+});
+
+test('ngrok connected but the address blocked on this computer: no restart, amber, and it says why', async () => {
+  const { t, o, net, clock, events, step } = await setup();
+  net.local = 'ERR_SSL_WRONG_VERSION_NUMBER';
+  const r = await t.checkNow();
+  assert.equal(r.ok, false);
+  assert.equal(t.status.state, 'unreachable');
+  assert.equal(t.status.blockedHere, true);
+  assert.equal(t.status.trying, false);
+  assert.ok(events.includes('blocked here: it could not be reached (ERR_SSL_WRONG_VERSION_NUMBER)'));
+  const s = step();
+  assert.equal(s.state, 'warn');
+  assert.match(s.text, /^The tunnel is connected to ngrok, but this computer cannot reach its own address: .*ERR_SSL_WRONG_VERSION_NUMBER.*ChatGPT reaches the tunnel/);
+  assert.match(s.fix!, /^If ChatGPT works, nothing needs doing/);
+  // A wake while ngrok's heartbeats are current: still nothing to restart.
+  t.wake();
+  await clock.advance(10 * 60_000, t);
+  assert.equal(o.opens, 1, 'never restarted');
+  assert.equal(t.status.blockedHere, true);
+  // The block lifted: the next check turns it green.
+  net.local = null;
+  assert.equal((await t.checkNow()).ok, true);
+  assert.equal(t.status.state, 'on');
+  assert.equal(t.status.blockedHere, false);
+});
+
+test('a lookup failure while ngrok is not heard from is restarted as before', async () => {
+  const { t, o, net, clock } = await setup();
+  o.alive = false; // ngrok's servers silent too: the computer's network, not a local block
+  await clock.advance(25_000, t);
+  net.local = 'ENOTFOUND';
+  o.script = ['failed to dial ngrok server'];
+  t.wake();
+  await clock.advance(10_000, t);
+  assert.equal(o.opens, 2, 'a restart was tried');
+  assert.equal(t.status.state, 'reconnecting');
+  assert.equal(t.status.blockedHere, false);
+  net.local = null; // the network is back
+  await clock.advance(20_000, t);
+  assert.equal(t.status.state, 'on');
+});
+
+test('Restart tunnel that ends blocked on this computer says so', async () => {
+  const { t, net } = await setup();
+  net.local = 'ERR_SSL_WRONG_VERSION_NUMBER';
+  const r = await t.restart();
+  assert.equal(r.ok, false);
+  assert.match(r.text, /^The tunnel is connected to ngrok, but this computer cannot reach its own address/);
+  assert.equal(t.status.blockedHere, true);
+});
+
+test('which failures count as a block on this computer', () => {
+  const failed = (code: string) => Object.assign(new TypeError('fetch failed'), { cause: { code } });
+  for (const code of ['ERR_SSL_WRONG_VERSION_NUMBER', 'CERT_HAS_EXPIRED', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'ERR_TLS_CERT_ALTNAME_INVALID', 'ENOTFOUND', 'ECONNREFUSED', 'ECONNRESET']) {
+    assert.equal(isLocalFailure(failed(code)), true, code);
+  }
+  assert.equal(isLocalFailure(Object.assign(new Error('timed out'), { name: 'TimeoutError' })), false, 'ngrok can be slow');
+  assert.equal(isLocalFailure(failed('UND_ERR_SOCKET')), false);
+  assert.equal(isLocalFailure(new Error('no code')), false);
 });
 
 test('a custom tunnel is checked at the same moments but never restarted', async () => {

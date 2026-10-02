@@ -20,7 +20,7 @@ if (!section) console.log(`::warning::app/CHANGELOG.md has no "## ${version}" se
 const install = [
   '## Install',
   '',
-  '- **Windows:** through Scoop only (the zip below is what Scoop installs): see the README. To update: `scoop update meadow`.',
+  '- **Windows:** through Scoop only (the zip below is what Scoop installs): see the README. To update by hand: `scoop update`, then `scoop update meadow` (or press Update now in the app).',
   '- **macOS:** the zip for your Mac (arm64 for Apple silicon, x64 for Intel), then System Settings, Privacy & Security, Open Anyway.',
   '- **Linux:** the .deb (Ubuntu and Debian), or the AppImage (needs libfuse2).',
   '',

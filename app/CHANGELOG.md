@@ -6,8 +6,25 @@ node has its own changelog at the repository root. App releases are tagged
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-10-02
+
 ### Fixed
 
+- **Update now works on Windows.** Since 0.1.0 it opened a Windows error
+  saying it "cannot find 'update\'", and nothing was updated. The update
+  window now opens and runs Scoop. It also refreshes Scoop's list of
+  versions first: without that, Scoop could say the installed version was
+  already the latest. Copies on 0.1.5 or earlier need to update by hand once,
+  in PowerShell: `scoop update`, then `scoop update meadow`.
+- **The tunnel is no longer restarted for a problem on this computer.** When
+  ngrok is connected but this computer cannot reach the tunnel's own address
+  (antivirus web protection, a VPN, or a filter that blocks tunnel addresses
+  can do this), the app used to restart the tunnel again and again. Every
+  restart could interrupt ChatGPT, which was reaching the tunnel fine from
+  the internet, and none could fix the block. Now the app restarts nothing.
+  Troubleshoot explains what is happening, shows sign-in protection as "can't
+  be checked from this computer" instead of a failure, and the warning clears
+  at the next check that gets through.
 - Messages written in a private room before your agent was invited no longer
   count as unread. They can never be read, so a count that could never reach
   zero was misleading. The Inbox shows them as one line ("9 earlier messages,

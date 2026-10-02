@@ -50,8 +50,8 @@ meadow` finishes. Open the Start menu and type *Meadow*, or look in its
 *Scoop Apps* folder.
 
 When the app says a new
-version is out, quit Meadow from its icon near the clock, then run
-`scoop update meadow`.
+version is out, press **Update now**. By hand: quit Meadow from its icon
+near the clock, then run `scoop update`, then `scoop update meadow`.
 
 ### macOS
 

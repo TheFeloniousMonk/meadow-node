@@ -22,6 +22,10 @@
 //   permanent address) and checked again: at most 4 restarts per wake or
 //   disconnect, retried at 10 s, 30 s, 2 min and 5 min after a wake. One chain
 //   serializes every check and restart, the button's too.
+// - Unless ngrok is connected and the check never reached it: a secure-connection,
+//   address-lookup, or connection failure while ngrok's heartbeats are current
+//   means something on this computer or its network answers for the address.
+//   No restart can fix that, so the app restarts nothing and says so.
 
 export type TunnelProvider = 'none' | 'ngrok' | 'custom';
 export type TunnelState = 'off' | 'starting' | 'on' | 'reconnecting' | 'unreachable' | 'error';
@@ -44,6 +48,8 @@ export interface TunnelStatus {
   wokeAt: number | null;
   /** ngrok kept refusing the address as already open, past 2 minutes (ERR_NGROK_334). */
   heldElsewhere: boolean;
+  /** ngrok is connected, but this computer's own check could not reach the address (§16.17.8): nothing restarts. */
+  blockedHere: boolean;
   /** The loopback check of the door; null before the first. */
   door: { ok: boolean; why: string | null; at: number } | null;
 }
@@ -143,9 +149,29 @@ export function describeFailure(err: unknown): string {
   return e?.name === 'TimeoutError' ? 'no answer within 10 seconds' : `it could not be reached (${e?.cause?.code ?? e?.message ?? 'unknown error'})`;
 }
 
+/**
+ * Failures before any answer that ngrok's servers do not cause while ngrok is connected: a
+ * plain-text or foreign answer to the secure connection (antivirus web protection, a VPN,
+ * a filter's block page), a certificate that is not ngrok's, an address that does not
+ * look up, or a refused or cut connection. A timeout is not one: ngrok can be slow.
+ */
+const LOCAL_CODES = /^(ERR_SSL_|ERR_TLS_|CERT_|UNABLE_TO_|SELF_SIGNED_|DEPTH_ZERO_|HOSTNAME_MISMATCH$|ENOTFOUND$|EAI_AGAIN$|ECONNREFUSED$|ECONNRESET$|EHOSTUNREACH$|ENETUNREACH$)/;
+export function isLocalFailure(err: unknown): boolean {
+  const e = err as any;
+  if (e?.name === 'TimeoutError') return false;
+  const code = e?.cause?.code ?? e?.code;
+  return typeof code === 'string' && LOCAL_CODES.test(code);
+}
+
+type CheckResult = { ok: true } | { ok: false; why: string; local?: boolean };
+
 class Stale extends Error {}
 class TokenRefused extends Error {}
 class HeldElsewhere extends Error {}
+
+/** Said wherever the tunnel is connected but this computer's own check cannot reach its address. */
+export const BLOCKED_HERE = 'The tunnel is connected to ngrok, but this computer cannot reach its own address';
+export const BLOCKED_WHY = 'Something on this computer or its network answers in its place, such as antivirus web protection, a VPN, or a filter that blocks tunnel addresses. ChatGPT reaches the tunnel from the internet, so it probably still works.';
 
 const TOKEN_REFUSED = 'ngrok did not accept the token. Copy it again from your ngrok dashboard.';
 const isTokenError = (m: string) => /authtoken|authentication|ERR_NGROK_10[57]\b/i.test(m);
@@ -169,6 +195,8 @@ export class Tunnel {
   #chain: Promise<unknown> = Promise.resolve();
   #watchers: unknown[] = [];
   #lastBeat = 0;
+  /** The last real sign from ngrok's servers: a heartbeat, or a session opening. A wake does not move it. */
+  #lastHeard = 0;
   #reconnectingSince = 0;
   #episode: { reason: Reason; timer: unknown } | null = null;
 
@@ -183,7 +211,7 @@ export class Tunnel {
   }
 
   static #initial(provider: TunnelProvider, state: TunnelState): TunnelStatus {
-    return { provider, state, url: null, error: null, reachedAt: null, why: null, restarts: 0, trying: false, wokeAt: null, heldElsewhere: false, door: null };
+    return { provider, state, url: null, error: null, reachedAt: null, why: null, restarts: 0, trying: false, wokeAt: null, heldElsewhere: false, blockedHere: false, door: null };
   }
 
   get status(): TunnelStatus {
@@ -294,6 +322,10 @@ export class Tunnel {
           this.#reached();
           return { ok: true, why: null };
         }
+        if (this.#blockedHere(r)) {
+          this.#blocked(r.why);
+          return { ok: false, why: r.why };
+        }
         this.#set({ why: r.why });
         this.#begin('reconnected', epoch, true);
         return { ok: false, why: r.why };
@@ -313,14 +345,18 @@ export class Tunnel {
     if (this.#status.provider !== 'ngrok' || !this.#config) return { ok: false, text: 'Only an ngrok tunnel can be restarted from here. Restart your own tunnel program instead.' };
     const epoch = this.#epoch;
     this.#endEpisode();
-    this.#set({ restarts: 0, wokeAt: null, heldElsewhere: false, trying: true });
+    this.#set({ restarts: 0, wokeAt: null, heldElsewhere: false, blockedHere: false, trying: true });
     try {
       return await this.#serial(async () => {
         const opened = await this.#restartOnce('pressed', epoch);
-        const r = opened ? await this.#check(epoch) : { ok: false, why: this.#status.why ?? 'ngrok could not start' };
+        const r: CheckResult = opened ? await this.#check(epoch) : { ok: false, why: this.#status.why ?? 'ngrok could not start' };
         if (r.ok) {
           this.#reached();
           return { ok: true, text: 'The tunnel is back and reaches this app.' };
+        }
+        if (this.#blockedHere(r)) {
+          this.#blocked(r.why);
+          return { ok: false, text: `${BLOCKED_HERE}: ${r.why}. ${BLOCKED_WHY}` };
         }
         this.#set({ state: 'unreachable', why: r.why, trying: false });
         return { ok: false, text: `The tunnel restarted but still does not reach this app: ${r.why}.` };
@@ -346,6 +382,7 @@ export class Tunnel {
   #beat(epoch: number) {
     if (epoch !== this.#epoch) return;
     this.#lastBeat = this.#now();
+    this.#lastHeard = this.#lastBeat;
     if (this.#status.state === 'reconnecting' && !this.#episode) {
       this.#event('reconnected');
       void this.#single('reconnected', epoch);
@@ -357,7 +394,7 @@ export class Tunnel {
     if (this.#episode) return; // a restart in progress closes sessions on purpose
     this.#reconnectingSince = this.#now();
     this.#event('lost', what);
-    this.#set({ state: 'reconnecting' });
+    this.#set({ state: 'reconnecting', blockedHere: false });
   }
 
   #watchdog(epoch: number) {
@@ -395,10 +432,10 @@ export class Tunnel {
   // ---- Checks and restarts ----
 
   /** The reachability check through the public address. */
-  async #check(epoch: number): Promise<{ ok: true } | { ok: false; why: string }> {
+  async #check(epoch: number): Promise<CheckResult> {
     const url = this.url;
     if (!url) return { ok: false, why: 'the tunnel has no address' };
-    let r: { ok: true } | { ok: false; why: string };
+    let r: CheckResult;
     try {
       const res = await this.fetchImpl(`${url}/.well-known/oauth-authorization-server`, {
         headers: { 'ngrok-skip-browser-warning': '1', 'user-agent': 'Meadow tunnel check' },
@@ -410,7 +447,7 @@ export class Tunnel {
         r = j?.issuer === url ? { ok: true } : { ok: false, why: 'an answer from something other than this app' };
       }
     } catch (err) {
-      r = { ok: false, why: describeFailure(err) };
+      r = { ok: false, why: describeFailure(err), local: isLocalFailure(err) };
     }
     if (epoch !== this.#epoch) throw new Stale();
     this.#event(r.ok ? 'check pass' : 'check fail', r.ok ? '' : r.why);
@@ -419,7 +456,24 @@ export class Tunnel {
 
   #reached() {
     this.#endEpisode();
-    this.#set({ state: 'on', reachedAt: this.#now(), why: null, restarts: 0, trying: false, wokeAt: null, heldElsewhere: false });
+    this.#set({ state: 'on', reachedAt: this.#now(), why: null, restarts: 0, trying: false, wokeAt: null, heldElsewhere: false, blockedHere: false });
+  }
+
+  /** ngrok is connected now: a session is open, not reconnecting, and its servers answered within the heartbeat limit. */
+  #ngrokConnected(): boolean {
+    return this.#status.provider === 'ngrok' && !!this.#session && this.#status.state !== 'reconnecting' && this.#now() - this.#lastHeard <= WATCH.beatsLostMs;
+  }
+
+  /** A failed check that never reached ngrok, while ngrok is connected: the block is on this computer's side. */
+  #blockedHere(r: CheckResult): boolean {
+    return !r.ok && !!r.local && this.#ngrokConnected();
+  }
+
+  /** Stops trying: no restart fixes a block on this computer's side. A later passing check clears it. */
+  #blocked(why: string) {
+    this.#endEpisode();
+    this.#event('blocked here', why);
+    this.#set({ state: 'unreachable', blockedHere: true, why, trying: false });
   }
 
   /** One check; on failure, an episode of restarts begins at once. */
@@ -427,6 +481,7 @@ export class Tunnel {
     return this.#serial(async () => {
       const r = await this.#check(epoch);
       if (r.ok) return this.#reached();
+      if (this.#blockedHere(r)) return this.#blocked(r.why);
       this.#set({ why: r.why });
       this.#begin(reason, epoch, true);
     }).catch((err) => {
@@ -453,10 +508,12 @@ export class Tunnel {
       this.#episode = { reason, timer: this.#timers.set(() => void attempt(i), Math.max(0, started + delays[i] - this.#now())) };
     };
     const attempt = (i: number) => this.#serial(async () => {
-      let r: { ok: true } | { ok: false; why: string } | null = null;
+      let r: CheckResult | null = null;
       if (!canRestart || (i === 0 && !failed)) r = await this.#check(epoch);
+      if (r && !r.ok && this.#blockedHere(r)) return this.#blocked(r.why);
       if (canRestart && !r?.ok) r = (await this.#restartOnce(reason, epoch)) ? await this.#check(epoch) : { ok: false, why: this.#status.why ?? 'ngrok could not start' };
       if (r!.ok) return this.#reached();
+      if (!r!.ok && this.#blockedHere(r!)) return this.#blocked(r!.why);
       const why = (r as { why: string }).why;
       if (i + 1 < delays.length) {
         // Still trying: amber for ngrok (the app is fixing it), red for a tunnel only its owner can restart.
@@ -476,10 +533,10 @@ export class Tunnel {
     });
     // A custom tunnel whose check just failed is red at once (only its owner can fix it), and retried later.
     if (!canRestart && failed) {
-      this.#set({ state: 'unreachable', trying: true });
+      this.#set({ state: 'unreachable', blockedHere: false, trying: true });
       return schedule(1);
     }
-    this.#set({ trying: true });
+    this.#set({ blockedHere: false, trying: true });
     schedule(0);
   }
 
@@ -517,6 +574,7 @@ export class Tunnel {
         }
         this.#session = session;
         this.#lastBeat = this.#now();
+        this.#lastHeard = this.#lastBeat; // the session opening is ngrok's servers answering
         if (this.#status.url && this.#status.url !== session.url) this.#event('new address', session.url);
         this.#set({ url: session.url, heldElsewhere: false, error: null });
         return;

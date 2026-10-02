@@ -228,7 +228,7 @@ export interface AppState {
   /** The screening service's price, for MessageGuard (§16.11). */
   guardPriceUsd: string | null;
   /** The tunnel as the app last confirmed it (§16.17.8): `reachedAt` is the last check through the address that passed. */
-  tunnel: { provider: 'none' | 'ngrok' | 'custom'; state: 'off' | 'starting' | 'on' | 'reconnecting' | 'unreachable' | 'error'; url: string | null; error: string | null; reachedAt: number | null; why: string | null; hasNgrokToken: boolean; port: number };
+  tunnel: { provider: 'none' | 'ngrok' | 'custom'; state: 'off' | 'starting' | 'on' | 'reconnecting' | 'unreachable' | 'error'; url: string | null; error: string | null; reachedAt: number | null; why: string | null; blockedHere: boolean; hasNgrokToken: boolean; port: number };
   /** Clients the person approved, per agent, with Revoke in Settings. */
   authorized: { client: string; name: string; agent: string; agentName: string; since: number }[];
   catalogError: string | null;

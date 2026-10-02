@@ -44,7 +44,7 @@ const fake = (body: unknown, ok = true) => (async () => new Response(JSON.string
 
 test('the check says what to do per install', async () => {
   const scoop = new UpdateCheck({ version: '0.2.0', kind: 'scoop', fetchImpl: fake(releases) });
-  assert.deepEqual(await scoop.check(), { version: '0.10.0', url: 'https://github.com/TheFeloniousMonk/meadow-node/releases/tag/app-v0.10.0', command: 'scoop update meadow', action: 'scoop', asset: null });
+  assert.deepEqual(await scoop.check(), { version: '0.10.0', url: 'https://github.com/TheFeloniousMonk/meadow-node/releases/tag/app-v0.10.0', command: 'scoop update; scoop update meadow', action: 'scoop', asset: null });
   const mac = new UpdateCheck({ version: '0.2.0', kind: 'package', fetchImpl: fake(releases) });
   assert.equal((await mac.check())?.command, null);
   const current = new UpdateCheck({ version: '0.10.0', kind: 'scoop', fetchImpl: fake(releases) });
@@ -102,6 +102,8 @@ test('the Scoop update script waits for Meadow to quit, updates, and opens it ag
   const s = scoopUpdateScript('C:\Users\ann\scoop\apps\meadow\current\Meadow.exe');
   const lines = s.split('\r\n');
   assert.ok(lines.indexOf('timeout /t 3 /nobreak >nul') < lines.indexOf('call scoop update meadow'));
+  // Buckets first, or Scoop may call the installed version the latest.
+  assert.ok(lines.includes('call scoop update') && lines.indexOf('call scoop update') < lines.indexOf('call scoop update meadow'));
   assert.ok(lines.includes('start "" "C:\Users\ann\scoop\apps\meadow\current\Meadow.exe"'));
   assert.ok(lines.includes('pause'), 'a failure stays on screen');
 });

@@ -104,12 +104,14 @@ export function TunnelControls({ state, refresh }: { state: AppState; refresh: (
       )}
       <div className="row">
         <button disabled={busy || (provider === 'ngrok' && !token && !t.hasNgrokToken)} onClick={save}>{busy ? 'Starting…' : provider === 'none' ? 'Turn off' : 'Save and start'}</button>
-        <span className={`status ${TUNNEL_WORDS[t.state][0]}`}>{TUNNEL_WORDS[t.state][1]}</span>
+        <span className={`status ${TUNNEL_WORDS[t.state][0]}`}>{t.blockedHere ? 'Connected; not reachable from here' : TUNNEL_WORDS[t.state][1]}</span>
         {t.url && <><span className="mono small">{t.url}</span> <button className="secondary icon" onClick={() => copy(t.url!)}>Copy</button></>}
         <RestartTunnel tunnel={t} refresh={refresh} />
       </div>
       {t.state === 'on' && t.reachedAt && <div className="small muted">Reached this app {when(t.reachedAt)}.</div>}
-      {t.state === 'unreachable' && t.why && <div className="notice warn">The tunnel stopped reaching this app: {t.why}.</div>}
+      {t.state === 'unreachable' && t.why && (t.blockedHere
+        ? <div className="notice warn">The tunnel is connected to ngrok, but this computer cannot reach its own address: {t.why}. Something on this computer or its network answers in its place, such as antivirus web protection, a VPN, or a filter that blocks tunnel addresses. ChatGPT reaches the tunnel from the internet, so it probably still works.</div>
+        : <div className="notice warn">The tunnel stopped reaching this app: {t.why}.</div>)}
       {(t.error || error) && <div className="notice warn">{t.error ?? error}</div>}
     </div>
   );
