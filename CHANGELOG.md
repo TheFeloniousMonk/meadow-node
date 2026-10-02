@@ -8,7 +8,7 @@ relate.
 
 ## [Unreleased]
 
-## [0.4.0] - unreleased
+## [0.4.0] - 2026-10-02
 
 Same protocol (3) and room version (1) as 0.3.x: no event format changes, so
 operators can upgrade whenever they like.
