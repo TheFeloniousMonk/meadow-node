@@ -12,7 +12,9 @@ import { Wallets } from '../core/wallets.ts';
 import { Mover } from '../core/move.ts';
 import { Bridger } from '../core/bridge.ts';
 import { withCause } from '../core/cause.ts';
-import { PortalTransport } from '../core/portal.ts';
+import { PortalTransport, type Payer } from '../core/portal.ts';
+import { Alumni, ClubFallback, type ClubStatus } from '../core/alumni.ts';
+import { TransportError } from '../core/transport.ts';
 import { Core } from '../core/core.ts';
 import { Connections } from '../core/connections.ts';
 import { ToolHost } from '../core/tools.ts';
@@ -73,6 +75,8 @@ export class Services {
   readonly connections: Connections;
   readonly tools: ToolHost;
   readonly transport: PortalTransport;
+  /** The alumni club (SPEC §18.8): pays for every agent while a membership is active. */
+  readonly alumni: Alumni;
   readonly guard: MessageGuard;
   readonly oauth: OAuth;
   readonly runner: Runner;
@@ -189,10 +193,12 @@ export class Services {
 
   readonly version: string;
 
-  constructor({ dbPath, masterKey, version, changed, catalog = new Catalog(), notify = () => {}, notifyText = () => {}, install = 'dev' }: {
+  constructor({ dbPath, masterKey, version, changed, catalog = new Catalog(), notify = () => {}, notifyText = () => {}, install = 'dev', alumniUrl }: {
     dbPath: string; masterKey: Uint8Array; version: string; changed: () => void; catalog?: Catalog; notify?: Notify;
     /** A plain system notification (a deposit arrived, §16.9.2). */
     notifyText?: (title: string, body: string) => void; install?: InstallKind;
+    /** The alumni club's address (tests use a stand-in). */
+    alumniUrl?: string;
   }) {
     this.#notify = notify;
     this.#notifyText = notifyText;
@@ -204,7 +210,20 @@ export class Services {
     this.wallets = new Wallets({ db: this.db, vault: this.vault, catalog: this.catalog });
     this.mover = new Mover({ wallets: this.wallets, db: this.db });
     this.bridger = new Bridger({ wallets: this.wallets, db: this.db, mover: this.mover });
-    this.transport = new PortalTransport({ catalog: this.catalog, wallets: this.wallets });
+    this.alumni = new Alumni({ db: this.db, vault: this.vault, catalog: this.catalog, changed: () => this.#changed(), ...(alumniUrl && { base: alumniUrl }) });
+    // While a membership is active the club signs; at its cap, or when it cannot be reached, the
+    // agent's own wallet pays only if the person turned the fallback on (§18.8).
+    const payer: Payer = async (req) => {
+      if (!this.alumni.active()) return this.wallets.authorize(req);
+      try {
+        return await this.alumni.authorize(req);
+      } catch (err) {
+        if (!(err instanceof ClubFallback)) throw err;
+        if (this.alumni.fallback()) return this.wallets.authorize(req);
+        throw new TransportError('refused', `${err.message} Your person can let their own wallet pay past the club's allowance, in Settings under Meadow v1 alumni.`);
+      }
+    };
+    this.transport = new PortalTransport({ catalog: this.catalog, wallets: this.wallets, payer });
     const guardSettings = () => {
       const s = this.settings();
       return { public: s.guardPublic, private: s.guardPrivate, perSyncLimit: s.guardLimit };
@@ -263,7 +282,10 @@ export class Services {
       },
     });
     this.connections = new Connections({ db: this.db, vault: this.vault });
-    this.tools = new ToolHost({ core: this.core, wallets: this.wallets, catalog: this.catalog, guard: guardSettings, diagnostics: this.diagnostics, activity: this.activity, notes: this.notes });
+    this.tools = new ToolHost({
+      core: this.core, wallets: this.wallets, catalog: this.catalog, guard: guardSettings, diagnostics: this.diagnostics, activity: this.activity, notes: this.notes,
+      club: () => ((st) => (st ? { capUsd: st.daily_cap_usd } : null))(this.alumni.settings()),
+    });
     this.oauth = new OAuth({ db: this.db, diagnostics: this.diagnostics });
     this.runner = new Runner({ db: this.db, vault: this.vault, host: this.tools });
     // Each change of the tunnel's state is recorded, with its error or address, and so is
@@ -385,6 +407,8 @@ export class Services {
     const s = this.settings();
     // Once a day, free: USDC sent to a wallet on the wrong network (§16.9.2); first a minute after start.
     if (!this.#daily) {
+      // The alumni club's status on start, then with the syncs once a day (§18.8).
+      setTimeout(() => void this.refreshAlumni().catch(() => {}), 5_000).unref();
       setTimeout(() => void this.checkElsewhere().catch(() => {}), 60_000).unref();
       this.#daily = setInterval(() => void this.checkElsewhere({ force: true }).catch(() => {}), 24 * 3600 * 1000);
       this.#daily.unref();
@@ -393,9 +417,21 @@ export class Services {
     this.#timer = setInterval(() => void this.syncAll(), s.syncMinutes * 60_000);
   }
 
-  /** Syncs every agent with a wallet; `cause` is what its payments are recorded as (§16.9.4). */
+  /** Asks the alumni club for the membership's status, and tells the person when it ends (§18.8). */
+  async refreshAlumni(): Promise<ClubStatus | null> {
+    const was = this.alumni.active();
+    const status = await this.alumni.refresh();
+    if (was && !this.alumni.active()) {
+      this.#notifyText('Your alumni membership has ended', 'Your agents\' own wallets pay for their calls again.');
+    }
+    return status;
+  }
+
+  /** Syncs every agent that something pays for: its wallet, or the alumni club; `cause` is what its payments are recorded as (§16.9.4). */
   async syncAll(cause: 'background' | 'person' = 'background') {
-    for (const a of this.core.agents().filter((x) => x.registered && this.wallets.walletOf(x.id))) {
+    if (this.alumni.due()) await this.refreshAlumni().catch(() => {});
+    const club = this.alumni.active();
+    for (const a of this.core.agents().filter((x) => x.registered && (club || this.wallets.walletOf(x.id)))) {
       await withCause(cause, () => this.syncOne(a.id)).catch(() => {});
     }
   }

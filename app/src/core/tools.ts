@@ -22,6 +22,7 @@ import type { Diagnostics, Outcome, Via } from './diagnostics.ts';
 import { WHO_WORDS, whoOf, type Activity, type ActivityKind } from './activity.ts';
 import { NoteError, type Note, type Notes } from './notes.ts';
 import { withCauseTracked } from './cause.ts';
+import { ALUMNI_WALLET, ALUMNI_WALLET_NAME } from './alumni.ts';
 import type { PaymentRow } from './wallets.ts';
 
 const GUARD_NOTE = 'MessageGuard is a filter for known prompt-injection tricks, not a guarantee.';
@@ -343,6 +344,20 @@ export class ToolHost {
   readonly wallets: Wallets;
   readonly catalog: Catalog;
   #balance: (address: string, token: string) => Promise<bigint>;
+  #club: () => { capUsd: string } | null;
+
+  /** What pays for an agent's calls: the alumni club while a membership is active, else its own wallet. */
+  #walletOf(agent: string): string | null {
+    return this.#club() ? ALUMNI_WALLET : this.wallets.walletOf(agent);
+  }
+
+  /** A wallet as the tools describe it; the club is shown as a wallet named "Alumni club" whose budget is its cap. */
+  #walletView(id: string | null): { id: string; name: string; address: string | null; dailyBudgetUsd: string; spent24h: bigint } | undefined {
+    if (!id) return undefined;
+    const club = id === ALUMNI_WALLET ? this.#club() : null;
+    if (club) return { id, name: ALUMNI_WALLET_NAME, address: null, dailyBudgetUsd: club.capUsd, spent24h: this.wallets.spent(id) };
+    return this.wallets.list().find((x) => x.id === id);
+  }
   #guard: () => GuardSettings;
   /** When each agent's last paid call ended, for "other spending since your last call" (§16.9.4). */
   #lastPaidAt = new Map<string, number>();
@@ -350,9 +365,12 @@ export class ToolHost {
   #activity?: Activity;
   #notes?: Notes;
 
-  constructor({ core, wallets, catalog, balance = tokenBalance, guard = () => ({ public: false, private: false, perSyncLimit: 10 }), diagnostics, activity, notes }: {
+  constructor({ core, wallets, catalog, balance = tokenBalance, guard = () => ({ public: false, private: false, perSyncLimit: 10 }), diagnostics, activity, notes, club = () => null }: {
     core: Core; wallets: Wallets; catalog: Catalog; balance?: (address: string, token: string) => Promise<bigint>; guard?: () => GuardSettings; diagnostics?: Diagnostics; activity?: Activity; notes?: Notes;
+    /** The alumni club while a membership is active (§18.8): it pays for every agent, up to its daily cap. */
+    club?: () => { capUsd: string } | null;
   }) {
+    this.#club = club;
     this.#notes = notes;
     this.#guard = guard;
     this.#diagnostics = diagnostics;
@@ -453,8 +471,7 @@ export class ToolHost {
    * payment records rather than the log, so background receiving never floods it. Null with no wallet.
    */
   spendingSummary(agent: string, since: number, voice: 'ai' | 'person'): { wallet: string; total: string; calls: number; by: string[] } | null {
-    const id = this.wallets.walletOf(agent);
-    const w = id ? this.wallets.list().find((x) => x.id === id) : undefined;
+    const w = this.#walletView(this.#walletOf(agent));
     if (!w) return null;
     const rows = this.wallets.paymentsBetween(w.id, since, Date.now());
     return { wallet: w.name, calls: rows.length, ...this.#spending(agent, rows, voice) };
@@ -659,7 +676,7 @@ export class ToolHost {
     }
     const refused = this.#mayRefuse(agent, name, args);
     if (refused) return { data: { refused } };
-    const wallet = this.wallets.walletOf(agent);
+    const wallet = this.#walletOf(agent);
     const started = Date.now();
     // The payments this call signs, and only these: another call running beside it is not its cost.
     const seqs: number[] = [];
@@ -694,7 +711,7 @@ export class ToolHost {
   #cost(wallet: string | null, agent: string, started: number, seqs: number[]): Json {
     if (!wallet) return {};
     const now = Date.now();
-    const w = this.wallets.list().find((x) => x.id === wallet)!;
+    const w = this.#walletView(wallet)!;
     const left = toAtomic(w.dailyBudgetUsd, 6) - this.wallets.spent(wallet);
     // What else the wallet paid since this agent's last paid call, and during this one, so the
     // budget's drop is explained (a tester saw $0.135 go while results said $0.06, 2026-10-02).
@@ -758,11 +775,10 @@ export class ToolHost {
     const unread = this.core.messages(agent, { undelivered: true }).filter((m) => m.author !== agent && (!only || only.has(m.room))).length;
     const queued = this.core.outbox(agent).filter((e) => e.kind === 'msg.post').length;
     const rooms = this.core.rooms(agent).filter((r) => !only || only.has(r.room));
-    const walletId = this.wallets.walletOf(agent);
-    const w = walletId ? this.wallets.list().find((x) => x.id === walletId) : undefined;
-    let balance = 'unknown';
+    const w = this.#walletView(this.#walletOf(agent));
+    let balance = w?.id === ALUMNI_WALLET ? 'paid by the alumni club, up to its daily allowance' : 'unknown';
     const rail = this.catalog.baseRail('meadow');
-    if (w && rail) {
+    if (w?.address && rail) {
       // status is free and must answer quickly: a balance that takes too long gives "unknown",
       // not a wait longer than the AI's host allows.
       let timer: ReturnType<typeof setTimeout> | undefined;

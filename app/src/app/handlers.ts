@@ -9,7 +9,7 @@ import { dirname } from 'node:path';
 import { backupChanges, backupDue, describeBackup, makeBackup, readBackup, restoreBackup } from '../core/backup.ts';
 import { tokenBalance } from '../core/balance.ts';
 import { add, bridgeEntry, claudeDesktopConfigPath, claudeDesktopRunning, entryName, remove, status } from '../server/claude-desktop.ts';
-import { CHANNELS, linkAllowed, type Api, type AppState, type BridgePlanView, type BridgeStateView, type Channel, type MessageView, type MovePlanView, type MoveStateView, type NoteView } from '../shared/api.ts';
+import { CHANNELS, linkAllowed, type AlumniView, type Api, type AppState, type BridgePlanView, type BridgeStateView, type Channel, type MessageView, type MovePlanView, type MoveStateView, type NoteView } from '../shared/api.ts';
 import type { Services } from './services.ts';
 import { connectionCheck, diagnosticsText, testConnection, type ClaudeState } from './check.ts';
 import { runOutside, troubleshoot } from './troubleshoot.ts';
@@ -69,6 +69,22 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
   const moves = new Map<string, MoveStateView>();
   // Each Move to Base in progress or last finished (§16.9.3), by wallet, network, and kind.
   const bridges = new Map<string, BridgeStateView>();
+  // The alumni club's browser link in progress, and the last one's error (§18.6).
+  let alumniLinking: { busy: boolean; error: string | null } = { busy: false, error: null };
+  const alumniView = (): AlumniView => {
+    const c = s.alumni.cached();
+    const st = c?.status;
+    const active = s.alumni.active();
+    return {
+      linked: s.alumni.key() !== null, active,
+      tierName: active ? st?.tier_name ?? null : null, paidThrough: st?.paid_through ?? null, cancelled: !!st?.cancelled,
+      changesTo: st?.changes_to ?? null, changesOn: st?.changes_on ?? null,
+      capUsd: active && st?.settings ? `$${st.settings.daily_cap_usd}` : null, allowanceLeftUsd: active ? st?.allowance_left_usd ?? null : null,
+      messageguard: active && !!st?.settings?.messageguard, ended: !active && st ? st.ended ?? null : null,
+      history: st?.history ?? [], fallback: s.alumni.fallback(), checkedAt: c?.at ?? null,
+      linking: alumniLinking.busy, linkError: alumniLinking.error,
+    };
+  };
   const moveTarget = (walletId: string, to: string) => {
     const other = s.wallets.list().find((w) => w.id === to && w.id !== walletId);
     return other ? { address: other.address, name: other.name } : { address: s.mover.destination(walletId, to), name: null };
@@ -162,6 +178,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
         authorized: s.oauth.authorized().map((c) => ({ ...c, agentName: s.core.agents().find((a) => a.id === c.agent)?.display_name ?? c.agent })),
         catalogError: s.catalog.fetchedAt ? null : 'The app has not read the portal\'s price list yet.',
         troubleshoot: troubleshoot(s, claudeState),
+        alumni: alumniView(),
       };
     },
 
@@ -440,11 +457,56 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       env.openExternal(url);
       return { ok: true };
     },
+
+    // The alumni club (§18.8). Its key never reaches the window: only what the club said about it.
+    alumniLink: undefined as any, // async, below
+    alumniValidate: undefined as any, // async, below
+    alumniRefresh: undefined as any, // async, below
+    alumniCancel: undefined as any, // async, below
+    alumniSetFallback({ on }) {
+      s.alumni.setFallback(!!on);
+      for (const a of s.core.agents()) s.activity.add(a.id, 'you', 'settings', on ? 'Let the agents\' own wallets pay past the alumni club\'s allowance.' : 'Stopped the agents\' own wallets paying past the alumni club\'s allowance.');
+      return { ok: true };
+    },
   };
 
   const claudeRunning = () => (env.claudeRunning ?? claudeDesktopRunning)();
 
   const asyncHandlers: Partial<Record<keyof Api, (a: any) => Promise<unknown>>> = {
+    // The alumni club (§18.8).
+    alumniLink: async ({ rotate }) => {
+      const { url, done } = await s.alumni.startLink(!!rotate);
+      alumniLinking = { busy: true, error: null };
+      s.changedNow();
+      done.then(
+        () => {
+          alumniLinking = { busy: false, error: null };
+          for (const a of s.core.agents()) s.activity.add(a.id, 'you', 'settings', rotate ? 'Got a new alumni membership key.' : 'Connected the alumni club membership.');
+        },
+        (err) => { alumniLinking = { busy: false, error: err.message }; },
+      ).finally(() => s.changedNow());
+      env.openExternal(url);
+      return { opened: true };
+    },
+    alumniValidate: async ({ key }) => {
+      try {
+        await s.alumni.validate(String(key ?? ''));
+        for (const a of s.core.agents()) s.activity.add(a.id, 'you', 'settings', 'Validated an alumni club membership.');
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: (err as Error).message };
+      }
+    },
+    alumniRefresh: async () => ({ ok: !!(await s.refreshAlumni().catch(() => null)) }),
+    alumniCancel: async () => {
+      try {
+        const r = await s.alumni.cancel();
+        for (const a of s.core.agents()) s.activity.add(a.id, 'you', 'settings', `Cancelled the alumni club membership; it runs to ${r.runs_until ?? 'the end of the paid month'}.`);
+        return { ok: true, runsUntil: r.runs_until };
+      } catch (err) {
+        return { ok: false, error: (err as Error).message };
+      }
+    },
     syncNow: ({ agent }) => withCause('person', () => s.syncOne(agent)),
     claudeRunning: async () => ({ running: await claudeRunning() }),
     installUpdate: async () => {

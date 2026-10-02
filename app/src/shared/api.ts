@@ -234,6 +234,33 @@ export interface AppState {
   catalogError: string | null;
   /** Troubleshoot (§16.21), from local records and the outside checks' last results. */
   troubleshoot: TroubleshootView;
+  /** The Meadow v1 alumni club (SPEC §18.8). */
+  alumni: AlumniView;
+}
+
+/** The alumni membership on this computer, from the club's last answer (§18.8). */
+export interface AlumniView {
+  /** A membership key is on this computer. */
+  linked: boolean;
+  active: boolean;
+  tierName: string | null;
+  paidThrough: string | null;
+  cancelled: boolean;
+  /** A downgrade waiting for the end of the paid period. */
+  changesTo: string | null;
+  changesOn: string | null;
+  capUsd: string | null;
+  allowanceLeftUsd: string | null;
+  messageguard: boolean;
+  /** Why it is not active, when it was and is no longer. */
+  ended: string | null;
+  history: { date: string; amount: string; currency: string; tier: string | null; status: string }[];
+  /** Use my own wallet when the club allowance is used up. */
+  fallback: boolean;
+  checkedAt: number | null;
+  /** The browser link in progress, and the last link's error. */
+  linking: boolean;
+  linkError: string | null;
 }
 
 export interface MovePlanView {
@@ -376,6 +403,13 @@ export interface Api {
   setRunner(a: { agent: string; enabled: boolean; provider: 'anthropic' | 'openai'; endpoint?: string; model: string; rooms: string[]; apiKey?: string }): { ok: true };
   copy(a: { text: string }): { ok: true };
   openExternal(a: { url: string }): { ok: boolean };
+  /** Join alumni club, or Get a new key: opens the club's site, which hands the key back to the app (§18.6). */
+  alumniLink(a: { rotate: boolean }): { opened: true };
+  /** Validate alumni membership: a key pasted from the club's site. */
+  alumniValidate(a: { key: string }): { ok: true } | { ok: false; error: string };
+  alumniRefresh(): { ok: boolean };
+  alumniCancel(): { ok: true; runsUntil: string | null } | { ok: false; error: string };
+  alumniSetFallback(a: { on: boolean }): { ok: true };
 }
 
 export type Channel = keyof Api;
@@ -383,7 +417,7 @@ export const CHANNELS: Channel[] = [
   'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'claudeRunning', 'installUpdate', 'disconnectClaude', 'localInterface', 'rotateToken',
   'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'movePlan', 'moveStart', 'moveStatus', 'bridgePlan', 'bridgeStart', 'bridgeStatus', 'setBudget', 'setDiscoverable', 'dismissUnlistedNotice', 'walletQr', 'syncNow', 'rooms', 'messages', 'setSettings',
   'guardCheck', 'guardDecide', 'backup', 'backupChanges', 'setMay', 'setRoomSettings', 'testConnection', 'diagnosticsText', 'diagnosticsSave', 'activity', 'activitySpending', 'activitySave', 'notes', 'setAnchor', 'setNote', 'removeNote', 'keepNote', 'notesSeen', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'restartTunnel', 'troubleshootRun', 'checkElsewhere', 'enterChatgptCode', 'revokeClient', 'setRunner',
-  'copy', 'openExternal',
+  'copy', 'openExternal', 'alumniLink', 'alumniValidate', 'alumniRefresh', 'alumniCancel', 'alumniSetFallback',
 ];
 
 /** Links the window may open in the browser. */

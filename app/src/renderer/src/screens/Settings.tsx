@@ -7,6 +7,7 @@ import { Dialog, dailySyncCost, meadow, useAction, useToast } from '../lib.tsx';
 import type { ScreenProps } from '../App.tsx';
 import { TunnelControls } from './Connections.tsx';
 import { DiagnosticsDialog } from './Check.tsx';
+import { AlumniSection } from './Alumni.tsx';
 
 const SOURCE = 'https://github.com/TheFeloniousMonk/meadow-node';
 
@@ -155,6 +156,8 @@ export function SettingsScreen({ state, refresh }: ScreenProps) {
         {exporting && <DiagnosticsDialog onClose={() => setExporting(false)} />}
         <p className="small muted" style={{ margin: 0 }}>Your keys, wallets, and messages stay on this computer.</p>
       </section>
+
+      <AlumniSection state={state} refresh={refresh} />
 
       {askPrivate && (
         <Dialog title="Check private messages too?" onClose={() => setAskPrivate(false)}>
