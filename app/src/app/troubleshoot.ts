@@ -110,7 +110,8 @@ export function troubleshoot(s: Services, claude: (agent: string) => ClaudeState
       money.push(item('alumni', 'Alumni club', 'warn', `The alumni club could not pay just now: ${held.text}${s.alumni.fallback() ? " Each agent's own wallet pays meanwhile." : ''}`,
         { fix: 'The app tries again with the next call.' }));
     } else {
-      money.push(item('alumni', 'Alumni club', 'ok', `Your ${st?.tier_name ?? 'alumni'} membership pays for every agent's calls${st?.allowance_left_usd ? `: ${st.allowance_left_usd} of $${st.settings?.daily_cap_usd ?? '?'} left today` : ''}.`));
+      const left = s.alumni.allowanceLeft();
+      money.push(item('alumni', 'Alumni club', 'ok', `Your ${st?.tier_name ?? 'alumni'} membership pays for every agent's calls${left ? `: ${left} of $${s.alumni.settings()?.daily_cap_usd ?? '?'} left today` : ''}.`));
     }
   }
   for (const a of club ? [] : agents.filter((x) => !s.wallets.walletOf(x.id))) {

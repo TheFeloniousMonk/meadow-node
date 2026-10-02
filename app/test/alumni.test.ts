@@ -54,6 +54,8 @@ async function startClub() {
       return send({ from: MEMBER, authorization, signature, allowance_left_usd: '$1.495' });
     }
     if (path === 'redeem') {
+      // A compromised club's words, to show they stay text (security review A3).
+      if (body.code === 'code-html') return send({ refused: '<img src=x onerror=alert(1)><script>alert(1)</script>', code: 'code' });
       const challenge = club.codes.get(body.code);
       if (!challenge || createHash('sha256').update(body.verifier).digest('base64url') !== challenge) return send({ refused: 'That code has expired or was already used.', code: 'code' });
       club.redeemed.push(body.code);
@@ -311,4 +313,37 @@ test("the club's members combine syncs: one call, paid by the club, for every ag
   assert.deepEqual(results.map((r) => r.ok), [true, true]);
   const paid = s.db.prepare('SELECT wallet, path FROM payments ORDER BY seq').all().slice(before) as any[];
   assert.deepEqual(paid.map((p) => [p.wallet, p.path]), [['alumni', '/v2/sync-batch']]);
+});
+
+test('the club cannot set a receive interval outside 5 minutes to a day, nor unreadable amounts (security review A1, A4)', async () => {
+  const { s } = await computer();
+  await s.alumni.validate(KEY);
+  const set = (settings: any, allowance: any) => {
+    const c = s.alumni.cached()!;
+    c.status.settings = settings;
+    c.status.allowance_left_usd = allowance;
+    s.db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('alumni_status', ?)").run(JSON.stringify(c));
+  };
+  for (const [given, want] of [[0, 5], [-5, 5], [undefined, 15], [40000, 1440], [2.5, 15], [30, 30]] as const) {
+    set({ daily_cap_usd: '1.50', receive_interval_min: given, messageguard: true, combine_syncs: true }, '$1.00');
+    assert.equal(s.effectiveSettings().syncMinutes, want, `receive_interval_min ${given}`);
+  }
+  set({ daily_cap_usd: '1.50 USD', receive_interval_min: 15, messageguard: 'yes', combine_syncs: 1 }, 1.5);
+  assert.deepEqual(s.alumni.settings(), { daily_cap_usd: '0.00', receive_interval_min: 15, messageguard: false, combine_syncs: false });
+  assert.equal(s.alumni.allowanceLeft(), null);
+});
+
+test('the browser link page shows the club\u2019s words as text, and a new link closes the last one (security review A3)', async () => {
+  const { s } = await computer();
+  const first = await s.alumni.startLink(false);
+  first.done.catch(() => {});
+  const { url, done } = await s.alumni.startLink(false);
+  done.catch(() => {});
+  const u = new URL(url);
+  const port = Number(u.searchParams.get('port'));
+  await assert.rejects(fetch(`http://127.0.0.1:${new URL(first.url).searchParams.get('port')}/alumni/callback?code=x&state=y`), 'the first listener is closed');
+  await assert.rejects(first.done, /newer link/);
+  const page = await (await fetch(`http://127.0.0.1:${port}/alumni/callback?code=code-html&state=${u.searchParams.get('state')}`)).text();
+  assert.ok(page.includes('&#60;script&#62;') && !page.includes('<script') && !page.includes('<img'));
+  await assert.rejects(done);
 });

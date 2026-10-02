@@ -13,7 +13,7 @@ import { Mover } from '../core/move.ts';
 import { Bridger } from '../core/bridge.ts';
 import { withCause } from '../core/cause.ts';
 import { PortalTransport, type Payer } from '../core/portal.ts';
-import { Alumni, ClubFallback, type ClubStatus } from '../core/alumni.ts';
+import { Alumni, ClubFallback, MAX_INTERVAL, MIN_INTERVAL, type ClubStatus } from '../core/alumni.ts';
 import { TransportError } from '../core/transport.ts';
 import { Core, SYNC, type SyncReport } from '../core/core.ts';
 import { Connections } from '../core/connections.ts';
@@ -261,7 +261,7 @@ export class Services {
     this.connections = new Connections({ db: this.db, vault: this.vault });
     this.tools = new ToolHost({
       core: this.core, wallets: this.wallets, catalog: this.catalog, guard: guardSettings, diagnostics: this.diagnostics, activity: this.activity, notes: this.notes,
-      club: () => ((st) => (st ? { capUsd: st.daily_cap_usd, allowanceLeftUsd: this.alumni.cached()?.status.allowance_left_usd ?? null } : null))(this.alumni.settings()),
+      club: () => ((st) => (st ? { capUsd: st.daily_cap_usd, allowanceLeftUsd: this.alumni.allowanceLeft() } : null))(this.alumni.settings()),
     });
     this.oauth = new OAuth({ db: this.db, diagnostics: this.diagnostics });
     this.runner = new Runner({ db: this.db, vault: this.vault, host: this.tools });
@@ -378,7 +378,9 @@ export class Services {
    * kept, and are in force again when the membership ends.
    */
   effectiveSettings(): Settings {
-    const s = this.settings();
+    const own = this.settings();
+    // Whoever set it (the window or the club), the interval stays within what Settings offers (security review A1).
+    const s = { ...own, syncMinutes: Number.isSafeInteger(own.syncMinutes) ? Math.min(Math.max(own.syncMinutes, MIN_INTERVAL), MAX_INTERVAL) : 15 };
     const club = this.alumni.settings();
     if (!club) return s;
     return { ...s, syncMinutes: club.receive_interval_min, combineSyncs: club.combine_syncs, guardPublic: club.messageguard, guardPrivate: club.messageguard && s.guardPrivate };
@@ -437,8 +439,16 @@ export class Services {
       this.#daily.unref();
     }
     if (!s.syncEnabled) return;
-    this.#timer = setInterval(() => void this.syncAll(), s.syncMinutes * 60_000);
+    this.#timer = setInterval(() => {
+      // A tick while the last one still runs is skipped, never stacked (security review A1).
+      if (this.#background) return;
+      this.#background = true;
+      void this.syncAll().finally(() => (this.#background = false));
+    }, s.syncMinutes * 60_000);
   }
+
+  /** A background receive is running. */
+  #background = false;
 
   /** The interval background receiving runs on, once scheduled; null when it is off. */
   #scheduled: number | null | undefined = undefined;
@@ -476,10 +486,13 @@ export class Services {
       return out;
     }
     // Combined (§7.9): agents one payer pays for, up to 8 a call. The club pays for every agent;
-    // otherwise each wallet pays for its own agents, so no wallet pays for another's.
+    // otherwise each wallet pays for its own agents, so no wallet pays for another's. With the
+    // fallback on, a club refusal makes the first agent's own wallet pay for the call, so then
+    // the agents are grouped by their own wallets too (security review A5).
+    const byOwn = !club || this.alumni.fallback();
     const groups = new Map<string, string[]>();
     for (const a of agents) {
-      const payer = club ? 'alumni' : this.wallets.walletOf(a)!;
+      const payer = byOwn ? `${club ? 'alumni:' : ''}${this.wallets.walletOf(a) ?? 'none'}` : 'alumni';
       groups.set(payer, [...(groups.get(payer) ?? []), a]);
     }
     for (const list of groups.values()) {

@@ -76,14 +76,16 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     const c = s.alumni.cached();
     const st = c?.status;
     const active = s.alumni.active();
+    // The tier's settings as checked by Alumni, never the club's raw word (security review A1, A4).
+    const set = s.alumni.settings();
     return {
       linked: s.alumni.key() !== null, active,
       tierName: active ? st?.tier_name ?? null : null, paidThrough: st?.paid_through ?? null, cancelled: !!st?.cancelled,
       changesTo: st?.changes_to ?? null, changesOn: st?.changes_on ?? null,
-      capUsd: active && st?.settings ? `$${st.settings.daily_cap_usd}` : null, allowanceLeftUsd: active ? st?.allowance_left_usd ?? null : null,
-      messageguard: active && !!st?.settings?.messageguard, ended: !active && st ? st.ended ?? null : null,
-      receiveMinutes: active ? st?.settings?.receive_interval_min ?? null : null,
-      combineSyncs: active && !!st?.settings?.combine_syncs,
+      capUsd: set ? `$${set.daily_cap_usd}` : null, allowanceLeftUsd: s.alumni.allowanceLeft(),
+      messageguard: !!set?.messageguard, ended: !active && st ? st.ended ?? null : null,
+      receiveMinutes: set?.receive_interval_min ?? null,
+      combineSyncs: !!set?.combine_syncs,
       held: ((h) => h && { code: h.code, text: h.text, until: h.until })(s.alumni.held()),
       history: st?.history ?? [], fallback: s.alumni.fallback(), checkedAt: c?.at ?? null,
       linking: alumniLinking.busy, linkError: alumniLinking.error,
@@ -313,6 +315,8 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     },
 
     setSettings(changes) {
+      // A boolean from the window stays a boolean (security review I1).
+      if (changes && 'combineSyncs' in changes) changes = { ...changes, combineSyncs: changes.combineSyncs === true };
       const out = s.setSettings(changes);
       env.applySettings?.(out);
       return out;

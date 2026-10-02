@@ -24,6 +24,12 @@ export const CLUB_URL = 'https://meadowprotocol.com/alumni';
 const DAY_MS = 24 * 3600_000;
 const CLUB_TIMEOUT_MS = 10_000;
 const LINK_MS = 15 * 60_000;
+/** The receive intervals the app accepts from anyone, in minutes (as Settings offers them). */
+export const MIN_INTERVAL = 5;
+export const MAX_INTERVAL = 1440;
+const USD = /^\d+(\.\d{1,6})?$/;
+/** A cap's free-up time further off than this is not believed (§18.8: the allowance is per 24 hours). */
+const MAX_HOLD_MS = 25 * 3600_000;
 
 export interface ClubSettings {
   daily_cap_usd: string;
@@ -91,6 +97,8 @@ export class Alumni {
   #now: () => number;
   #base: string;
   #changed: () => void;
+  /** Closes the browser link waiting now, if any. */
+  #link: (() => void) | null = null;
 
   constructor({ db, vault, catalog, fetchImpl = fetch, now = Date.now, base = CLUB_URL, changed = () => {} }: {
     db: Db; vault: Vault; catalog: Catalog; fetchImpl?: typeof fetch; now?: () => number; base?: string; changed?: () => void;
@@ -139,9 +147,27 @@ export class Alumni {
     return !c.status.paid_through || this.#now() < Date.parse(`${c.status.paid_through}T00:00:00Z`) + 4 * DAY_MS;
   }
 
-  /** The tier's settings while active (§18.8 overrides); null otherwise. */
+  /**
+   * The tier's settings while active (§18.8 overrides); null otherwise. Checked here, once, for
+   * every use: the club's word drives timers and money, so a value out of range or unreadable is
+   * replaced by a safe one, never passed on (security review A1, A4, 2026-10-02).
+   */
   settings(): ClubSettings | null {
-    return this.active() ? this.cached()?.status.settings ?? null : null;
+    const st = this.active() ? this.cached()?.status.settings : null;
+    if (!st || typeof st !== 'object') return null;
+    const minutes = Number.isSafeInteger(st.receive_interval_min) ? Math.min(Math.max(st.receive_interval_min, MIN_INTERVAL), MAX_INTERVAL) : 15;
+    return {
+      daily_cap_usd: typeof st.daily_cap_usd === 'string' && USD.test(st.daily_cap_usd) ? st.daily_cap_usd : '0.00',
+      receive_interval_min: minutes,
+      messageguard: st.messageguard === true,
+      combine_syncs: st.combine_syncs === true,
+    };
+  }
+
+  /** The allowance left today, as the club last said it ("$1.23"), or null when it said nothing readable. */
+  allowanceLeft(): string | null {
+    const v = this.active() ? this.cached()?.status.allowance_left_usd : null;
+    return typeof v === 'string' && /^\$\d+(\.\d{1,6})?$/.test(v) ? v : null;
   }
 
   /** Use my own wallet when the club allowance is used up (§18.8): off by default, since the app never turns a cost on by itself. */
@@ -255,8 +281,14 @@ export class Alumni {
     const challenge = createHash('sha256').update(verifier).digest('base64url');
     let settle!: { ok: (s: ClubStatus) => void; fail: (e: Error) => void };
     const done = new Promise<ClubStatus>((ok, fail) => (settle = { ok, fail }));
-    const page = (title: string, text: string) => `<!doctype html><meta charset="utf-8"><title>${title}</title><body style="font-family:system-ui,sans-serif;max-width:36rem;margin:4rem auto;padding:0 1rem"><h1>${title}</h1><p>${text}</p></body>`;
+    // One link at a time: a new one closes the last one's listener (security review A3).
+    this.#link?.();
+    // The club's words are text here, never markup (security review A3).
+    const esc = (t: string) => t.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+    const page = (title: string, text: string) => `<!doctype html><meta charset="utf-8"><title>${esc(title)}</title><body style="font-family:system-ui,sans-serif;max-width:36rem;margin:4rem auto;padding:0 1rem"><h1>${esc(title)}</h1><p>${esc(text)}</p></body>`;
     const server = http.createServer(async (req, res) => {
+      // Only this computer's own address, as the browser sends it (no DNS rebinding), like the app's other loopback servers.
+      if (req.headers.host !== `127.0.0.1:${(server.address() as AddressInfo).port}`) return res.writeHead(421).end();
       const u = new URL(req.url ?? '/', 'http://127.0.0.1');
       if (u.pathname !== '/alumni/callback') return res.writeHead(404).end();
       const code = u.searchParams.get('code');
@@ -283,7 +315,15 @@ export class Alumni {
       settle.fail(new Error('The link was not finished within 15 minutes. Start again from the app.'));
     }, LINK_MS);
     timer.unref?.();
-    done.finally(() => clearTimeout(timer)).catch(() => {});
+    const close = () => {
+      server.close();
+      settle.fail(new Error('A newer link was started.'));
+    };
+    this.#link = close;
+    done.finally(() => {
+      clearTimeout(timer);
+      if (this.#link === close) this.#link = null;
+    }).catch(() => {});
     const q = new URLSearchParams({ state, challenge, port: String(port), ...(rotate && { rotate: '1' }) });
     return { url: `${this.#base}/link?${q}`, done };
   }
@@ -317,7 +357,9 @@ export class Alumni {
     if (j.refused) {
       if (j.code === 'cap') {
         this.#noteAllowance('$0.00');
-        this.#setHeld({ code: 'cap', text: String(j.refused), until: freesAt(j, this.#now()), at: this.#now() });
+        // Never believed further off than a day and an hour: the allowance is per 24 hours (security review A6).
+        const until = freesAt(j, this.#now());
+        this.#setHeld({ code: 'cap', text: String(j.refused), until: until === null ? null : Math.min(until, this.#now() + MAX_HOLD_MS), at: this.#now() });
       }
       if (j.code === 'unavailable') this.#setHeld({ code: 'unavailable', text: String(j.refused), until: null, at: this.#now() });
       if (j.code === 'cap' || j.code === 'unavailable' || j.code === 'rate') throw new ClubFallback(j.refused, j.code);
