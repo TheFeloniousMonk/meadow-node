@@ -122,7 +122,7 @@ export function scrub(text: string): string {
 }
 
 /** Hosts the app calls that name no one: kept in the export. */
-const PUBLIC_HOSTS = ['agent.pocket.network', 'base.api.pocket.network', 'api.cow.fi', 'github.com', 'chatgpt.com'];
+const PUBLIC_HOSTS = ['agent.pocket.network', 'base.api.pocket.network', 'mainnet.base.org', 'api.cow.fi', 'github.com', 'chatgpt.com'];
 
 /** Where a failed sync failed (§16.17.1), for the connection check's first step. */
 export function syncFailureClass(err: unknown): 'payment refused' | 'portal unreachable' | 'reply too large' | 'portal' | 'node' | 'app' {

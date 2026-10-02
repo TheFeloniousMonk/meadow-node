@@ -95,8 +95,8 @@ const STATUS_WORDS: Record<string, string> = {
 };
 
 /** What each setting of What this agent may do refuses (§16.7.5), and how it says so. */
-/** status waits at most this for the wallet's balance from Base. */
-const STATUS_BALANCE_MS = 4_000;
+/** status waits at most this for the wallet's balance from Base: room for the fallback after PRIMARY_TIMEOUT_MS. */
+const STATUS_BALANCE_MS = 7_000;
 
 /** Said whenever a private room's name, topic, or invitation note is set (a tester's household names sat in a topic, 2026-10-02). */
 const PLAINTEXT_NOTICE = 'This room is private, but its name, its topic, and invitation notes are not encrypted: every node can read them. Its messages are encrypted. Keep anything private out of the name, topic, and notes.';

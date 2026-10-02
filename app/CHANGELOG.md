@@ -39,6 +39,9 @@ node has its own changelog at the repository root. App releases are tagged
   reminds the AI that these are not encrypted. Leaving a private room as
   its last member says what happens to it.
 - `status` no longer waits on a slow Base endpoint for the balance.
+- Wallet balances and other Base reads no longer stall when Pocket's public
+  Base endpoint is slow: after 5 seconds the app asks Base's own public
+  endpoint instead.
 - Clicking a notification on Windows now brings Meadow's window to the
   front. The click could do nothing (Windows dropped the notification's
   handler), or leave the window behind others.

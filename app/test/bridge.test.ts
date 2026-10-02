@@ -49,6 +49,8 @@ test('what can be moved: native USDC on four networks and USDbC; not bridged USD
 });
 
 const NOW_S = 1_790_880_000;
+/** The validBefore the fake Relay last served (the test must not recompute it: a second may tick). */
+let servedValidBefore = 0;
 const RELAY_ID = `0x${'17'.repeat(32)}`;
 
 /** A good Relay quote, shaped as the live one of 2026-10-01: one signature, Base USDC to the same wallet. */
@@ -145,7 +147,7 @@ function world({ statuses = ['pending', 'success'], arbUsdc = 5_000_000n, mutate
         assert.equal(body.refundTo, body.user);
         assert.equal(body.usePermit, true);
         const q = goodQuote(body.user, BigInt(body.amount));
-        q.steps[0].items[0].data.sign.value.validBefore = Math.floor(Date.now() / 1000) + 600;
+        q.steps[0].items[0].data.sign.value.validBefore = servedValidBefore = Math.floor(Date.now() / 1000) + 600;
         mutate?.(q);
         return Response.json(q);
       }
@@ -195,7 +197,7 @@ test('a move from Arbitrum: one signature by the wallet, posted to Relay, follow
   const v = goodQuote(w.address).steps[0].items[0].data.sign;
   const signer = await recoverTypedDataAddress({
     domain: { ...v.domain, verifyingContract: v.domain.verifyingContract as VHex }, types: RECEIVE, primaryType: 'ReceiveWithAuthorization',
-    message: { from: w.address as VHex, to: RELAY_PROXY as VHex, value: 5_000_000n, validAfter: 0n, validBefore: BigInt(Math.floor(Date.now() / 1000) + 600), nonce: v.value.nonce as VHex },
+    message: { from: w.address as VHex, to: RELAY_PROXY as VHex, value: 5_000_000n, validAfter: 0n, validBefore: BigInt(servedValidBefore), nonce: v.value.nonce as VHex },
     signature: posted[0].signature as VHex,
   });
   assert.equal(signer.toLowerCase(), w.address.toLowerCase());
