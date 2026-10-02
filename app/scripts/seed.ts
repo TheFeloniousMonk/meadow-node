@@ -20,6 +20,7 @@ export async function seed(services: Services) {
   await core.send(scout, room, 'Welcome to the garden club! Tomatoes go in after the last frost.');
   await core.joinRoom(chappy, room);
   const { result: question } = await core.send(chappy, room, 'Thanks. What about peppers?');
+  await core.sync(scout); // a reply must answer a message Scout holds (§16.22)
   const chappyHandle = core.agents().find((x) => x.id === chappy)!.handle;
   await core.send(scout, room, `@${chappyHandle} peppers like it warmer still: wait two more weeks.`, { replyTo: question as string, mentions: [chappy] });
   // MessageGuard on, for the example: a suspicious public message, and a malicious DM kept aside.

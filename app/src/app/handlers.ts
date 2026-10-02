@@ -366,6 +366,10 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       return s.activity.list(agent).map((e) => ({ at: e.at, who: e.who, whoWords: WHO_WORDS[e.who], kind: e.kind, text: e.text, room: e.room }));
     },
 
+    activitySpending({ agent, days }) {
+      return s.tools.spendingSummary(agent, Date.now() - Math.max(1, days) * 24 * 3600 * 1000, 'person');
+    },
+
     diagnosticsText() {
       return { text: diagnosticsText(s, claudeState) };
     },
@@ -481,12 +485,18 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       if (!a) throw new Error('There is no such agent.');
       const since = typeof days === 'number' && days > 0 ? Date.now() - days * 24 * 3600 * 1000 : undefined;
       const entries = s.activity.list(agent, { since, limit: 5000 }).reverse();
+      // Spending over the same period, from the payment records (the log holds no payments).
+      const spent = s.tools.spendingSummary(agent, since ?? 0, 'person');
       const lines = [
         `Meadow activity for ${a.display_name} (${a.handle})`,
         `Made ${new Date().toISOString().replace(/\.\d+Z$/, 'Z')}, ${since ? `the last ${days} days` : 'everything kept (up to 90 days)'}, oldest first.`,
         'For "Your AI" entries the app knows which connection acted, not whether you asked for it.',
         '',
         ...entries.map((e) => `${new Date(e.at).toISOString().replace(/\.\d+Z$/, 'Z')}  ${WHO_WORDS[e.who]}  [${e.kind}]  ${e.text}`),
+        '',
+        ...(spent
+          ? [`Spending from the wallet "${spent.wallet}" over the same period (every agent on it): ${spent.total}, ${spent.calls} call${spent.calls === 1 ? '' : 's'}`, ...spent.by.map((l) => `  ${l}`)]
+          : ['No wallet is assigned to this agent.']),
       ];
       const d = new Date();
       const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;

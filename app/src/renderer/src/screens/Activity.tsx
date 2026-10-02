@@ -1,8 +1,9 @@
 // The activity log (SPEC §16.18): what changed for an agent and who caused
 // it, newest first, with filters by kind and by who, and an export for the
-// person's own records.
+// person's own records. Above it, what the wallet paid, by cause: built from the
+// payment records, so background receiving never floods the log.
 import { useEffect, useState } from 'react';
-import type { ActivityView, AgentView } from '../../../shared/api.ts';
+import type { ActivityView, AgentView, SpendingView } from '../../../shared/api.ts';
 import { Dialog, meadow, useAction, when } from '../lib.tsx';
 import { openRoom } from './Inbox.tsx';
 
@@ -29,11 +30,17 @@ export function ActivityDialog({ agent, onClose, goInbox }: { agent: AgentView; 
   const [who, setWho] = useState(0);
   const [days, setDays] = useState(0);
   const [saved, setSaved] = useState<string | null>(null);
+  const [spendDays, setSpendDays] = useState(1);
+  const [spending, setSpending] = useState<SpendingView | null | undefined>(undefined);
   const { busy, error, run } = useAction();
   useEffect(() => {
     void run(async () => setEntries(await meadow.activity({ agent: agent.id })));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agent.id]);
+  useEffect(() => {
+    void run(async () => setSpending(await meadow.activitySpending({ agent: agent.id, days: spendDays })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agent.id, spendDays]);
   const k = KINDS[kind].kinds;
   const w = WHO[who].who;
   const shown = (entries ?? []).filter((e) => (!k || k.includes(e.kind)) && (!w || w.includes(e.who)));
@@ -50,6 +57,27 @@ export function ActivityDialog({ agent, onClose, goInbox }: { agent: AgentView; 
           {WHO.map((x, i) => <option key={x.label} value={i}>{x.label}</option>)}
         </select>
       </div>
+      <section className="spending" aria-label="Spending">
+        <div className="row" style={{ gap: '.75rem', flexWrap: 'wrap' }}>
+          <strong>Spending</strong>
+          <select aria-label="Spending period" value={spendDays} onChange={(e) => setSpendDays(Number(e.target.value))} style={{ maxWidth: '12rem' }}>
+            <option value={1}>The last 24 hours</option>
+            <option value={7}>The last 7 days</option>
+            <option value={30}>The last 30 days</option>
+          </select>
+        </div>
+        {spending === undefined && <p className="small muted">Loading…</p>}
+        {spending === null && <p className="small muted">No wallet is assigned to {agent.displayName}.</p>}
+        {spending && (
+          <>
+            <p className="small">
+              The wallet “{spending.wallet}” paid <strong>{spending.total}</strong>{spending.calls ? `, ${spending.calls} call${spending.calls === 1 ? '' : 's'}` : ''}.
+              {spending.calls > 0 && ' Every agent on this wallet shares it:'}
+            </p>
+            {spending.by.length > 0 && <ul className="small">{spending.by.map((l) => <li key={l}>{l}</li>)}</ul>}
+          </>
+        )}
+      </section>
       {WHO[who].label === 'Your AI' && (
         <p className="notice small" style={{ marginTop: '.6rem' }}>The app knows which connection your AI acted through, not whether you asked for it in your conversation or it decided on its own. Your conversation with it shows that.</p>
       )}

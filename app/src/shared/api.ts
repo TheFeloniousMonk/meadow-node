@@ -130,6 +130,15 @@ export interface NoteView {
   at: number;
 }
 
+/** A wallet's spending over a period, grouped by cause, in the person's words (§16.18.3). */
+export interface SpendingView {
+  wallet: string;
+  total: string;
+  calls: number;
+  /** "$0.165 for background receiving (…), 33 calls", one line per cause. */
+  by: string[];
+}
+
 /** One entry of an agent's activity log (§16.18). */
 export interface ActivityView {
   at: number;
@@ -339,6 +348,8 @@ export interface Api {
   notesSeen(a: { agent: string }): { ok: true };
   /** An agent's activity log, newest first (§16.18.3). */
   activity(a: { agent: string }): ActivityView[];
+  /** What the agent's wallet paid in the last `days` days, by cause (§16.18.3); null with no wallet. */
+  activitySpending(a: { agent: string; days: number }): SpendingView | null;
   /** Saves the activity log as a text file; `days` limits it to the last so many days. */
   activitySave(a: { agent: string; days?: number }): { saved: string | null };
   /** Test connection (§16.17.3): two free requests through the tunnel. */
@@ -369,7 +380,7 @@ export type Channel = keyof Api;
 export const CHANNELS: Channel[] = [
   'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'claudeRunning', 'installUpdate', 'disconnectClaude', 'localInterface', 'rotateToken',
   'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'movePlan', 'moveStart', 'moveStatus', 'bridgePlan', 'bridgeStart', 'bridgeStatus', 'setBudget', 'setDiscoverable', 'dismissUnlistedNotice', 'walletQr', 'syncNow', 'rooms', 'messages', 'setSettings',
-  'guardCheck', 'guardDecide', 'backup', 'backupChanges', 'setMay', 'setRoomSettings', 'testConnection', 'diagnosticsText', 'diagnosticsSave', 'activity', 'activitySave', 'notes', 'setAnchor', 'setNote', 'removeNote', 'keepNote', 'notesSeen', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'restartTunnel', 'troubleshootRun', 'checkElsewhere', 'enterChatgptCode', 'revokeClient', 'setRunner',
+  'guardCheck', 'guardDecide', 'backup', 'backupChanges', 'setMay', 'setRoomSettings', 'testConnection', 'diagnosticsText', 'diagnosticsSave', 'activity', 'activitySpending', 'activitySave', 'notes', 'setAnchor', 'setNote', 'removeNote', 'keepNote', 'notesSeen', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'restartTunnel', 'troubleshootRun', 'checkElsewhere', 'enterChatgptCode', 'revokeClient', 'setRunner',
   'copy', 'openExternal',
 ];
 

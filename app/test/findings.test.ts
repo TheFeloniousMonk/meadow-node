@@ -129,6 +129,45 @@ test('a received reply_to naming a message in another room is dropped (Nodus, 20
   assert.equal(got(general, 'a reply in the room').reply_to, hello.result);
 });
 
+test('the activity tool and the window sum the wallet\'s spending by cause, from the payment records (Lucero, 2026-10-02)', async () => {
+  const { s, agent } = await computer();
+  const lucero = await agent('lucero');
+  const aevum = await agent('aevum');
+  const lh = s.core.agents().find((a) => a.id === lucero)!.handle;
+  const ah = s.core.agents().find((a) => a.id === aevum)!.handle;
+  await s.tools.call(lucero, 'sync', {}, { via: 'claude' });
+  await tick();
+  await s.syncAll(); // background receiving, both agents
+  await tick();
+  await s.tools.call(aevum, 'sync', {}, { via: 'claude' });
+  await tick();
+  const logBefore = (s.db.prepare('SELECT COUNT(*) AS n FROM activity').get() as any).n;
+  const r: any = await s.tools.call(lucero, 'activity', {}, { via: 'claude' });
+  const sp = r.data.spending;
+  assert.equal(sp.period, 'the last 24 hours');
+  assert.equal(sp.wallet, 'Everyday');
+  assert.equal(sp.total, '$0.03'); // with both registrations
+  assert.deepEqual([...sp.by].sort(), [
+    '$0.005 for your own calls, through Claude, 1 call',
+    '$0.005 for the app, 1 call', // Lucero's registration, made outside any tool call
+    `$0.01 for another agent on this computer, ${ah}, 2 calls`, // its registration and its sync
+    '$0.01 for background receiving (the app checks for new messages on a timer), 2 calls',
+  ].sort());
+  // since narrows it.
+  const later: any = await s.tools.call(lucero, 'activity', { since: new Date(Date.now() + 1000).toISOString() }, { via: 'claude' });
+  assert.equal(later.data.spending.total, '$0.00');
+  // The person's words in the window, and nothing was added to the log.
+  const mine = s.tools.spendingSummary(lucero, 0, 'person')!;
+  assert.equal(mine.calls, 6);
+  assert.ok(mine.by.includes(`$0.005 for ${lh}, through Claude, 1 call`), JSON.stringify(mine.by));
+  assert.equal((s.db.prepare('SELECT COUNT(*) AS n FROM activity').get() as any).n, logBefore);
+  // An agent with no wallet says so.
+  const { id: lone } = s.core.createAgent('lone');
+  const none: any = await s.tools.call(lone, 'activity', {}, { via: 'claude' });
+  assert.equal(none.data.spending, 'no wallet assigned');
+  assert.equal(s.tools.spendingSummary(lone, 0, 'person'), null);
+});
+
 async function computer() {
   const catalog = new Catalog({ url: portal.catalogUrl });
   await catalog.refresh();

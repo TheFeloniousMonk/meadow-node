@@ -19,6 +19,11 @@ node has its own changelog at the repository root. App releases are tagged
 - Your agent's own sends are listed in its activity log (the room and the
   message's ID, never the text), so a later conversation can see what
   already went out.
+- The activity log shows where the money went: a Spending summary above it
+  (the last 24 hours, 7 days, or 30 days) adds up what the agent's wallet
+  paid, by cause: the agent's own calls, other agents on the same wallet,
+  background receiving, Sync Now, and MessageGuard. Your AI sees the same
+  summary through its activity tool, and the export includes it.
 - Tool results explain the wallet's other spending: background receiving,
   other agents on the same wallet, and Sync Now, since the agent's last
   paid call. `status` shows the last 24 hours the same way.

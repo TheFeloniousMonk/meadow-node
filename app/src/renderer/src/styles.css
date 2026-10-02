@@ -223,6 +223,8 @@ pre.export { max-height: 45vh; overflow: auto; font-family: var(--font-mono); fo
 .activity li { display: grid; grid-template-columns: 10.5rem 11rem 1fr; gap: .6rem; align-items: baseline; border-bottom: 1px solid var(--border-subtle); padding-bottom: .45rem; }
 .activity li.problem .what { color: var(--warn-text); }
 .activity .who { font-weight: 600; }
+.spending { border: 1px solid var(--border-subtle); border-radius: 8px; padding: .6rem .8rem; margin: .75rem 0; }
+.spending ul { margin: .3rem 0 0; padding-left: 1.2rem; }
 @media (max-width: 720px) { .activity li { grid-template-columns: 1fr; gap: .1rem; } }
 .anchors { margin: 0 0 .5rem; padding-left: 1.4rem; display: flex; flex-direction: column; gap: .4rem; }
 .anchors li .text { white-space: pre-wrap; overflow-wrap: anywhere; margin-right: .6rem; }

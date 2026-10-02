@@ -95,6 +95,8 @@ const STATUS_WORDS: Record<string, string> = {
 };
 
 /** What each setting of What this agent may do refuses (§16.7.5), and how it says so. */
+const DAY_MS = 24 * 3600 * 1000;
+
 /** status waits at most this for the wallet's balance from Base: room for the fallback after PRIMARY_TIMEOUT_MS. */
 const STATUS_BALANCE_MS = 7_000;
 
@@ -141,7 +143,7 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'activity', paid: false,
-    description: 'Your activity log on this computer: what you and others did that changed something (rooms joined, DMs opened, invitations, settings your person changed, problems), newest first, with who did each. Use it to check what happened instead of guessing. It never holds message text.',
+    description: 'Your activity log on this computer: what you and others did that changed something (rooms joined, DMs opened, invitations, settings your person changed, problems), newest first, with who did each. Use it to check what happened instead of guessing. It also sums what the wallet paid in the same period (the last 24 hours, or since the time given), by cause: your calls, other agents on the wallet, background receiving, Sync Now, MessageGuard. It never holds message text.',
     inputSchema: {
       type: 'object',
       properties: { since: str('Only entries from this time on (ISO 8601, optional).'), limit: { type: 'integer', minimum: 1, maximum: 100, description: 'How many (default 50).' } },
@@ -435,10 +437,27 @@ export class ToolHost {
     const entries = (this.#activity?.list(agent, { since, rooms: scope, limit: a.limit ?? 50 }) ?? []).map((e) => ({
       time: new Date(e.at).toISOString(), who: WHO_WORDS[e.who], kind: e.kind, what: e.ext ? f.wrap(e.text) : e.text, ...(e.room && { room: e.room }),
     }));
+    const spent = this.spendingSummary(agent, since ?? Date.now() - DAY_MS, 'ai');
     return {
       ...f.header(), entries,
+      spending: spent
+        ? { period: since !== undefined ? `since ${new Date(since).toISOString()}` : 'the last 24 hours', wallet: spent.wallet, total: spent.total, by: spent.by,
+          note: 'The whole wallet: every agent on it, background receiving, and MessageGuard share it. Not log entries: built from the payment records.' }
+        : 'no wallet assigned',
       note: 'For "Your AI" entries the app knows which connection acted, not whether your person asked for it. The built-in runner acts with no person present.',
     };
+  }
+
+  /**
+   * What the agent's wallet paid from `since` until now, grouped by cause (§16.18.3), from the
+   * payment records rather than the log, so background receiving never floods it. Null with no wallet.
+   */
+  spendingSummary(agent: string, since: number, voice: 'ai' | 'person'): { wallet: string; total: string; calls: number; by: string[] } | null {
+    const id = this.wallets.walletOf(agent);
+    const w = id ? this.wallets.list().find((x) => x.id === id) : undefined;
+    if (!w) return null;
+    const rows = this.wallets.paymentsBetween(w.id, since, Date.now());
+    return { wallet: w.name, calls: rows.length, ...this.#spending(agent, rows, voice) };
   }
 
   /**
@@ -691,17 +710,26 @@ export class ToolHost {
     };
   }
 
-  /** Payments in plain words, grouped by what caused them (§16.9.4): this agent, others, background, the person, MessageGuard. */
-  #spending(agent: string, rows: PaymentRow[]): Json {
+  /**
+   * Payments in plain words, grouped by what caused them (§16.9.4): this agent, others, background,
+   * the person, MessageGuard. `voice` is who reads it: the AI inside a paid call (its own calls are
+   * "other" calls), the AI otherwise, or the person in the window.
+   */
+  #spending(agent: string, rows: PaymentRow[], voice: 'call' | 'ai' | 'person' = 'call'): { total: string; by: string[] } {
     const groups = new Map<string, { n: number; sum: bigint }>();
     const names = new Map(this.core.agents().map((a) => [a.id, a.handle]));
+    const CONNECTION: Record<string, string> = { claude: 'Claude', chatgpt: 'ChatGPT', local: 'the local interface', rest: 'the local interface', runner: 'the built-in runner' };
     for (const p of rows) {
       const cause = p.cause ?? 'app';
+      const via = cause.split(':')[0];
       const label = p.service !== 'meadow' ? 'MessageGuard checks'
         : cause === 'background' ? 'background receiving (the app checks for new messages on a timer)'
-          : cause === 'person' ? 'Sync Now, pressed by your person'
+          : cause === 'person' ? (voice === 'person' ? 'Sync Now, pressed by you' : 'Sync Now, pressed by your person')
             : p.agent && p.agent !== agent ? `another agent on this computer, ${names.get(p.agent) ?? 'one since removed'}`
-              : /^(claude|chatgpt|local|rest|runner):/.test(cause) ? `your other calls (${cause.split(':')[0]}): ones running at the same time, or from another conversation`
+              : /^(claude|chatgpt|local|rest|runner):/.test(cause)
+                ? voice === 'call' ? `your other calls (${via}): ones running at the same time, or from another conversation`
+                  : voice === 'ai' ? `your own calls, through ${CONNECTION[via]}`
+                    : `${names.get(agent) ?? 'this agent'}, through ${CONNECTION[via]}`
                 : 'the app';
       const g = groups.get(label) ?? { n: 0, sum: 0n };
       g.n++;
@@ -765,7 +793,7 @@ export class ToolHost {
       wallet: w ? {
         balance, budget_left_today: formatUsd(maxZero(toAtomic(w.dailyBudgetUsd, 6) - w.spent24h)),
         // The whole wallet's last 24 hours, by cause: other agents and background receiving share it (§16.9.4).
-        ...((rows) => rows.length ? { spent_last_24h: this.#spending(agent, rows) } : {})(this.wallets.paymentsBetween(w.id, Date.now() - 24 * 3600 * 1000, Date.now())),
+        ...((rows) => rows.length ? { spent_last_24h: this.#spending(agent, rows, 'ai') } : {})(this.wallets.paymentsBetween(w.id, Date.now() - 24 * 3600 * 1000, Date.now())),
       } : 'none assigned',
       price_per_call: this.#price() ?? "unknown until the app can read the portal's price list",
       messageguard: (() => {
