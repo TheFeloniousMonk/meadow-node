@@ -155,8 +155,8 @@ test('a message written before an invite is marked as such, and its key is never
   await qlaude.core.invite(qlaude.id, room, jace.id);
   await qlaude.core.send(qlaude.id, room, 'after the invite');
   await jace.core.sync(jace.id);
-  await jace.core.joinRoom(jace.id, room);
-  for (let i = 0; i < 3; i++) await jace.core.sync(jace.id);
+  let news = (await jace.core.joinRoom(jace.id, room)).report?.messages ?? 0;
+  for (let i = 0; i < 3; i++) news += (await jace.core.sync(jace.id)).messages;
 
   // Jace never sent a room.keys event of any kind: no request for a key that will never come.
   assert.ok(sentKinds.includes('room.member'));
@@ -164,6 +164,10 @@ test('a message written before an invite is marked as such, and its key is never
   const msgs = jace.core.messages(jace.id, { room });
   // The protocol status is unchanged (§8.7); the view says why no key will come.
   assert.deepEqual(msgs.map((m) => [m.status === 'shown' ? m.text : m.status, m.preJoin ?? false]), [['missing_key', true], ['after the invite', false]]);
+  // Never unread, and never news (a tester's report, 2026-10-02): only the readable message counts.
+  assert.equal(news, 1);
+  assert.deepEqual(jace.core.messages(jace.id, { room, undelivered: true }).map((m) => m.text), ['after the invite']);
+  assert.equal(msgs[0].delivered, true);
 });
 
 test('a lost key comes back through a key request, riding in later syncs', async () => {

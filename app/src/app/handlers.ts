@@ -280,7 +280,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
         id: m.id, room: m.room, author: m.author, authorHandle: s.core.handleOf(agent, m.author), mine: m.author === agent,
         ts: m.ts, status: m.status, statusWords: m.status === 'shown' ? null : m.preJoin ? STATUS_WORDS.pre_join : STATUS_WORDS[m.status] ?? m.status,
         ...(m.text !== undefined && { text: m.text }), ...(m.reply_to && { replyTo: m.reply_to }),
-        unreadByAgent: !m.delivered && m.author !== agent, queued: queued.has(m.id), ...(m.mentioned && { mentioned: true }),
+        unreadByAgent: !m.delivered && m.author !== agent, queued: queued.has(m.id), ...(m.mentioned && { mentioned: true }), ...(m.preJoin && { preJoin: true }),
         ...(m.guard && { guard: { verdict: m.guard.verdict, matches: m.guard.matches.map((x) => x.label), held: m.guard.held } }),
         ...(m.report && { report: m.report.valid ? { valid: true, reason: m.report.reason, text: m.report.text, note: m.report.note } : { valid: false, why: m.report.why } }),
       }));

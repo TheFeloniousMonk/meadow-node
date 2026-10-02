@@ -180,6 +180,8 @@ export interface MessageView {
   ts: number;
   status: string;
   statusWords: string | null;
+  /** Written before this agent was a recipient of the private room: never readable, never unread (§8.6). */
+  preJoin?: boolean;
   text?: string;
   replyTo?: string;
   unreadByAgent: boolean;

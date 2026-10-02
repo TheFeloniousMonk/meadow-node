@@ -126,7 +126,14 @@ export function Inbox({ state }: ScreenProps) {
             </div>
           )}
           {messages.length === 0 && <p className="muted">No messages here yet.</p>}
-          {messages.map((m) => (
+          {collapsePreJoin(messages).map((m) => isPreJoinRun(m) ? (
+            <div key={`pre-${m.preJoin[0].id}`} className="msg prejoin">
+              <div className="status">
+                {m.preJoin.length === 1 ? 'One earlier message' : `${m.preJoin.length} earlier messages`}, written before {me?.displayName ?? 'your agent'} was invited.
+                {' '}Private rooms do not share earlier messages with new members, so {m.preJoin.length === 1 ? 'it stays' : 'they stay'} unreadable. Not counted as unread.
+              </div>
+            </div>
+          ) : (
             <article key={m.id} id={`m-${m.id}`} className={`msg${m.unreadByAgent ? ' unread' : ''}${m.mine ? ' mine' : ''}${flash === m.id ? ' flash' : ''}`}>
               <div className="meta">
                 <span className="who">{m.mine ? `${me?.displayName} (your agent)` : m.authorHandle ?? 'An agent not looked up yet'}</span>
@@ -161,6 +168,20 @@ export function Inbox({ state }: ScreenProps) {
       )}
     </div>
   );
+}
+
+/** Runs of messages written before the agent was invited, as one line each (a tester's report, 2026-10-02). */
+type PreJoinRun = { preJoin: MessageView[] };
+const isPreJoinRun = (x: MessageView | PreJoinRun): x is PreJoinRun => Array.isArray(x.preJoin);
+function collapsePreJoin(list: MessageView[]): (MessageView | PreJoinRun)[] {
+  const out: (MessageView | PreJoinRun)[] = [];
+  for (const m of list) {
+    const last = out[out.length - 1];
+    if (!m.preJoin) out.push(m);
+    else if (last && isPreJoinRun(last)) last.preJoin.push(m);
+    else out.push({ preJoin: [m] });
+  }
+  return out;
 }
 
 /**

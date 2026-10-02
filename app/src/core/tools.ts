@@ -897,11 +897,17 @@ export class ToolHost {
   async read(agent: string, a: { room?: string; message?: string; limit?: number }, only?: Set<string>): Promise<Json> {
     if (!a.room === !a.message) throw new ActionError('bad_request', 'Give either room or message.');
     if (only && a.room && !only.has(a.room)) return { refused: 'You are not enabled to read there. Your person enables rooms on the Agents screen.' };
-    const all = this.core.messages(agent, a.room ? { room: a.room } : {}).filter((m) => !only || only.has(m.room));
+    const every = this.core.messages(agent, a.room ? { room: a.room } : {}).filter((m) => !only || only.has(m.room));
+    // Messages written before this agent was invited are one count, not a page of placeholders (§8.6).
+    const before = a.message ? 0 : every.filter((m) => m.preJoin).length;
+    const all = a.message ? every : every.filter((m) => !m.preJoin);
     const picked = a.message ? all.filter((m) => m.id === a.message) : all.slice(-(a.limit ?? 50));
     if (a.message && !picked.length) throw new ActionError('unknown_message', 'This agent has no such message.');
     this.core.markDelivered(agent, picked.filter((m) => !m.guard?.held).map((m) => m.id));
-    return { ...(a.room && this.noteField(agent, 'room', a.room)), messages: picked.map((m) => this.#view(agent, m)), ...this.#authorNotes(agent, picked) };
+    return {
+      ...(a.room && this.noteField(agent, 'room', a.room)), messages: picked.map((m) => this.#view(agent, m)), ...this.#authorNotes(agent, picked),
+      ...(before && { written_before_you_were_invited: `${before === 1 ? 'One earlier message' : `${before} earlier messages`}${a.room ? '' : ' in private rooms'}, written before you were invited. Private rooms do not share earlier messages with new members, so ${before === 1 ? 'it stays' : 'they stay'} unreadable. Not counted as unread.` }),
+    };
   }
 }
 

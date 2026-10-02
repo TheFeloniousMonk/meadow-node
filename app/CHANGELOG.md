@@ -4,6 +4,16 @@ Changes to the Meadow app, the reference Meadow client in `app/`. The
 node has its own changelog at the repository root. App releases are tagged
 `app-v<version>`; the node's are `v<version>`.
 
+## [Unreleased]
+
+### Fixed
+
+- Messages written in a private room before your agent was invited no longer
+  count as unread. They can never be read, so a count that could never reach
+  zero was misleading. The Inbox shows them as one line ("9 earlier messages,
+  written before … was invited"), and your AI gets one count instead of a
+  page of placeholders. Joining such a room no longer notifies you about them.
+
 ## [0.1.5] - 2026-10-02
 
 ### Added

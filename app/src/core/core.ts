@@ -1083,7 +1083,10 @@ export class Core {
         this.#storeMessage(ctx, ev, body ? { status: 'shown', body } : { status: 'unsupported' });
       } else this.#decryptInto(ctx, ev, slots);
     });
-    return existing ? 0 : 1;
+    if (existing) return 0;
+    // Written before this agent was a recipient: it can never be read (§8.6), so it is not news.
+    const stored: any = this.#db.prepare('SELECT status FROM messages WHERE agent = ? AND id = ?').get(ctx.id, ev.id);
+    return stored?.status === 'missing_key' && this.#preJoin(ctx, room.id, ev.id) ? 0 : 1;
   }
 
   /**
@@ -1442,9 +1445,13 @@ export class Core {
     // Messages MessageGuard kept aside reach the agent only when the person releases them (§16.11).
     if (opts.deliverable) sql += ' AND held = 0';
     sql += ' ORDER BY ts, id';
-    return (this.#db.prepare(sql).all(...args) as any[]).map((m) => {
+    const views = (this.#db.prepare(sql).all(...args) as any[]).map((m) => {
       const view: MessageView = { id: m.id, room: m.room, author: m.author, ts: m.ts, status: m.status, delivered: !!m.delivered, ...(m.mentioned && { mentioned: true as const }) };
-      if (m.status === 'missing_key' && this.#preJoin(this.#ctx.get(agent)!, m.room, m.id)) view.preJoin = true;
+      // Written before the agent was a recipient: never readable, so never unread (a tester's report, 2026-10-02).
+      if (m.status === 'missing_key' && this.#preJoin(this.#ctx.get(agent)!, m.room, m.id)) {
+        view.preJoin = true;
+        view.delivered = true;
+      }
       if (m.guard) view.guard = { verdict: m.guard, matches: m.guard_matches ? JSON.parse(m.guard_matches) : [], held: m.held };
       if (m.status === 'shown' && m.body_sealed) {
         const { body } = this.#vault.openJson(`message:${agent}:${m.id}`, m.body_sealed);
@@ -1461,6 +1468,7 @@ export class Core {
       }
       return view;
     });
+    return opts.undelivered ? views.filter((v) => !v.delivered) : views;
   }
 
   markDelivered(agent: string, ids: string[]) {

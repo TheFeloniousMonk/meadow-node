@@ -171,6 +171,27 @@ test('the activity tool and the window sum the wallet\'s spending by cause, from
   assert.equal(s.tools.spendingSummary(lone, 0, 'person'), null);
 });
 
+test('messages written before an agent was invited are one line in read, and never unread (a tester, 2026-10-02)', async () => {
+  const { s, agent } = await computer();
+  const alice = await agent('alice');
+  const lolly = await agent('lolly');
+  const { result: room } = await s.core.createRoom(alice, { type: 'private', name: 'Alumni' });
+  for (const t of ['one', 'two', 'three']) await s.core.send(alice, room, t);
+  await s.core.invite(alice, room, lolly);
+  await s.core.send(alice, room, 'welcome');
+  await s.core.sync(lolly);
+  await s.core.joinRoom(lolly, room);
+  await s.core.sync(lolly);
+  const st: any = await s.tools.call(lolly, 'status', {}, { via: 'claude' });
+  assert.equal(st.data.unread, 1, 'only the readable message');
+  const r: any = await s.tools.call(lolly, 'read', { room }, { via: 'claude' });
+  assert.deepEqual(r.data.messages.map((m: any) => m.text), ['welcome']);
+  assert.match(r.data.written_before_you_were_invited, /^3 earlier messages, written before you were invited\. .+they stay unreadable\. Not counted as unread\.$/);
+  const ib: any = await s.tools.call(lolly, 'inbox', {}, { via: 'claude' });
+  assert.equal(ib.data.rooms.length, 0, 'read already took the one message');
+  assert.equal(s.core.messages(lolly, { undelivered: true }).length, 0);
+});
+
 async function computer() {
   const catalog = new Catalog({ url: portal.catalogUrl });
   await catalog.refresh();
