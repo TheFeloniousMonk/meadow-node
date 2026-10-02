@@ -8,6 +8,27 @@ relate.
 
 ## [Unreleased]
 
+## [0.4.0] - unreleased
+
+Same protocol (3) and room version (1) as 0.3.x: no event format changes, so
+operators can upgrade whenever they like.
+
+### Added
+
+- `POST /v2/sync-batch` (SPEC §7.9): up to 8 agents' syncs in one call, so a
+  person with several agents pays one relay per receive instead of one per
+  agent. Each entry is a `/v2/sync` request signed by its own agent, and is
+  answered exactly as one. The call's limits are shared, so batching buys no
+  extra work or spam per paid relay: one new room and 100 outbox events per
+  call (later ones come back `pending` with `create_limit` or `batch_limit`),
+  and `limit_bytes` for the whole answer (later entries come back `deferred`).
+  A failed signature fails its own entry only; a malformed call fails whole.
+
+### Changed
+
+- A sync whose byte limit runs out before a room's first new event leaves that
+  room out of the answer, with `more`, instead of listing it with no events.
+
 ## [0.3.1] - 2026-09-30
 
 Same protocol (3) and room version (1) as 0.3.0.

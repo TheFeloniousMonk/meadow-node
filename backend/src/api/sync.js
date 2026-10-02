@@ -1,8 +1,11 @@
 // POST /v2/sync (SPEC §7.2): publish the outbox, then return invites and
 // everything new in the agent's rooms, oldest first, within limit_bytes.
+// POST /v2/sync-batch (§7.9): several agents' syncs in one call, sharing the
+// call's limits.
 
-import { roomIdOf } from '../proto/event.js';
+import { AGENT_KINDS, roomIdOf } from '../proto/event.js';
 import { keyFromAgentId } from '../proto/keys.js';
+import { verifyRequest } from './auth.js';
 import { chainFor } from './lookup.js';
 
 export const SYNC_LIMITS = {
@@ -14,6 +17,10 @@ export const SYNC_LIMITS = {
   maxBytes: 4 * 1024 * 1024 - 64 * 1024, // leave room for metadata under the 4 MiB cap
   responseBytes: 4 * 1024 * 1024, // the whole answer (§7.6)
   agents: 50, // chains asked for in one call (§7.2)
+  batch: 8, // agents in one /v2/sync-batch call (§7.9)
+  // A later batch entry starts only with this much of limit_bytes left: one event is at most
+  // 64 KiB of header plus 64 KiB of content, so no entry after the first runs past the limit.
+  batchEntryMin: 256 * 1024,
 };
 
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
@@ -28,10 +35,11 @@ export class RequestError extends Error {
   }
 }
 
-function parse(body) {
+// `entry`: a /v2/sync-batch entry, which has no limit_bytes of its own (§7.9).
+function parse(body, entry = false) {
   const outbox = body.outbox ?? [];
   const heads = body.heads ?? {};
-  const limit = body.limit_bytes ?? SYNC_LIMITS.defaultBytes;
+  const limit = entry ? SYNC_LIMITS.maxBytes : body.limit_bytes ?? SYNC_LIMITS.defaultBytes;
   if (!Array.isArray(outbox) || outbox.length > SYNC_LIMITS.outbox) {
     throw new RequestError('bad_request', `outbox must be an array of at most ${SYNC_LIMITS.outbox} events`);
   }
@@ -45,32 +53,42 @@ function parse(body) {
       new Set(agents).size !== agents.length || !agents.every((a) => keyFromAgentId(a) !== null))) {
     throw new RequestError('bad_request', `agents must list 1 to ${SYNC_LIMITS.agents} distinct agent IDs`);
   }
-  const extra = Object.keys(body).filter((k) => !['auth', 'outbox', 'heads', 'limit_bytes', 'agents'].includes(k));
+  const allowed = entry ? ['auth', 'outbox', 'heads', 'agents'] : ['auth', 'outbox', 'heads', 'limit_bytes', 'agents'];
+  const extra = Object.keys(body).filter((k) => !allowed.includes(k));
   if (extra.length) throw new RequestError('bad_request', `unknown fields: ${extra.join(', ')}`);
   return { outbox, heads, limit: Math.min(limit, SYNC_LIMITS.maxBytes), agents: agents ?? [] };
 }
 
-export function sync(store, body, agent) {
-  const { outbox, heads, limit, agents: wanted } = parse(body);
+// `call` holds what one relay may do, shared by every entry of a batch (§7.9): new rooms, outbox
+// events, and bytes. A plain sync has its own. `first`: the call's first entry, which alone may
+// pass limit_bytes by one event or one chain, as a single sync does, so every call makes progress.
+export function sync(store, body, agent, call = null) {
+  const { outbox, heads, limit: asked, agents: wanted } = parse(body, !!call);
+  const shared = call ?? { created: 0, outboxLeft: SYNC_LIMITS.outbox, bytesLeft: asked, used: 0, first: true };
+  const limit = Math.min(asked, shared.bytesLeft);
 
   const accepted = [];
   const rejected = [];
   const pending = [];
-  let created = 0;
   for (const ev of outbox) {
     const id = typeof ev?.id === 'string' ? ev.id : null;
+    if (shared.outboxLeft <= 0) {
+      pending.push({ id, missing: [], reason: 'batch_limit' });
+      continue;
+    }
+    shared.outboxLeft--;
     if (!isObject(ev) || ev.header?.author !== agent) {
       rejected.push({ id, reason: isObject(ev) && isObject(ev.header) ? 'not_author' : 'malformed' });
       continue;
     }
     // Resending a room this node already has is a retry, not a new room.
     const newRoom = ev.header.kind === 'room.create' && !(id && store.room(roomIdOf(id))?.has(id));
-    if (newRoom && created >= SYNC_LIMITS.creates) {
+    if (newRoom && shared.created >= SYNC_LIMITS.creates) {
       pending.push({ id, missing: [], reason: 'create_limit' });
       continue;
     }
     const result = store.ingest(ev);
-    if (newRoom && result.outcome === 'accepted') created++;
+    if (newRoom && result.outcome === 'accepted') shared.created++;
     if (result.outcome === 'accepted') accepted.push(id);
     else if (result.outcome === 'pending') pending.push({ id, missing: result.missing, ...(result.reason && { reason: result.reason }) });
     else rejected.push({ id, reason: result.reason });
@@ -112,7 +130,7 @@ export function sync(store, body, agent) {
     for (const id of since.ids) {
       const ev = store.serve(room, id);
       const size = Buffer.byteLength(JSON.stringify(ev), 'utf8') + 1;
-      if (size > budget && sentAny) {
+      if (size > budget && (sentAny || !shared.first)) {
         more = true;
         break;
       }
@@ -120,6 +138,8 @@ export function sync(store, body, agent) {
       budget -= size;
       sentAny = true;
     }
+    // A later batch entry with no room left for this room's first event: `more` says to come back.
+    if (!events.length && since.ids.length) continue;
     rooms[roomId] = { heads: room.heads(), missing: since.missing, events };
   }
 
@@ -145,7 +165,7 @@ export function sync(store, body, agent) {
       continue;
     }
     const size = Buffer.byteLength(JSON.stringify(chain), 'utf8') + 64;
-    const fits = size <= budget || (!answered && used + size <= SYNC_LIMITS.responseBytes - 64 * 1024);
+    const fits = size <= budget || (shared.first && !answered && shared.used + used + size <= SYNC_LIMITS.responseBytes - 64 * 1024);
     if (!fits) continue;
     chains[id] = chain;
     budget -= size;
@@ -155,6 +175,69 @@ export function sync(store, body, agent) {
   // `chains`, never `agents`: a top-level key keeps one type across routes, and `agents` is lookup's
   // array. The portal validates every answer against one schema (§7.6; the 0.3.0 incident).
   return { node: store.node.id, accepted, rejected, pending, more, authors, invites, rooms, chains };
+}
+
+const bad = (message) => new RequestError('bad_request', message);
+
+/**
+ * POST /v2/sync-batch (§7.9). Each entry is a /v2/sync body signed by its own agent; the call's
+ * limits (one new room, 100 outbox events, limit_bytes) are shared, in entry order. A malformed
+ * entry fails the whole call before anything is processed; a failed signature fails its entry only.
+ */
+export function syncBatch(store, body, now = Date.now(), keyOf = (agent) => store.requestKey(agent)) {
+  const entries = body.syncs;
+  if (!Array.isArray(entries) || entries.length < 1 || entries.length > SYNC_LIMITS.batch) throw bad(`syncs must hold 1 to ${SYNC_LIMITS.batch} sync requests`);
+  const extra = Object.keys(body).filter((k) => !['syncs', 'limit_bytes'].includes(k));
+  if (extra.length) throw bad(`unknown fields: ${extra.join(', ')}`);
+  const limit = body.limit_bytes ?? SYNC_LIMITS.defaultBytes;
+  if (!Number.isSafeInteger(limit) || limit < 1) throw bad('limit_bytes must be a positive integer');
+  const agents = new Set();
+  for (const e of entries) {
+    if (!isObject(e) || !isObject(e.auth) || typeof e.auth.agent !== 'string') throw bad('each entry must be a sync request with an auth block');
+    if (agents.has(e.auth.agent)) throw bad('two entries for one agent');
+    agents.add(e.auth.agent);
+    parse(e, true);
+  }
+  if (entries.reduce((n, e) => n + (e.agents?.length ?? 0), 0) > SYNC_LIMITS.agents) throw bad(`at most ${SYNC_LIMITS.agents} agents across the call`);
+
+  // Each requester's own agent events first, as for /v2/sync (§7.1), before its signature is
+  // checked: bounded by the call's outbox total, since nothing here is authenticated yet.
+  let unauthenticated = SYNC_LIMITS.outbox;
+  for (const e of entries) {
+    for (const ev of e.outbox ?? []) {
+      if (unauthenticated <= 0) break;
+      if (ev?.header?.author === e.auth.agent && AGENT_KINDS.has(ev.header.kind)) {
+        unauthenticated--;
+        store.ingest(ev);
+      }
+    }
+  }
+
+  const call = { created: 0, outboxLeft: SYNC_LIMITS.outbox, bytesLeft: Math.min(limit, SYNC_LIMITS.maxBytes), used: 0, first: true };
+  const syncs = [];
+  let more = false;
+  for (const e of entries) {
+    const agent = e.auth.agent;
+    if (!call.first && call.bytesLeft < SYNC_LIMITS.batchEntryMin) {
+      syncs.push({ agent, deferred: true });
+      more = true;
+      continue;
+    }
+    const auth = verifyRequest(e, now, keyOf);
+    if (auth.error) {
+      syncs.push({ agent, failed: { code: auth.error, message: 'request authentication failed (SPEC 7.1)' } });
+      continue;
+    }
+    const { node: _node, ...answer } = sync(store, e, auth.agent, call);
+    const entry = { agent, ...answer };
+    const size = Buffer.byteLength(JSON.stringify(entry), 'utf8');
+    call.used += size;
+    call.bytesLeft = Math.max(0, call.bytesLeft - size);
+    call.first = false;
+    if (answer.more) more = true;
+    syncs.push(entry);
+  }
+  return { node: store.node.id, more, syncs };
 }
 
 // What an invited agent needs to write its join without reading the room:

@@ -6,7 +6,7 @@
 
 import http from 'node:http';
 import { verifyRequest } from './api/auth.js';
-import { RequestError, SYNC_LIMITS, sync } from './api/sync.js';
+import { RequestError, SYNC_LIMITS, sync, syncBatch } from './api/sync.js';
 import { directory } from './api/rooms.js';
 import { fetchEvents } from './api/events.js';
 import { lookup } from './api/lookup.js';
@@ -155,6 +155,8 @@ export function nodeInfo(store, config) {
 export function createServer(store, config) {
   const table = {
     '/v2/sync': { auth: true, before: ingestOwnAgentEvents, handle: (body, agent) => sync(store, body, agent) },
+    // Each entry carries and checks its own auth (§7.9), so the route has none of its own.
+    '/v2/sync-batch': { handle: (body) => syncBatch(store, body, Date.now(), (agent) => store.requestKey(agent)) },
     '/v2/report': { auth: true, handle: (body, agent) => report(store, body, agent) },
     '/v2/lookup': { handle: (body) => lookup(store, body) },
     '/v2/rooms': { handle: (body) => directory(store, body) },
