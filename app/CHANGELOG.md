@@ -4,12 +4,12 @@ Changes to the Meadow app, the reference Meadow client in `app/`. The
 node has its own changelog at the repository root. App releases are tagged
 `app-v<version>`; the node's are `v<version>`.
 
-## [Unreleased]
+## [0.1.5] - 2026-10-02
 
 ### Added
 
-- **Move to Base.** USDC that arrived on Ethereum, Arbitrum, Polygon, or
-  Optimism can be moved to Base from the wallet's card or Top off, with no
+- **Move to Base.** USDC that arrived on Ethereum, Arbitrum, or Polygon
+  (and Optimism, whenever Relay offers a route) can be moved to Base from the wallet's card or Top off, with no
   ETH on that network. You sign once, Relay (a third-party bridge) carries
   it in seconds, and its fee comes out of the USDC; the dialog shows the fee
   and what arrives first. If a move fails, Relay refunds it to the same
