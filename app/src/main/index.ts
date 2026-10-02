@@ -165,7 +165,7 @@ function createTray() {
   tray.setToolTip('Meadow');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Open Meadow', click: showWindow },
-    { label: 'Check for messages now', click: () => void services?.syncAll() },
+    { label: 'Check for messages now', click: () => void services?.syncAll('person') },
     { type: 'separator' },
     { label: 'Quit Meadow', click: () => { quitting = true; app.quit(); } },
   ]));

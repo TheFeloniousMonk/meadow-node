@@ -21,6 +21,8 @@ import type { GuardSettings } from './guard.ts';
 import type { Diagnostics, Outcome, Via } from './diagnostics.ts';
 import { WHO_WORDS, whoOf, type Activity, type ActivityKind } from './activity.ts';
 import { NoteError, type Note, type Notes } from './notes.ts';
+import { withCause } from './cause.ts';
+import type { PaymentRow } from './wallets.ts';
 
 const GUARD_NOTE = 'MessageGuard is a filter for known prompt-injection tricks, not a guarantee.';
 const HELD = 'Kept aside by MessageGuard as a likely prompt injection. Your person decides in the app whether you see it.';
@@ -93,6 +95,12 @@ const STATUS_WORDS: Record<string, string> = {
 };
 
 /** What each setting of What this agent may do refuses (§16.7.5), and how it says so. */
+/** status waits at most this for the wallet's balance from Base. */
+const STATUS_BALANCE_MS = 4_000;
+
+/** Said whenever a private room's name, topic, or invitation note is set (a tester's household names sat in a topic, 2026-10-02). */
+const PLAINTEXT_NOTICE = 'This room is private, but its name, its topic, and invitation notes are not encrypted: every node can read them. Its messages are encrypted. Keep anything private out of the name, topic, and notes.';
+
 const PORCH_REFUSES = new Set(['send', 'create_room', 'join_room', 'leave_room', 'invite', 'update_room', 'start_dm', 'update_profile']);
 export const MAY_WORDS: Record<May, string> = {
   all: 'everything',
@@ -223,7 +231,7 @@ const TOOLS: ToolDef[] = [
     },
     run: async (h, agent, a) => {
       const out = await h.core.createRoom(agent, a);
-      return { room: out.result, ...h.written(out, 'room') };
+      return { room: out.result, ...h.written(out, 'room'), ...(a.type === 'private' && (a.name || a.topic) && { notice: PLAINTEXT_NOTICE }) };
     },
   },
   {
@@ -238,7 +246,13 @@ const TOOLS: ToolDef[] = [
     description: 'Leaves a room.',
     inputSchema: { type: 'object', properties: { room: ROOM }, required: ['room'], additionalProperties: false },
     roomOf: (a) => a.room,
-    run: async (h, agent, a) => h.written(await h.core.leaveRoom(agent, a.room), 'leave'),
+    run: async (h, agent, a) => {
+      const r = h.core.rooms(agent).find((x) => x.room === a.room);
+      const last = !!r && r.type !== 'public' && r.members.length === 1 && r.members[0] === agent;
+      // The last member of a private room leaves it for good: nobody can be invited back (§6.5),
+      // and it stays on nodes until it expires (§10). Said, so no one expects it gone (2026-10-02).
+      return { ...h.written(await h.core.leaveRoom(agent, a.room), 'leave'), ...(last && { notice: 'You were its last member, so no one can join or be invited to it again. Nodes delete it, with its name and topic, 90 days after its last event.' }) };
+    },
   },
   {
     name: 'invite', paid: true,
@@ -249,7 +263,8 @@ const TOOLS: ToolDef[] = [
       const who = await h.core.resolveAgent(agent, a.agent);
       // How it was sent (§5.3 origin), set by the app, never by the model: the runner has no person present.
       const out = await h.core.invite(agent, a.room, who.id, { ...(a.note && { note: a.note }), origin: scope ? 'automatic' : 'manual' });
-      return { ...h.written(out, 'invite'), ...(who.warnings.length && { warnings: who.warnings }) };
+      const priv = h.core.rooms(agent).find((r) => r.room === a.room)?.type !== 'public';
+      return { ...h.written(out, 'invite'), ...(who.warnings.length && { warnings: who.warnings }), ...(priv && a.note && { notice: PLAINTEXT_NOTICE }) };
     },
   },
   {
@@ -259,7 +274,8 @@ const TOOLS: ToolDef[] = [
     roomOf: (a) => a.room,
     run: async (h, agent, a) => {
       if (a.name === undefined && a.topic === undefined) throw new ActionError('bad_request', 'Give a name, a topic, or both.');
-      return h.written(await h.core.updateRoom(agent, a.room, { name: a.name, topic: a.topic }), 'change');
+      const type = h.core.rooms(agent).find((r) => r.room === a.room)?.type;
+      return { ...h.written(await h.core.updateRoom(agent, a.room, { name: a.name, topic: a.topic }), 'change'), ...(type !== 'public' && (a.name || a.topic) && { notice: PLAINTEXT_NOTICE }) };
     },
   },
   {
@@ -326,6 +342,8 @@ export class ToolHost {
   readonly catalog: Catalog;
   #balance: (address: string, token: string) => Promise<bigint>;
   #guard: () => GuardSettings;
+  /** When each agent's last paid call ended, for "other spending since your last call" (§16.9.4). */
+  #lastPaidAt = new Map<string, number>();
   #diagnostics?: Diagnostics;
   #activity?: Activity;
   #notes?: Notes;
@@ -440,9 +458,12 @@ export class ToolHost {
         else unknown.push(h);
       }
     }
-    const out = this.written(await this.core.send(agent, a.room, a.text, { replyTo: a.reply_to, ...(ids.length && { mentions: ids }) }), 'message');
+    const sent = await this.core.send(agent, a.room, a.text, { replyTo: a.reply_to, ...(ids.length && { mentions: ids }) });
+    const out = this.written(sent, 'message');
     return {
       ...out,
+      // Its ID, so a later session can tell it went out (activity lists sends too, §16.18.1).
+      message: sent.result,
       ...(unknown.length && { not_resolved: `This computer does not know ${unknown.join(', ')} yet, so ${unknown.length === 1 ? 'it is' : 'they are'} not in the message's mention list. Apps from 0.1.3 on still see the handle in the text; find_agents looks an agent up.` }),
     };
   }
@@ -591,6 +612,12 @@ export class ToolHost {
         if (fields.length) add('profile', `Changed its profile: ${fields.join(', ')}.${queued}`);
         return;
       }
+      case 'send': {
+        // The agent's own sends (§16.18.1, a tester's request, 2026-10-02): room, message ID, and
+        // whether it answered another; never the text. Received messages stay out of the log.
+        const r = this.#room(agent, args.room);
+        return add('messages', `Sent a message${args.reply_to ? ' (a reply)' : ''} to ${r.title} (message ${d.message}).${queued}`, args.room, r.ext);
+      }
       case 'report':
         if (d.sent === false) return;
         return add('reports', `Reported a message to ${args.to === 'operators' ? 'the node operators' : 'the room’s moderators'} (${args.reason}).`, null);
@@ -616,8 +643,9 @@ export class ToolHost {
     const wallet = this.wallets.walletOf(agent);
     const before = wallet ? this.#paid(wallet) : null;
     try {
-      const data = await tool.run(this, agent, args, rooms, way);
-      return { data: tool.paid ? { ...data, ...this.#cost(wallet, before) } : data };
+      // Each payment this call makes is recorded as caused by it (§16.9.4).
+      const data = await withCause(`${way}:${name}`, () => tool.run(this, agent, args, rooms, way));
+      return { data: tool.paid ? { ...data, ...this.#cost(wallet, before, agent) } : data };
     } catch (err) {
       if (err instanceof TransportError && err.kind === 'refused') return { data: { refused: err.message, ...this.#cost(wallet, before) } };
       if (err instanceof TransportError) return { data: { error: err.message, ...this.#cost(wallet, before) }, isError: true };
@@ -640,21 +668,59 @@ export class ToolHost {
     return null;
   }
 
-  #paid(wallet: string): { n: number; spent: bigint } {
-    return { n: this.wallets.paymentCount(wallet), spent: this.wallets.spent(wallet) };
+  #paid(wallet: string): { n: number; spent: bigint; at: number } {
+    return { n: this.wallets.paymentCount(wallet), spent: this.wallets.spent(wallet), at: Date.now() };
   }
 
-  #cost(wallet: string | null, before: { n: number; spent: bigint } | null): Json {
+  #cost(wallet: string | null, before: { n: number; spent: bigint; at: number } | null, agent?: string): Json {
     if (!wallet || !before) return {};
     const after = this.#paid(wallet);
     const w = this.wallets.list().find((x) => x.id === wallet)!;
     const left = toAtomic(w.dailyBudgetUsd, 6) - after.spent;
-    return { cost: formatUsd(after.spent - before.spent), paid_calls: after.n - before.n, budget_left_today: formatUsd(left < 0n ? 0n : left) };
+    // What else the wallet paid since this agent's last paid call, and during this one, so the
+    // budget's drop is explained (a tester saw $0.135 go while results said $0.06, 2026-10-02).
+    const since = agent ? this.#lastPaidAt.get(agent) ?? before.at : before.at;
+    const mine = (p: PaymentRow) => p.agent === agent && p.signed_at >= before.at;
+    const rows = agent ? this.wallets.paymentsBetween(wallet, since, after.at) : [];
+    const own = rows.filter(mine);
+    const other = rows.filter((p) => !mine(p));
+    if (agent) this.#lastPaidAt.set(agent, after.at);
+    const ownCost = agent ? own.reduce((s, p) => s + BigInt(p.amount), 0n) : after.spent - before.spent;
+    return {
+      cost: formatUsd(ownCost), paid_calls: agent ? own.length : after.n - before.n,
+      ...(other.length && { other_spending_since_your_last_call: this.#spending(agent ?? '', other) }),
+      budget_left_today: formatUsd(left < 0n ? 0n : left),
+    };
   }
 
-  /** The common result of a write: sent, or queued with the reason. */
-  written(out: { sent: boolean; refused?: string }, what: string): Json {
-    return out.sent ? { sent: true } : { sent: false, queued: `The ${what} is saved and will go with the next sync that can be paid for.`, refused: out.refused };
+  /** Payments in plain words, grouped by what caused them (§16.9.4): this agent, others, background, the person, MessageGuard. */
+  #spending(agent: string, rows: PaymentRow[]): Json {
+    const groups = new Map<string, { n: number; sum: bigint }>();
+    const names = new Map(this.core.agents().map((a) => [a.id, a.handle]));
+    for (const p of rows) {
+      const cause = p.cause ?? 'app';
+      const label = p.service !== 'meadow' ? 'MessageGuard checks'
+        : cause === 'background' ? 'background receiving (the app checks for new messages on a timer)'
+          : cause === 'person' ? 'Sync Now, pressed by your person'
+            : p.agent && p.agent !== agent ? `another agent on this computer, ${names.get(p.agent) ?? 'one since removed'}`
+              : /^(claude|chatgpt|local|rest|runner):/.test(cause) ? `you, from another conversation or connection (${cause.split(':')[0]})`
+                : 'the app';
+      const g = groups.get(label) ?? { n: 0, sum: 0n };
+      g.n++;
+      g.sum += BigInt(p.amount);
+      groups.set(label, g);
+    }
+    const total = rows.reduce((s, p) => s + BigInt(p.amount), 0n);
+    return { total: formatUsd(total), by: [...groups].map(([label, g]) => `${formatUsd(g.sum)} for ${label}, ${g.n} call${g.n === 1 ? '' : 's'}`) };
+  }
+
+  /** The common result of a write: sent, or queued with the reason (never to be sent again by hand). */
+  written(out: { sent: boolean; refused?: string; offline?: string }, what: string): Json {
+    if (out.sent) return { sent: true };
+    if (out.offline) {
+      return { sent: false, queued: `The network did not answer, so the ${what} is saved here and goes with the next sync, keeping the time it was written. Do not send it again.`, why: out.offline };
+    }
+    return { sent: false, queued: `The ${what} is saved and will go with the next sync that can be paid for. Do not send it again.`, refused: out.refused };
   }
 
   // --- Free tools -------------------------------------------------------------------
@@ -669,9 +735,17 @@ export class ToolHost {
     let balance = 'unknown';
     const rail = this.catalog.baseRail('meadow');
     if (w && rail) {
+      // status is free and must answer quickly: a slow Base endpoint gives "unknown", not a wait
+      // longer than the AI's host allows (it once took 50 s, 2026-10-02).
+      let timer: ReturnType<typeof setTimeout> | undefined;
       try {
-        balance = formatUsd(await this.#balance(w.address, rail.tokenAddress), rail.tokenDecimals);
-      } catch {}
+        const late = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('slow')), STATUS_BALANCE_MS); });
+        balance = formatUsd(await Promise.race([this.#balance(w.address, rail.tokenAddress), late]), rail.tokenDecimals);
+      } catch {
+        balance = 'unknown: Base did not answer just now';
+      } finally {
+        clearTimeout(timer);
+      }
     }
     const f = agentTextFence(only ? 'runner' : 'person');
     const joined = rooms.filter((r) => r.status === 'joined').map((r) => ({ room: r.room, type: r.type, ...(r.name && { name: f.wrap(r.name) }), ...(r.topic && { topic: f.wrap(r.topic) }), members: r.members.length, ...this.noteField(agent, 'room', r.room) }));
@@ -690,7 +764,11 @@ export class ToolHost {
       ...((n) => n ? { waiting_for_setting: `${n} queued event${n === 1 ? '' : 's'} wait until your person changes what this agent may do` } : {})(this.core.heldBySetting(agent)),
       rooms: joined,
       invites,
-      wallet: w ? { balance, budget_left_today: formatUsd(maxZero(toAtomic(w.dailyBudgetUsd, 6) - w.spent24h)) } : 'none assigned',
+      wallet: w ? {
+        balance, budget_left_today: formatUsd(maxZero(toAtomic(w.dailyBudgetUsd, 6) - w.spent24h)),
+        // The whole wallet's last 24 hours, by cause: other agents and background receiving share it (§16.9.4).
+        ...((rows) => rows.length ? { spent_last_24h: this.#spending(agent, rows) } : {})(this.wallets.paymentsBetween(w.id, Date.now() - 24 * 3600 * 1000, Date.now())),
+      } : 'none assigned',
       price_per_call: this.#price() ?? "unknown until the app can read the portal's price list",
       messageguard: (() => {
         const g = this.#guard();
@@ -722,6 +800,12 @@ export class ToolHost {
 
   /** preview_room (§16.7.4): one read of a public room, not joined and not followed. */
   async preview(agent: string, roomId: string, limit: number, only?: Set<string>): Promise<Json> {
+    // What this computer already knows answers for free: a room it is in, or one it knows to be
+    // private or a DM from an invitation (a tester paid for a refusal the app could give, 2026-10-02).
+    const known = this.core.rooms(agent).find((r) => r.room === roomId);
+    if (known?.status === 'joined') return { refused: 'You are already in this room: read it with read instead. Nothing was charged.' };
+    const knownType = known?.type ?? this.core.invites(agent).find((i) => i.room === roomId)?.type;
+    if (knownType && knownType !== 'public') return { refused: 'Only a public room can be read before joining, and this one is not. For a private room, the invitation shows its name and topic. Nothing was charged.' };
     const { type } = await this.core.preview(agent, roomId);
     if (type !== 'public') return { refused: 'Only a public room can be read before joining. For a private room, the invitation shows its name and topic.' };
     const audience: Audience = only ? 'runner' : 'person';

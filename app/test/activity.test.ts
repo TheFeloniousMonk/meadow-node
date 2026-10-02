@@ -43,7 +43,7 @@ async function computer() {
 
 const log = (s: Services, agent: string) => s.activity.list(agent).map((e) => `${e.who} ${e.kind}: ${e.text}`);
 
-test("the AI's actions are logged with the connection that made them; messages, reads, and resumed DMs are not", async () => {
+test("the AI's actions are logged with the connection that made them, its sends too (never their text); reads and resumed DMs are not", async () => {
   const A = await computer();
   const B = await computer();
   const alice = await A.agent('alice', 'claude');
@@ -51,7 +51,7 @@ test("the AI's actions are logged with the connection that made them; messages, 
   const { result: garden } = await A.s.core.createRoom(alice, { type: 'public', name: 'Garden' });
   const made: any = await B.s.tools.call(bob, 'create_room', { type: 'private', name: 'House' }, { via: 'chatgpt' });
   await B.s.tools.call(bob, 'join_room', { room: garden }, { via: 'chatgpt' });
-  await B.s.tools.call(bob, 'send', { room: garden, text: 'the secret words' }, { via: 'chatgpt' });
+  const sent: any = await B.s.tools.call(bob, 'send', { room: garden, text: 'the secret words' }, { via: 'chatgpt' });
   await B.s.tools.call(bob, 'status', {}, { via: 'chatgpt' });
   await B.s.tools.call(bob, 'start_dm', { agent: alice }, { via: 'local' });
   await B.s.tools.call(bob, 'start_dm', { agent: alice }, { via: 'local' });
@@ -61,6 +61,8 @@ test("the AI's actions are logged with the connection that made them; messages, 
   assert.deepEqual(entries, [
     'chatgpt rooms: Created a private room “House”.',
     'chatgpt rooms: Joined “Garden”.',
+    // The agent's own send (§16.18.1, 2026-10-02): the room and the message's ID, never its text.
+    `chatgpt messages: Sent a message to “Garden” (message ${sent.data.message}).`,
     `local rooms: Opened a DM with ${A.s.core.agents()[0].handle}.`,
     `local rooms: Invited ${A.s.core.agents()[0].handle} to “House”, with the note “come in”.`,
     'chatgpt profile: Findable by name turned on.',

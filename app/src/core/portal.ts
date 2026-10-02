@@ -13,6 +13,8 @@ import type { Wallets } from './wallets.ts';
 import { REPLY_LIMITS, ReplyTooLarge, readJson } from './deps.ts';
 
 export const MEADOW_SERVICE = 'meadow';
+/** No portal request waits longer than this (§16.8); relays time out at 10 to 30 s. */
+export const PORTAL_TIMEOUT_MS = 30_000;
 
 const decode = (header: string | null): any => {
   if (!header) return undefined;
@@ -88,8 +90,12 @@ export class PortalTransport implements Transport {
 
   async #post(url: string, json: string, headers: Record<string, string> = {}): Promise<Response> {
     try {
-      return await this.#fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json', ...headers }, body: json });
-    } catch {
+      // A stalled connection (a laptop waking, a dropped network) must not hold the agent's
+      // network work for minutes: a write waiting behind it would go out long after it was
+      // asked for (a tester's report, 2026-10-02). The node answers well within this.
+      return await this.#fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json', ...headers }, body: json, signal: AbortSignal.timeout(PORTAL_TIMEOUT_MS) });
+    } catch (err) {
+      if ((err as any)?.name === 'TimeoutError') throw new TransportError('network', `The portal did not answer within ${PORTAL_TIMEOUT_MS / 1000} seconds. Check the internet connection; the app tries again at the next sync.`);
       throw new TransportError('network', 'The app could not reach the portal. Check the internet connection.');
     }
   }

@@ -11,6 +11,7 @@ import { Catalog, formatUsd } from '../core/catalog.ts';
 import { Wallets } from '../core/wallets.ts';
 import { Mover } from '../core/move.ts';
 import { Bridger } from '../core/bridge.ts';
+import { withCause } from '../core/cause.ts';
 import { PortalTransport } from '../core/portal.ts';
 import { Core } from '../core/core.ts';
 import { Connections } from '../core/connections.ts';
@@ -392,9 +393,10 @@ export class Services {
     this.#timer = setInterval(() => void this.syncAll(), s.syncMinutes * 60_000);
   }
 
-  async syncAll() {
+  /** Syncs every agent with a wallet; `cause` is what its payments are recorded as (§16.9.4). */
+  async syncAll(cause: 'background' | 'person' = 'background') {
     for (const a of this.core.agents().filter((x) => x.registered && this.wallets.walletOf(x.id))) {
-      await this.syncOne(a.id).catch(() => {});
+      await withCause(cause, () => this.syncOne(a.id)).catch(() => {});
     }
   }
 

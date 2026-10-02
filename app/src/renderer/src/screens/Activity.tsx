@@ -9,6 +9,7 @@ import { openRoom } from './Inbox.tsx';
 const KINDS: { label: string; kinds: ActivityView['kind'][] | null }[] = [
   { label: 'All', kinds: null },
   { label: 'Rooms and DMs', kinds: ['rooms', 'reports'] },
+  { label: 'Messages sent', kinds: ['messages'] },
   { label: 'Received', kinds: ['received'] },
   { label: 'Settings and backups', kinds: ['settings', 'backups', 'profile'] },
   { label: 'Problems', kinds: ['problems'] },

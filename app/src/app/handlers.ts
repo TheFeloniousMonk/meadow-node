@@ -15,6 +15,7 @@ import { connectionCheck, diagnosticsText, testConnection, type ClaudeState } fr
 import { runOutside, troubleshoot } from './troubleshoot.ts';
 import { elsewhereSentence } from '../core/elsewhere.ts';
 import { movable } from '../core/bridge.ts';
+import { withCause } from '../core/cause.ts';
 import { WHO_WORDS, type ActivityKind } from '../core/activity.ts';
 import type { Note } from '../core/notes.ts';
 
@@ -440,7 +441,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
   const claudeRunning = () => (env.claudeRunning ?? claudeDesktopRunning)();
 
   const asyncHandlers: Partial<Record<keyof Api, (a: any) => Promise<unknown>>> = {
-    syncNow: ({ agent }) => s.syncOne(agent),
+    syncNow: ({ agent }) => withCause('person', () => s.syncOne(agent)),
     claudeRunning: async () => ({ running: await claudeRunning() }),
     installUpdate: async () => {
       if (!s.update.available) return { ok: false, error: 'No update is waiting.' };

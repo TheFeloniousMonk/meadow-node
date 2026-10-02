@@ -288,6 +288,8 @@ const COLUMNS: [table: string, column: string, definition: string][] = [
   // Mentions (§16.20): the message mentions this agent; the person has been notified of it.
   ['messages', 'mentioned', 'INTEGER NOT NULL DEFAULT 0'],
   ['messages', 'mention_notified', 'INTEGER NOT NULL DEFAULT 0'],
+  // What caused each payment (§16.9.4): tool:<name>, background, person, runner, messageguard, app.
+  ['payments', 'cause', 'TEXT'],
 ];
 
 export function openDb(path = ':memory:'): Db {

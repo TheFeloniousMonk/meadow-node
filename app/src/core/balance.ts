@@ -9,14 +9,20 @@ export const BASE_RPC = 'https://base.api.pocket.network';
 export interface RpcOptions {
   rpc?: string;
   fetchImpl?: typeof fetch;
+  /** How long one call may take (default RPC_TIMEOUT_MS). */
+  timeoutMs?: number;
 }
 
+/** No RPC read waits longer than this: the public endpoint once took 50 s to answer one (2026-10-02). */
+export const RPC_TIMEOUT_MS = 15_000;
+
 /** One JSON-RPC call to Base. An error answer throws with the node's message. */
-export async function rpcCall(method: string, params: unknown[], { rpc = BASE_RPC, fetchImpl = fetch }: RpcOptions = {}): Promise<any> {
+export async function rpcCall(method: string, params: unknown[], { rpc = BASE_RPC, fetchImpl = fetch, timeoutMs = RPC_TIMEOUT_MS }: RpcOptions = {}): Promise<any> {
   const res = await fetchImpl(rpc, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const json: any = await readJson(res, REPLY_LIMITS.rpc);
   if (json?.error || !('result' in (json ?? {}))) throw new Error(`the Base RPC answered ${JSON.stringify(json?.error ?? json).slice(0, 200)}`);

@@ -12,6 +12,7 @@ import { BASE, USDC, formatUsd, toAtomic, type Catalog } from './catalog.ts';
 import { addressOf, isMnemonic, newMnemonic, normalizeMnemonic, privateKeyFromMnemonic, sameAddress, signTransfer, type Authorization, type Hex } from './evm.ts';
 import { TransportError } from './transport.ts';
 import type { Vault } from './vault.ts';
+import { currentCause } from './cause.ts';
 
 export const DAY_MS = 24 * 3600 * 1000;
 /** The longest a signed authorization stays valid, whatever the 402 asks (§16.9). */
@@ -28,6 +29,16 @@ export interface Terms {
   payTo: Hex;
   maxTimeoutSeconds: number;
   extra: { name: string; version: string };
+}
+
+/** A payment as Troubleshoot and the tools explain it (§16.9.4). */
+export interface PaymentRow {
+  agent: string | null;
+  service: string;
+  amount: string;
+  signed_at: number;
+  /** tool calls as `<connection>:<tool>`; background; person; app (older payments: null). */
+  cause: string | null;
 }
 
 export interface WalletView {
@@ -198,6 +209,12 @@ export class Wallets {
     return { spent, budget, fits: false, frees: null };
   }
 
+  /** The wallet's payments signed in (from, to], oldest first, with what caused each (§16.9.4). */
+  paymentsBetween(wallet: string, from: number, to: number): PaymentRow[] {
+    return this.#db.prepare('SELECT agent, service, amount, signed_at, cause FROM payments WHERE wallet = ? AND signed_at > ? AND signed_at <= ? ORDER BY seq')
+      .all(wallet, from, to) as unknown as PaymentRow[];
+  }
+
   /** How many payments the wallet has signed, ever. */
   paymentCount(wallet: string): number {
     return (this.#db.prepare('SELECT COUNT(*) AS n FROM payments WHERE wallet = ?').get(wallet) as any).n;
@@ -291,9 +308,9 @@ export class Wallets {
       };
       const signature = signTransfer(key, { name: USDC.name, version: USDC.version, chainId: BASE.chainId, verifyingContract: USDC.address }, authorization);
       key.fill(0);
-      const r = this.#db.prepare(`INSERT INTO payments (wallet, agent, service, path, amount, asset, network, pay_to, nonce, valid_before, signed_at, status)
-                                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'signed')`)
-        .run(walletId, req.agent, req.serviceId, req.path, terms.amount, terms.asset, terms.network, terms.payTo, authorization.nonce, Number(authorization.validBefore) * 1000, this.#now());
+      const r = this.#db.prepare(`INSERT INTO payments (wallet, agent, service, path, amount, asset, network, pay_to, nonce, valid_before, signed_at, status, cause)
+                                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'signed', ?)`)
+        .run(walletId, req.agent, req.serviceId, req.path, terms.amount, terms.asset, terms.network, terms.payTo, authorization.nonce, Number(authorization.validBefore) * 1000, this.#now(), currentCause());
       const echo: any = {};
       if (req.offer?.resource && typeof req.offer.resource === 'object') echo.resource = req.offer.resource;
       if (req.offer?.extensions && typeof req.offer.extensions === 'object') echo.extensions = req.offer.extensions;

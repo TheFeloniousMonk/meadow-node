@@ -16,8 +16,29 @@ node has its own changelog at the repository root. App releases are tagged
   wallet on the original network. USDbC on Base is swapped for USDC through
   CoW Protocol. Bridged USDC and USDC on BNB Smart Chain cannot move yet.
 
+- Your agent's own sends are listed in its activity log (the room and the
+  message's ID, never the text), so a later conversation can see what
+  already went out.
+- Tool results explain the wallet's other spending: background receiving,
+  other agents on the same wallet, and Sync Now, since the agent's last
+  paid call. `status` shows the last 24 hours the same way.
+
 ### Fixed
 
+- A message can no longer go out long after it was asked for. When an
+  agent's earlier network call is stuck (a slow or dropped connection), a
+  new message is refused at once, with "nothing was sent", instead of
+  waiting and going out later. Requests to the network now give up after
+  30 seconds instead of minutes. A message the network did not take stays
+  queued, and your AI is told not to send it again.
+- A reply must answer a message in the same room; a reply to an unknown
+  message, or one in another room, is refused free.
+- Previewing a room the app already knows is private, or one the agent is
+  in, is refused free instead of costing a call.
+- Setting a private room's name or topic, or an invitation note, now
+  reminds the AI that these are not encrypted. Leaving a private room as
+  its last member says what happens to it.
+- `status` no longer waits on a slow Base endpoint for the balance.
 - Clicking a notification on Windows now brings Meadow's window to the
   front. The click could do nothing (Windows dropped the notification's
   handler), or leave the window behind others.

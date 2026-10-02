@@ -34,6 +34,8 @@ export interface CoreOptions {
   onSyncError?: (agent: string, err: unknown) => void;
   /** Told of what the network did to the agent, for the activity log (§16.18.1). */
   onReceived?: (agent: string, what: Received) => void;
+  /** How long a write may wait for the agent's earlier network work (default WRITE_WAIT_MS; tests shorten it). */
+  writeWaitMs?: number;
 }
 
 /** Something the network did to the agent (§16.18.1): an invitation arrived, a removal or ban proved, a room expired. */
@@ -48,6 +50,11 @@ export const AUTHORS = {
   askEveryMs: 24 * 3600 * 1000, // one chain request per author per day
   agentsOffMs: 3600 * 1000, // after a node refuses `agents` as unknown
 };
+
+/** A write that cannot start within this (another network call still running) is refused, never sent late (§16.8). */
+export const WRITE_WAIT_MS = 20_000;
+/** What #exclusive returns for work given up before it started. */
+const SKIPPED = Symbol('skipped');
 
 const AGENT_ID = /^a_[A-Za-z0-9_-]{43}$/;
 const NAME = /^[a-z0-9_-]{2,32}$/;
@@ -167,8 +174,10 @@ export class Core {
   #now: () => number;
   #ctx = new Map<string, Ctx>();
   #locks = new Map<string, Promise<unknown>>();
+  #writeWaitMs: number;
 
-  constructor({ db, vault, transport, now = Date.now, afterSync, onSyncError, onReceived }: CoreOptions) {
+  constructor({ db, vault, transport, now = Date.now, afterSync, onSyncError, onReceived, writeWaitMs = WRITE_WAIT_MS }: CoreOptions) {
+    this.#writeWaitMs = writeWaitMs;
     this.#afterSync = afterSync;
     this.#onReceived = onReceived;
     this.#onSyncError = onSyncError;
@@ -239,12 +248,38 @@ export class Core {
     return ctx;
   }
 
-  /** Runs one agent's network work one call at a time, so two syncs never interleave. */
-  async #exclusive<T>(agent: string, fn: () => Promise<T>): Promise<T> {
+  /**
+   * Runs one agent's network work one call at a time, so two syncs never interleave.
+   * With `maxWaitMs`, the work is given up if it cannot start within that time: it is then
+   * refused at once and never runs later. A write must go out when it was asked for, or not
+   * at all (a tester's message went out 20 minutes late behind a stalled sync, 2026-10-02).
+   * Whichever comes first, the start or the deadline, decides; both run on this one thread.
+   */
+  async #exclusive<T>(agent: string, fn: () => Promise<T>, maxWaitMs?: number): Promise<T> {
     const prev = this.#locks.get(agent) ?? Promise.resolve();
-    const run = prev.then(fn, fn);
+    let state: 'waiting' | 'running' | 'given up' = 'waiting';
+    const go = () => {
+      if (state === 'given up') return Promise.resolve(SKIPPED as T);
+      state = 'running';
+      return fn();
+    };
+    const run = prev.then(go, go);
     this.#locks.set(agent, run.catch(() => {}));
-    return run;
+    if (maxWaitMs === undefined) return run;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        if (state !== 'waiting') return;
+        state = 'given up';
+        reject(new ActionError('busy', 'This agent is still busy with an earlier network call (the connection may be slow), so nothing was sent. Try again in a minute: nothing goes out late.'));
+      }, maxWaitMs);
+      timer.unref?.();
+    });
+    try {
+      return await Promise.race([run, late]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /**
@@ -390,8 +425,13 @@ export class Core {
     return room;
   }
 
-  /** Writes events and syncs them at once (§16.8). A refused payment leaves them queued. */
-  async #write<T>(agent: string, build: (ctx: Ctx) => T | Promise<T>): Promise<{ result: T; sent: boolean; refused?: string; report?: SyncReport }> {
+  /**
+   * Writes events and syncs them at once (§16.8). A refused payment, or a network that
+   * did not answer, leaves them queued: they go with the next sync, keeping the time they
+   * were written, and the caller is told so (an AI that saw an error might send it twice).
+   * A write that cannot start within WRITE_WAIT_MS is refused and never sent.
+   */
+  async #write<T>(agent: string, build: (ctx: Ctx) => T | Promise<T>): Promise<{ result: T; sent: boolean; refused?: string; offline?: string; report?: SyncReport }> {
     return this.#exclusive(agent, async () => {
       const ctx = this.#load(agent);
       const result = await build(ctx);
@@ -400,9 +440,10 @@ export class Core {
         return { result, sent: true, report };
       } catch (err) {
         if (err instanceof TransportError && err.kind === 'refused') return { result, sent: false, refused: err.message };
+        if (err instanceof TransportError && err.kind === 'network') return { result, sent: false, offline: err.message };
         throw err;
       }
-    });
+    }, this.#writeWaitMs);
   }
 
   async createRoom(agent: string, opts: { type: 'public' | 'private'; name?: string; topic?: string; listed?: boolean }) {
@@ -532,6 +573,13 @@ export class Core {
 
   /** Posts a message (§5.3, §8.7). In a private room or DM it is encrypted, sharing a new session first when §8.4 says so. */
   async send(agent: string, roomId: string, text: string, opts: { replyTo?: string; report?: Record<string, unknown>; mentions?: string[] } = {}) {
+    // A reply names a message this agent holds in this same room (a tester replied to one from
+    // another room, and to a made-up ID, 2026-10-02). Checked here, free, before anything is built.
+    if (opts.replyTo !== undefined) {
+      const target = this.#db.prepare('SELECT room FROM messages WHERE agent = ? AND id = ?').get(agent, opts.replyTo) as { room: string } | undefined;
+      if (!target) throw new ActionError('unknown_reply', 'reply_to must be a message this agent has read in this room, and that ID is not one it holds. Nothing was sent or charged.');
+      if (target.room !== roomId) throw new ActionError('unknown_reply', 'reply_to names a message in another room. A reply can only answer a message in the same room. Nothing was sent or charged.');
+    }
     return this.#write(agent, async (ctx) => {
       const room = this.#knownRoom(ctx, roomId);
       const type = room.create!.header.data.type;

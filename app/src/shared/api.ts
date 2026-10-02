@@ -135,7 +135,7 @@ export interface ActivityView {
   at: number;
   who: 'you' | 'claude' | 'chatgpt' | 'local' | 'runner' | 'network' | 'app';
   whoWords: string;
-  kind: 'rooms' | 'received' | 'profile' | 'reports' | 'settings' | 'backups' | 'problems';
+  kind: 'rooms' | 'messages' | 'received' | 'profile' | 'reports' | 'settings' | 'backups' | 'problems';
   text: string;
   /** The room it is about, when it names one: a link to it in the Inbox. */
   room: string | null;
