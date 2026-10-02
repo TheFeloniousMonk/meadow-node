@@ -12,7 +12,7 @@ import { BASE, USDC, formatUsd, toAtomic, type Catalog } from './catalog.ts';
 import { addressOf, isMnemonic, newMnemonic, normalizeMnemonic, privateKeyFromMnemonic, sameAddress, signTransfer, type Authorization, type Hex } from './evm.ts';
 import { TransportError } from './transport.ts';
 import type { Vault } from './vault.ts';
-import { currentCause } from './cause.ts';
+import { currentCause, notePayment } from './cause.ts';
 
 export const DAY_MS = 24 * 3600 * 1000;
 /** The longest a signed authorization stays valid, whatever the 402 asks (§16.9). */
@@ -33,6 +33,7 @@ export interface Terms {
 
 /** A payment as Troubleshoot and the tools explain it (§16.9.4). */
 export interface PaymentRow {
+  seq: number;
   agent: string | null;
   service: string;
   amount: string;
@@ -211,8 +212,15 @@ export class Wallets {
 
   /** The wallet's payments signed in (from, to], oldest first, with what caused each (§16.9.4). */
   paymentsBetween(wallet: string, from: number, to: number): PaymentRow[] {
-    return this.#db.prepare('SELECT agent, service, amount, signed_at, cause FROM payments WHERE wallet = ? AND signed_at > ? AND signed_at <= ? ORDER BY seq')
+    return this.#db.prepare('SELECT seq, agent, service, amount, signed_at, cause FROM payments WHERE wallet = ? AND signed_at > ? AND signed_at <= ? ORDER BY seq')
       .all(wallet, from, to) as unknown as PaymentRow[];
+  }
+
+  /** The payments with these seqs, in order. */
+  paymentsBySeq(seqs: number[]): PaymentRow[] {
+    if (!seqs.length) return [];
+    return this.#db.prepare(`SELECT seq, agent, service, amount, signed_at, cause FROM payments WHERE seq IN (${seqs.map(() => '?').join(', ')}) ORDER BY seq`)
+      .all(...seqs) as unknown as PaymentRow[];
   }
 
   /** How many payments the wallet has signed, ever. */
@@ -311,6 +319,7 @@ export class Wallets {
       const r = this.#db.prepare(`INSERT INTO payments (wallet, agent, service, path, amount, asset, network, pay_to, nonce, valid_before, signed_at, status, cause)
                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'signed', ?)`)
         .run(walletId, req.agent, req.serviceId, req.path, terms.amount, terms.asset, terms.network, terms.payTo, authorization.nonce, Number(authorization.validBefore) * 1000, this.#now(), currentCause());
+      notePayment(Number(r.lastInsertRowid));
       const echo: any = {};
       if (req.offer?.resource && typeof req.offer.resource === 'object') echo.resource = req.offer.resource;
       if (req.offer?.extensions && typeof req.offer.extensions === 'object') echo.extensions = req.offer.extensions;

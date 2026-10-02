@@ -21,7 +21,7 @@ import type { GuardSettings } from './guard.ts';
 import type { Diagnostics, Outcome, Via } from './diagnostics.ts';
 import { WHO_WORDS, whoOf, type Activity, type ActivityKind } from './activity.ts';
 import { NoteError, type Note, type Notes } from './notes.ts';
-import { withCause } from './cause.ts';
+import { withCauseTracked } from './cause.ts';
 import type { PaymentRow } from './wallets.ts';
 
 const GUARD_NOTE = 'MessageGuard is a filter for known prompt-injection tricks, not a guarantee.';
@@ -641,15 +641,18 @@ export class ToolHost {
     const refused = this.#mayRefuse(agent, name, args);
     if (refused) return { data: { refused } };
     const wallet = this.wallets.walletOf(agent);
-    const before = wallet ? this.#paid(wallet) : null;
+    const started = Date.now();
+    // The payments this call signs, and only these: another call running beside it is not its cost.
+    const seqs: number[] = [];
+    const cost = () => this.#cost(wallet, agent, started, seqs);
     try {
       // Each payment this call makes is recorded as caused by it (§16.9.4).
-      const data = await withCause(`${way}:${name}`, () => tool.run(this, agent, args, rooms, way));
-      return { data: tool.paid ? { ...data, ...this.#cost(wallet, before, agent) } : data };
+      const data = await withCauseTracked(`${way}:${name}`, seqs, () => tool.run(this, agent, args, rooms, way));
+      return { data: tool.paid ? { ...data, ...cost() } : data };
     } catch (err) {
-      if (err instanceof TransportError && err.kind === 'refused') return { data: { refused: err.message, ...this.#cost(wallet, before) } };
-      if (err instanceof TransportError) return { data: { error: err.message, ...this.#cost(wallet, before) }, isError: true };
-      if (err instanceof ActionError) return { data: { error: err.message, code: err.code, ...this.#cost(wallet, before) }, isError: true };
+      if (err instanceof TransportError && err.kind === 'refused') return { data: { refused: err.message, ...cost() } };
+      if (err instanceof TransportError) return { data: { error: err.message, ...cost() }, isError: true };
+      if (err instanceof ActionError) return { data: { error: err.message, code: err.code, ...cost() }, isError: true };
       throw err;
     }
   }
@@ -668,26 +671,21 @@ export class ToolHost {
     return null;
   }
 
-  #paid(wallet: string): { n: number; spent: bigint; at: number } {
-    return { n: this.wallets.paymentCount(wallet), spent: this.wallets.spent(wallet), at: Date.now() };
-  }
-
-  #cost(wallet: string | null, before: { n: number; spent: bigint; at: number } | null, agent?: string): Json {
-    if (!wallet || !before) return {};
-    const after = this.#paid(wallet);
+  /** A paid call's cost (its own payments, by seq), what else the wallet paid, and the budget left. */
+  #cost(wallet: string | null, agent: string, started: number, seqs: number[]): Json {
+    if (!wallet) return {};
+    const now = Date.now();
     const w = this.wallets.list().find((x) => x.id === wallet)!;
-    const left = toAtomic(w.dailyBudgetUsd, 6) - after.spent;
+    const left = toAtomic(w.dailyBudgetUsd, 6) - this.wallets.spent(wallet);
     // What else the wallet paid since this agent's last paid call, and during this one, so the
     // budget's drop is explained (a tester saw $0.135 go while results said $0.06, 2026-10-02).
-    const since = agent ? this.#lastPaidAt.get(agent) ?? before.at : before.at;
-    const mine = (p: PaymentRow) => p.agent === agent && p.signed_at >= before.at;
-    const rows = agent ? this.wallets.paymentsBetween(wallet, since, after.at) : [];
-    const own = rows.filter(mine);
-    const other = rows.filter((p) => !mine(p));
-    if (agent) this.#lastPaidAt.set(agent, after.at);
-    const ownCost = agent ? own.reduce((s, p) => s + BigInt(p.amount), 0n) : after.spent - before.spent;
+    const own = this.wallets.paymentsBySeq(seqs);
+    const mine = new Set(seqs);
+    const other = this.wallets.paymentsBetween(wallet, this.#lastPaidAt.get(agent) ?? started, now).filter((p) => !mine.has(p.seq));
+    this.#lastPaidAt.set(agent, now);
+    const ownCost = own.reduce((s, p) => s + BigInt(p.amount), 0n);
     return {
-      cost: formatUsd(ownCost), paid_calls: agent ? own.length : after.n - before.n,
+      cost: formatUsd(ownCost), paid_calls: own.length,
       ...(other.length && { other_spending_since_your_last_call: this.#spending(agent ?? '', other) }),
       budget_left_today: formatUsd(left < 0n ? 0n : left),
     };
@@ -703,7 +701,7 @@ export class ToolHost {
         : cause === 'background' ? 'background receiving (the app checks for new messages on a timer)'
           : cause === 'person' ? 'Sync Now, pressed by your person'
             : p.agent && p.agent !== agent ? `another agent on this computer, ${names.get(p.agent) ?? 'one since removed'}`
-              : /^(claude|chatgpt|local|rest|runner):/.test(cause) ? `you, from another conversation or connection (${cause.split(':')[0]})`
+              : /^(claude|chatgpt|local|rest|runner):/.test(cause) ? `your other calls (${cause.split(':')[0]}): ones running at the same time, or from another conversation`
                 : 'the app';
       const g = groups.get(label) ?? { n: 0, sum: 0n };
       g.n++;

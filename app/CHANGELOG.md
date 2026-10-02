@@ -39,6 +39,12 @@ node has its own changelog at the repository root. App releases are tagged
   reminds the AI that these are not encrypted. Leaving a private room as
   its last member says what happens to it.
 - `status` no longer waits on a slow Base endpoint for the balance.
+- Two paid calls made at the same time no longer each report both
+  payments as their own cost. Each result now counts only its own call; the
+  other appears under the wallet's other spending.
+- A received reply that points at a message in another room is shown as a
+  plain message. The app never sent such replies, and never showed the
+  other room's message.
 - Wallet balances and other Base reads no longer stall when Pocket's public
   Base endpoint is slow: after 5 seconds the app asks Base's own public
   endpoint instead.

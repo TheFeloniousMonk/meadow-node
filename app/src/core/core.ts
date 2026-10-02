@@ -346,6 +346,12 @@ export class Core {
   // --- Rooms ------------------------------------------------------------------------
 
   /** Whether the agent was not yet a recipient (member or invitee) in the state before this event (§8.4). */
+  /** Whether `id` is a message this agent holds in a room other than `roomId` (a cross-room reply_to, never sent by this app). */
+  #replyElsewhere(agent: string, roomId: string, id: string): boolean {
+    const t = this.#db.prepare('SELECT room FROM messages WHERE agent = ? AND id = ?').get(agent, id) as { room: string } | undefined;
+    return !!t && t.room !== roomId;
+  }
+
   #preJoin(ctx: Ctx, roomId: string, eventId: string): boolean {
     const room = this.#room(ctx, roomId);
     const ev = room.event(eventId);
@@ -1443,7 +1449,8 @@ export class Core {
       if (m.status === 'shown' && m.body_sealed) {
         const { body } = this.#vault.openJson(`message:${agent}:${m.id}`, m.body_sealed);
         view.text = body.text;
-        if (body.reply_to) view.reply_to = body.reply_to;
+        // Replies are room-local (§16.8): one naming a message held in another room is shown as a plain message.
+        if (body.reply_to && !this.#replyElsewhere(agent, m.room, body.reply_to)) view.reply_to = body.reply_to;
         if (body.report) {
           const v = verifyReport(body.report);
           const r: any = body.report;

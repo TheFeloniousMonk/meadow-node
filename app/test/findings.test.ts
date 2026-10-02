@@ -104,6 +104,31 @@ test('reply_to must name a message this agent holds in the same room; refused fr
   assert.deepEqual(own(a.core, a.id, two), []);
 });
 
+test('a received reply_to naming a message in another room is dropped (Nodus, 2026-10-02)', async () => {
+  const a = await agent('aevum');
+  const bdb = openDb();
+  const b = { core: new Core({ db: bdb, vault: new Vault(randomBytes(32)), transport: transport(), writeWaitMs: 200 }), id: '' };
+  b.id = b.core.createAgent('nodus').id;
+  await b.core.register(b.id);
+  const { result: general } = await a.core.createRoom(a.id, { type: 'public', name: 'General' });
+  const { result: test } = await a.core.createRoom(a.id, { type: 'public', name: 'Test' });
+  await b.core.joinRoom(b.id, general);
+  await b.core.joinRoom(b.id, test);
+  const hello = await a.core.send(a.id, general, 'hello');
+  await b.core.sync(b.id);
+  // Another client, or a changed one, would not check: make Nodus's app believe the message is in Test.
+  bdb.prepare('UPDATE messages SET room = ? WHERE agent = ? AND id = ?').run(test, b.id, hello.result);
+  const cross = await b.core.send(b.id, test, 'a reply across rooms', { replyTo: hello.result });
+  assert.equal(cross.sent, true);
+  bdb.prepare('UPDATE messages SET room = ? WHERE agent = ? AND id = ?').run(general, b.id, hello.result);
+  const same = await b.core.send(b.id, general, 'a reply in the room', { replyTo: hello.result });
+  assert.equal(same.sent, true);
+  await a.core.sync(a.id);
+  const got = (room: string, text: string) => a.core.messages(a.id, { room }).find((m) => m.text === text)!;
+  assert.equal(got(test, 'a reply across rooms').reply_to, undefined, 'shown as a plain message');
+  assert.equal(got(general, 'a reply in the room').reply_to, hello.result);
+});
+
 async function computer() {
   const catalog = new Catalog({ url: portal.catalogUrl });
   await catalog.refresh();
@@ -147,6 +172,29 @@ test('every payment records its cause, and results explain the rest of the walle
   const st: any = await s.tools.call(aevum, 'status', {}, { via: 'claude' });
   assert.ok(st.data.wallet.spent_last_24h.by.some((x: string) => /background receiving/.test(x)));
   assert.equal(s.wallets.paymentsBetween(wallet, 0, Date.now()).length >= 5, true);
+});
+
+test('two calls at once each report only their own payment (Nodus, 2026-10-02)', async () => {
+  const { s, agent } = await computer();
+  const nodus = await agent('nodus');
+  const lucero = await agent('lucero');
+  const handle = s.core.agents().find((a) => a.id === lucero)!.handle;
+  await s.tools.call(nodus, 'sync', {}, { via: 'claude' });
+  await tick();
+  const before = s.db.prepare('SELECT COUNT(*) AS n FROM payments').get() as any;
+  const [x, y]: any[] = await Promise.all([
+    s.tools.call(nodus, 'find_agents', { handle }, { via: 'claude' }),
+    s.tools.call(nodus, 'find_agents', { handle }, { via: 'claude' }),
+  ]);
+  const after = s.db.prepare('SELECT COUNT(*) AS n FROM payments').get() as any;
+  assert.equal(after.n - before.n, 2, 'two payments in all');
+  for (const r of [x, y]) {
+    assert.equal(r.data.cost, '$0.005', JSON.stringify(r.data));
+    assert.equal(r.data.paid_calls, 1);
+  }
+  // The other call's payment is named as such by at least the call that ended first, never as its own cost.
+  const told = [x, y].map((r) => r.data.other_spending_since_your_last_call?.by ?? []).flat();
+  assert.ok(told.every((l: string) => /^\$0\.005 for your other calls \(claude\)/.test(l)), JSON.stringify(told));
 });
 
 test('a room the app knows to be private, or already joined, is refused free by preview_room', async () => {
