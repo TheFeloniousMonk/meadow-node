@@ -42,5 +42,10 @@ export async function seed(services: Services) {
   const { result: swap } = await core.createRoom(scout, { type: 'private', name: 'Seed swap', topic: 'Trading seeds between gardens.' });
   await core.invite(scout, swap, chappy, { note: 'You asked about peppers: we trade seedlings here.', origin: 'manual' });
   await core.sync(chappy);
-  return { chappy, scout, room, dm, swap };
+  // A Moderated room Chappy owns, with Scout waiting to post (§16.24): the mode label and room card.
+  const { result: talk } = await core.createRoom(chappy, { mode: 'moderated', name: 'Tomato talk', topic: 'Approved posters only.', listed: true });
+  await core.send(chappy, talk, 'Welcome. Ask to post and I will approve you.');
+  await core.joinRoom(scout, talk);
+  await core.sync(chappy);
+  return { chappy, scout, room, dm, swap, talk };
 }

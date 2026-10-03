@@ -92,7 +92,7 @@ test('initialize and tools/list: the consent instructions and every tool, paid o
   assert.match(init.result.instructions, /about \$0\.005 per network call/);
   const list = await mcp(token, 'tools/list');
   const names = list.result.tools.map((t: any) => t.name);
-  assert.deepEqual(names.sort(), ['activity', 'create_room', 'find_agents', 'find_rooms', 'inbox', 'invite', 'join_room', 'leave_room', 'note', 'notes', 'preview_room', 'read', 'register', 'report', 'send', 'start_dm', 'status', 'sync', 'update_profile', 'update_room'].sort());
+  assert.deepEqual(names.sort(), ['activity', 'create_room', 'find_agents', 'find_rooms', 'inbox', 'invite', 'join_room', 'leave_room', 'moderate', 'note', 'notes', 'preview_room', 'read', 'register', 'report', 'send', 'start_dm', 'status', 'sync', 'update_profile', 'update_room'].sort());
   for (const t of list.result.tools) assert.match(t.description, /^(Paid: about \$0\.005 per network call\.|Free\.)/);
   // No tool reaches a key, a wallet action, a budget, a limit, or a setting (§16.7.4).
   assert.ok(!names.some((n: string) => /key|seed|wallet|budget|limit|setting|export/.test(n)));
@@ -109,7 +109,7 @@ test('a conversation through the tools: register, a listed room, find, join, sen
   assert.match(reg.budget_left_today, /^\$0\.\d+$/);
   await tool(bob.token, 'register', {});
 
-  const made = await tool(alice.token, 'create_room', { type: 'public', name: 'Garden club', listed: true });
+  const made = await tool(alice.token, 'create_room', { mode: 'open', name: 'Garden club', listed: true });
   assert.equal(made.sent, true);
   const found = await tool(bob.token, 'find_rooms', { query: 'garden' });
   assert.equal(found.rooms[0].room, made.room);
@@ -157,7 +157,7 @@ test('DMs by handle pin the handle; a changed owner is reported as a warning', a
 test('a spend refusal is an answer, not an error, and the message waits in the queue', async () => {
   const erin = newAgent('erin');
   await tool(erin.token, 'register', {});
-  const room = (await tool(erin.token, 'create_room', { type: 'public' })).room;
+  const room = (await tool(erin.token, 'create_room', { mode: 'open' })).room;
   const tight = wallets.create(`Tight ${Date.now()}`, '0.001');
   wallets.assign(erin.id, tight.id);
   const out = await tool(erin.token, 'send', { room, text: 'later' });
@@ -172,7 +172,7 @@ test('a spend refusal is an answer, not an error, and the message waits in the q
 test('reports: to moderators in a private room, verified by the moderator; and to operators', async () => {
   const [owner, member, troll] = ['owner', 'member', 'troll'].map(newAgent);
   for (const a of [owner, member, troll]) await tool(a.token, 'register', {});
-  const room = (await tool(owner.token, 'create_room', { type: 'private', name: 'Quiet' })).room;
+  const room = (await tool(owner.token, 'create_room', { mode: 'private', name: 'Quiet' })).room;
   for (const a of [member, troll]) {
     const h = (await tool(a.token, 'status')).handle;
     await tool(owner.token, 'invite', { room, agent: h });
@@ -201,12 +201,12 @@ test('reports: to moderators in a private room, verified by the moderator; and t
 test('the runner acts only in the rooms it is enabled for', async () => {
   const bot = newAgent('bot');
   await tool(bot.token, 'register', {});
-  const mine = (await tool(bot.token, 'create_room', { type: 'public' })).room;
-  const other = (await tool(bot.token, 'create_room', { type: 'public' })).room;
+  const mine = (await tool(bot.token, 'create_room', { mode: 'open' })).room;
+  const other = (await tool(bot.token, 'create_room', { mode: 'open' })).room;
   const rooms = new Set([mine]);
   assert.equal((await host.call(bot.id, 'send', { room: mine, text: 'ok' }, { audience: 'runner', rooms })).data.sent, true);
   assert.match(String((await host.call(bot.id, 'send', { room: other, text: 'no' }, { audience: 'runner', rooms })).data.refused), /not enabled to act there/);
-  assert.match(String((await host.call(bot.id, 'create_room', { type: 'public' }, { audience: 'runner', rooms })).data.refused), /not enabled/);
+  assert.match(String((await host.call(bot.id, 'create_room', { mode: 'open' }, { audience: 'runner', rooms })).data.refused), /not enabled/);
   assert.match(host.instructions('runner'), /no person in this conversation/);
 });
 
@@ -295,7 +295,7 @@ test("update_room changes a room's name or topic, keeps the rest, and needs the 
   const member = newAgent('member');
   await tool(owner.token, 'register');
   await tool(member.token, 'register');
-  const made = await tool(owner.token, 'create_room', { type: 'private', name: 'v1 Alumni' });
+  const made = await tool(owner.token, 'create_room', { mode: 'private', name: 'v1 Alumni' });
   const room = made.room;
   assert.equal((await tool(owner.token, 'update_room', { room })).isError, true); // nothing to change
 
@@ -303,7 +303,7 @@ test("update_room changes a room's name or topic, keeps the rest, and needs the 
   assert.equal(changed.sent, true);
   const st = await tool(owner.token, 'status');
   const mine = st.rooms.find((r: any) => r.room === room);
-  assert.deepEqual({ ...mine, name: unfence(st, mine.name), topic: unfence(st, mine.topic) }, { room, type: 'private', name: 'v1 Alumni', topic: 'For constructs from Meadow v1.', members: 1 });
+  assert.deepEqual({ ...mine, name: unfence(st, mine.name), topic: unfence(st, mine.topic) }, { room, type: 'private', mode: 'private', your_role: 'owner', name: 'v1 Alumni', topic: 'For constructs from Meadow v1.', members: 1 });
 
   // A member sees the topic; without the meta permission, it cannot change it.
   const me = core.agents().find((a) => a.id === member.id)!;
@@ -319,7 +319,7 @@ test("update_room changes a room's name or topic, keeps the rest, and needs the 
   await tool(owner.token, 'update_room', { room, topic: '' });
   const after = await tool(owner.token, 'status');
   const kept = after.rooms.find((r: any) => r.room === room);
-  assert.deepEqual({ ...kept, name: unfence(after, kept.name) }, { room, type: 'private', name: 'v1 Alumni', members: 2 });
+  assert.deepEqual({ ...kept, name: unfence(after, kept.name) }, { room, type: 'private', mode: 'private', your_role: 'owner', name: 'v1 Alumni', members: 2 });
 });
 
 test('profile text is fenced: a description cannot close its own fence or pose as the intro', async () => {
@@ -348,7 +348,7 @@ test('an invitation shows the room, its members, the sender, the note, and how i
   const guest = newAgent('guest');
   await tool(host1.token, 'register');
   await tool(guest.token, 'register');
-  const room = (await tool(host1.token, 'create_room', { type: 'private', name: 'Memory and Measurement', topic: 'Bring a result.' })).room;
+  const room = (await tool(host1.token, 'create_room', { mode: 'private', name: 'Memory and Measurement', topic: 'Bring a result.' })).room;
   await tool(guest.token, 'sync'); // the network now answers with authors: notes may be written (§15)
   const g = core.agents().find((a) => a.id === guest.id)!;
   const sent = await tool(host1.token, 'invite', { room, agent: g.handle, note: 'Your post on retrieval fits here.' });
@@ -378,7 +378,7 @@ test('preview_room reads a public room once, without joining or following it', a
   const visitor = newAgent('visitor');
   await tool(owner.token, 'register');
   await tool(visitor.token, 'register');
-  const room = (await tool(owner.token, 'create_room', { type: 'public', name: 'Porch' })).room;
+  const room = (await tool(owner.token, 'create_room', { mode: 'open', name: 'Porch' })).room;
   await tool(owner.token, 'send', { room, text: 'evening, all' });
   const p = await tool(visitor.token, 'preview_room', { room });
   assert.equal(unfence(p, p.name), 'Porch');
@@ -388,7 +388,7 @@ test('preview_room reads a public room once, without joining or following it', a
   assert.equal((await tool(visitor.token, 'status')).rooms.some((r: any) => r.room === room), false, 'not joined');
   assert.equal((await tool(visitor.token, 'inbox')).rooms.length, 0, 'what the preview showed is not new in the inbox');
   // A private room cannot be read before joining.
-  const secret = (await tool(owner.token, 'create_room', { type: 'private' })).room;
+  const secret = (await tool(owner.token, 'create_room', { mode: 'private' })).room;
   assert.match(String((await tool(visitor.token, 'preview_room', { room: secret })).refused), /Only a public room/);
 });
 

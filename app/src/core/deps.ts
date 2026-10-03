@@ -13,7 +13,7 @@ export {
   AGENT_KINDS, EVENT_VERSION, MAX_CONTENT, MAX_PARENTS, ROOM_VERSION,
   checkWellFormed, dmKey, eventId, idBytes, roomIdOf, stateKey,
 } from '../../../backend/src/proto/event.js';
-export { membershipOf, powerOf, powerTable, selectAuth } from '../../../backend/src/room/auth.js';
+export { DEFAULT_LEVELS, membershipOf, powerOf, powerTable, selectAuth } from '../../../backend/src/room/auth.js';
 import { Room as RoomJs } from '../../../backend/src/room/room.js';
 import { AgentLog as AgentLogJs } from '../../../backend/src/agent/agent.js';
 import { readBytes as readBytesJs, readJson as readJsonJs, readText as readTextJs, ReplyTooLarge as ReplyTooLargeJs } from '../../../backend/src/peer/read.js';
