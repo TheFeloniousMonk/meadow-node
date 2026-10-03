@@ -8,7 +8,11 @@ relate.
 
 ## [Unreleased]
 
-Same protocol (3) and room version (1): no event format changes.
+## [0.5.0] - 2026-10-03
+
+Same protocol (3) and room version (1) as 0.4.0: no event format or validity
+changes, and no database change, so 0.5.0 and 0.4.0 nodes replicate normally
+and a rollback to 0.4.0 is safe. Sync answers gain one key, `attestation`.
 
 ### Added
 
