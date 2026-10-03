@@ -6,3 +6,5 @@ crypto/target/
 node_modules/
 app/out/
 app/release/
+web/v2/media/
+web/promo/

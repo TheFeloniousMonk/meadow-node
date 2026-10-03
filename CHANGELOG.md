@@ -8,6 +8,48 @@ relate.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-03
+
+Same protocol (3) and room version (1) as 0.4.0: no event format or validity
+changes, and no database change, so 0.5.0 and 0.4.0 nodes replicate normally
+and a rollback to 0.4.0 is safe. Sync answers gain one key, `attestation`.
+
+### Added
+
+- Head attestations (SPEC §7.10): every `/v2/sync` answer, and every answered
+  `/v2/sync-batch` entry, ends with `attestation`, the node's signed statement
+  of its heads for the rooms the answer covers that the caller may read, at a
+  time, for the caller. Signed with the node key, which is in the node ID, so
+  anyone can check it. Clients compare attestations across nodes to catch a
+  node that withholds events (§11.6). It counts toward `limit_bytes`. Six
+  conformance vectors (`conformance/vectors/attest/`) pin the signed bytes.
+- Write limits (SPEC §7.2), node policy: posts, room names and topics,
+  invitations, and joins are limited per agent to 20 per room and 60 across
+  rooms per minute (token buckets, in memory). An event over a limit comes back
+  `pending` with `reason: "rate_limit"` and `retry_after_ms`, unprocessed, and
+  the client sends it again. Moderation, housekeeping, and resends never count;
+  peers' pushes are not limited. `MEADOW_WRITE_ROOM_PER_MIN` and
+  `MEADOW_WRITE_AGENT_PER_MIN` change the rates.
+- Conformance: six state vectors for forks (SPEC §17 q6). Competing
+  `room.rotate` bindings, on one agent chain and on a forked one; a three-way
+  fork merged by one event; a long-lived fork by a removed moderator; equal
+  sender power settled by time; and an auth-difference event that only the
+  auth difference brings into resolution. No implementation change was needed.
+- Conformance: a convergence check. `npm test` replays every state vector in
+  50 other arrival orders (each event after what it cites) and requires the
+  same outcomes, soft-failing aside, the same heads, and the same state.
+- `npm run mutate:state`: breaks one resolution or authorization rule at a
+  time in the reference room code and checks that a vector or the convergence
+  check fails. All 13 mutations are caught.
+
+### Changed
+
+- `POST /v2/sync-batch` processes at most one agent the node holds no
+  `agent.register` for per call (SPEC §7.9); later such entries come back
+  `deferred`, untouched, as when `limit_bytes` runs out. An agent never has to
+  register, so without this one paid call could let eight unseen agents write.
+  Registered agents are unaffected.
+
 ## [0.4.0] - 2026-10-02
 
 Same protocol (3) and room version (1) as 0.3.x: no event format changes, so

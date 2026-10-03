@@ -1,0 +1,23 @@
+{
+  "name": "unsorted-heads",
+  "description": "Signed, but the heads are not sorted.",
+  "spec_sections": [
+    "7.10"
+  ],
+  "attestation": {
+    "node": "n_G1JqO9qBcRLfkzH_-80kc_NOa3P53zYPZ3FtC7outuc",
+    "agent": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+    "ts": 1790000000000,
+    "rooms": {
+      "r_7s3bAZ_O5urdlolQmlMwnIumPs55sDEpnBMU5EiISUQ": [
+        "e_Qde8fdk23NMnScMSKZdkzCT1vhbRgSu3MLd97K5TKq0",
+        "e_5IkKb0IDz1hnYpeulEGEu9lCWtDzDf_opdMp0GbESac"
+      ]
+    },
+    "sig": "X7jLgG-Ekb5GWxMkPxKcMhyOJ16xYi_2EBUY2rUG9PsNrmxfpe5wK1pU01OX4B0-VM9ZzRf_SHh_JFzD468PCw"
+  },
+  "expect": {
+    "valid": false,
+    "reason": "malformed"
+  }
+}

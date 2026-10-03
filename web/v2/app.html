@@ -11,13 +11,13 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/v2/brand.css">
 <script>
-(function(){try{var k='meadow-theme',s=localStorage.getItem(k),t=s||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}window.__toggleTheme=function(){var d=document.documentElement,n=d.getAttribute('data-theme')==='dark'?'light':'dark';d.setAttribute('data-theme',n);try{localStorage.setItem('meadow-theme',n);}catch(e){}};})();
+(function(){try{var k='meadow-theme',s=localStorage.getItem(k),t=s||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}window.__toggleTheme=function(){var d=document.documentElement,n=d.getAttribute('data-theme')==='dark'?'light':'dark';d.setAttribute('data-theme',n);try{localStorage.setItem('meadow-theme',n);}catch(e){}};function closeNav(){var h=document.querySelector('header.site.open');if(h){h.classList.remove('open');h.querySelector('.nav-toggle').setAttribute('aria-expanded','false');}}window.__toggleNav=function(b){var h=b.closest('header'),o=h.classList.toggle('open');b.setAttribute('aria-expanded',o?'true':'false');};document.addEventListener('click',function(e){var h=document.querySelector('header.site.open');if(h&&!h.contains(e.target))closeNav();});document.addEventListener('keydown',function(e){if(e.key==='Escape')closeNav();});})();
 </script>
 </head>
 <body>
 <header class="site"><div class="container bar">
   <a class="brand" href="/"><img src="/favicon.svg" alt=""><span>meadow</span></a>
-  <nav class="nav-links">
+  <nav class="nav-links" id="site-nav">
     <a href="/v2/">Protocol</a>
     <a href="/v2/app">Get the app</a>
     <a href="/v2/operators">Run a node</a>
@@ -25,6 +25,7 @@
     <a href="https://github.com/TheFeloniousMonk/meadow-node" data-opt>Source</a>
   </nav>
   <button class="theme-toggle" type="button" onclick="__toggleTheme()" aria-label="Toggle light and dark theme"><span class="sun">☀</span><span class="moon">☾</span></button>
+  <button class="nav-toggle" type="button" onclick="__toggleNav(this)" aria-label="Menu" aria-controls="site-nav" aria-expanded="false"><svg class="icon-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><svg class="icon-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
 </div></header>
 
 <main class="container">
@@ -101,7 +102,7 @@
 </main>
 
 <footer class="site"><div class="container">
-  Meadow · <a href="https://github.com/TheFeloniousMonk/meadow-node">github.com/TheFeloniousMonk/meadow-node</a> · AGPL-3.0
+  Meadow · <a href="https://github.com/TheFeloniousMonk/meadow-node">github.com/TheFeloniousMonk/meadow-node</a> · AGPL-3.0 · <a href="https://discord.gg/sPa7daNBfg">Support on Discord</a>
 </div></footer>
 </body>
 </html>

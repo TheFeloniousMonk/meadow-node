@@ -14,6 +14,8 @@ import { reportCases } from './report-scenarios.js';
 import { agentScenarios } from './agent-scenarios.js';
 import { b64u, canonicalize, sha256 } from '../../backend/src/proto/encoding.js';
 import { verifyReport } from '../../backend/src/proto/report.js';
+import { ATTEST_PREFIX, checkAttestation, signAttestation } from '../../backend/src/proto/attest.js';
+import { keypairFromSeed } from '../../backend/src/proto/keys.js';
 
 const outDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'vectors');
 
@@ -116,13 +118,47 @@ const agentVectors = agentScenarios.map((sc, i) => {
   };
 });
 
+// Head attestations (§7.10). Expectations are by construction: a fresh signature verifies; any change
+// after signing is bad_signature; a shape outside §7.10 is malformed, even when signed.
+const attestVectors = (() => {
+  const kp = keypairFromSeed(sha256('meadow-conformance/node'));
+  const node = { id: 'n_' + b64u(kp.publicKey), privateKey: kp.privateKey };
+  const other = keypairFromSeed(sha256('meadow-conformance/other-node'));
+  const agent = new Builder().agent('alice').id;
+  const id = (p, s) => p + '_' + b64u(sha256(s));
+  const [r1, r2] = [id('r', 'room 1'), id('r', 'room 2')].sort();
+  const heads = [id('e', 'head a'), id('e', 'head b')].sort();
+  const ts = 1790000000000;
+  const good = signAttestation(node, agent, ts, { [r1]: heads, [r2]: [] });
+  const { sig: _s, ...unsigned } = good;
+  const cases = [
+    ['valid', 'A signed attestation: two rooms, one with two heads, one the node does not hold.', good, { valid: true },
+      ATTEST_PREFIX + canonicalize(unsigned)],
+    ['changed-heads', 'A head removed after signing.', { ...good, rooms: { [r1]: heads.slice(1), [r2]: [] } }, { valid: false, reason: 'bad_signature' }],
+    ['changed-ts', 'The time changed after signing.', { ...good, ts: ts + 1 }, { valid: false, reason: 'bad_signature' }],
+    ['other-node', 'Another node ID on the same signature.', { ...good, node: 'n_' + b64u(other.publicKey) }, { valid: false, reason: 'bad_signature' }],
+    ['unsorted-heads', 'Signed, but the heads are not sorted.', signAttestation(node, agent, ts, { [r1]: [...heads].reverse() }), { valid: false, reason: 'malformed' }],
+    ['extra-field', 'An unknown field.', { ...good, note: 'x' }, { valid: false, reason: 'malformed' }],
+  ];
+  return cases.map(([name, description, attestation, expect, signed], i) => {
+    const got = checkAttestation(attestation);
+    if ((got === null) !== expect.valid || (!expect.valid && got !== expect.reason)) {
+      failures.push(`attest ${name}: expected ${JSON.stringify(expect)}, implementation says ${got}`);
+    }
+    return {
+      file: `${String(i + 1).padStart(2, '0')}-${name}.json`,
+      body: { name, description, spec_sections: ['7.10'], attestation, ...(signed && { signed_bytes: signed }), expect },
+    };
+  });
+})();
+
 if (failures.length) {
   console.error(failures.join('\n'));
   console.error(`\n${failures.length} disagreement(s); no vectors written.`);
   process.exit(1);
 }
 
-for (const [sub, list] of [['state', vectors], ['agent', agentVectors], ['report', reportVectors]]) {
+for (const [sub, list] of [['state', vectors], ['agent', agentVectors], ['report', reportVectors], ['attest', attestVectors]]) {
   const dir = join(outDir, sub);
   mkdirSync(dir, { recursive: true });
   for (const f of readdirSync(dir)) if (f.endsWith('.json')) rmSync(join(dir, f));

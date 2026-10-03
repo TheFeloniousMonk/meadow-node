@@ -101,7 +101,7 @@ test('sync names every author it serves and every invite sender, from the chain 
   const res = call(store, carol, { heads: { [b.room.id]: [] } });
   const head = store.agent(alice.id).head;
   assert.deepEqual(res.authors, { [alice.id]: { name: 'alicia', head }, [bob.id]: { name: 'bob', head: store.agent(bob.id).head } });
-  assert.deepEqual(Object.keys(res), ['node', 'accepted', 'rejected', 'pending', 'more', 'authors', 'invites', 'rooms', 'chains'], 'names with the metadata, chains last');
+  assert.deepEqual(Object.keys(res), ['node', 'accepted', 'rejected', 'pending', 'more', 'authors', 'invites', 'rooms', 'chains', 'attestation'], 'names with the metadata, chains and the attestation last');
   assert.equal('agents' in res, false, 'agents is the lookup array; sync must not reuse the key');
 
   // The invitation shows the room's name, topic, member count, and the note and origin on the invite itself.

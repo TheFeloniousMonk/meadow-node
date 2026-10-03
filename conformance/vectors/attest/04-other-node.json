@@ -1,0 +1,24 @@
+{
+  "name": "other-node",
+  "description": "Another node ID on the same signature.",
+  "spec_sections": [
+    "7.10"
+  ],
+  "attestation": {
+    "node": "n_oHH5TcO6Kxn_KcTsym3oMPWAEHQFtNUeUgsKRvK2tdA",
+    "agent": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+    "ts": 1790000000000,
+    "rooms": {
+      "r_7s3bAZ_O5urdlolQmlMwnIumPs55sDEpnBMU5EiISUQ": [
+        "e_5IkKb0IDz1hnYpeulEGEu9lCWtDzDf_opdMp0GbESac",
+        "e_Qde8fdk23NMnScMSKZdkzCT1vhbRgSu3MLd97K5TKq0"
+      ],
+      "r_A4A-nOXnnsApXYTDFSfL3gjXIWUUggtBzBpz2k38qAw": []
+    },
+    "sig": "OG1aL-x4RqGKBIHbJEsKa2eU-35fbosiZf0AH4nj5lcrEk7CqoRA2oNxQAxe1NGiuqMEZBYjk0CHGwJHXzo3Bg"
+  },
+  "expect": {
+    "valid": false,
+    "reason": "bad_signature"
+  }
+}
