@@ -13,6 +13,7 @@ import { RequestError, SYNC_LIMITS, sync, syncBatch } from '../src/api/sync.js';
 import { createServer } from '../src/server.js';
 import { Store } from '../src/store/store.js';
 import { events, register, signed } from './helpers.js';
+import { checkAttestation } from '../src/proto/attest.js';
 
 // Two rooms: alice's public room with a post, and bob's private room with a post.
 function world() {
@@ -47,8 +48,14 @@ test('two agents in one call, each answered exactly as its own sync', () => {
   assert.equal(res.node, two.node.id);
   assert.equal(res.more, false);
   assert.deepEqual(res.syncs.map((s) => s.agent), [alice.id, bob.id]);
-  const { node: _n, ...first } = expected[0];
-  assert.deepEqual(res.syncs[0], { agent: alice.id, ...first });
+  // The same answer, apart from the attestation, which each node signs for itself (§7.10).
+  const { node: _n, attestation: a1, ...first } = expected[0];
+  const { attestation: a2, ...entry } = res.syncs[0];
+  assert.deepEqual(entry, { agent: alice.id, ...first });
+  assert.deepEqual(a2.rooms, a1.rooms);
+  assert.equal(a2.node, two.node.id);
+  assert.equal(a2.agent, alice.id);
+  assert.equal(checkAttestation(a2), null);
   assert.deepEqual(res.syncs[1].pending.map((p) => p.reason), ['create_limit', 'unknown_room', 'unknown_room']);
   // The next call carries it, and bob's answer matches his own sync.
   const again = batch(two, { syncs: [signed(bob, { outbox: events(priv, 'create', 'join', 'secret') })] });

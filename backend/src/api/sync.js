@@ -8,6 +8,7 @@ import { keyFromAgentId } from '../proto/keys.js';
 import { verifyRequest } from './auth.js';
 import { chainFor } from './lookup.js';
 import { countsAsWrite } from './limits.js';
+import { ATTEST_LIMITS, attestedHeads, signAttestation } from '../proto/attest.js';
 
 export const SYNC_LIMITS = {
   outbox: 100,
@@ -120,11 +121,14 @@ export function sync(store, body, agent, call = null, { limits = null, now = Dat
     if (store.deliverInvite(agent, from)) invites.push(inviteEntry(store, room, agent, from));
   }
 
-  let budget = limit;
+  const joined = memberships.filter((r) => r.membership === 'join').map((r) => r.room);
+  // The node's signed heads for every room this answer covers that the caller may read (§7.10):
+  // named rooms first, then joined ones. Its bytes count toward limit_bytes.
+  const attestation = attest(store, agent, now, Object.keys(heads), joined);
+  let budget = limit - (Buffer.byteLength(JSON.stringify(attestation), 'utf8') + 16);
   let more = false;
   let sentAny = false;
   const rooms = {};
-  const joined = memberships.filter((r) => r.membership === 'join').map((r) => r.room);
   for (const roomId of new Set([...joined, ...Object.keys(heads)])) {
     const room = store.room(roomId);
     if (!room) {
@@ -188,7 +192,28 @@ export function sync(store, body, agent, call = null, { limits = null, now = Dat
 
   // `chains`, never `agents`: a top-level key keeps one type across routes, and `agents` is lookup's
   // array. The portal validates every answer against one schema (§7.6; the 0.3.0 incident).
-  return { node: store.node.id, accepted, rejected, pending, more, authors, invites, rooms, chains };
+  return { node: store.node.id, accepted, rejected, pending, more, authors, invites, rooms, chains, attestation };
+}
+
+// §7.10: named rooms (a named room this node does not hold is []), then joined rooms, at most 500;
+// unreadable and expired rooms are left out, so the attestation shows nothing the answer does not.
+function attest(store, agent, now, named, joined) {
+  const rooms = {};
+  let count = 0;
+  for (const roomId of new Set([...named, ...joined])) {
+    if (count >= ATTEST_LIMITS.rooms) break;
+    const room = store.room(roomId);
+    if (!room) {
+      if (store.expired(roomId)) continue;
+      rooms[roomId] = [];
+    } else {
+      const readable = store.membership(roomId, agent)?.membership === 'join' || room.create.header.data.type === 'public';
+      if (!readable) continue;
+      rooms[roomId] = attestedHeads(room.heads());
+    }
+    count++;
+  }
+  return signAttestation(store.node, agent, now, rooms);
 }
 
 const bad = (message) => new RequestError('bad_request', message);

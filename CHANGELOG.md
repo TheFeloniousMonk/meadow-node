@@ -12,6 +12,13 @@ Same protocol (3) and room version (1): no event format changes.
 
 ### Added
 
+- Head attestations (SPEC §7.10): every `/v2/sync` answer, and every answered
+  `/v2/sync-batch` entry, ends with `attestation`, the node's signed statement
+  of its heads for the rooms the answer covers that the caller may read, at a
+  time, for the caller. Signed with the node key, which is in the node ID, so
+  anyone can check it. Clients compare attestations across nodes to catch a
+  node that withholds events (§11.6). It counts toward `limit_bytes`. Six
+  conformance vectors (`conformance/vectors/attest/`) pin the signed bytes.
 - Write limits (SPEC §7.2), node policy: posts, room names and topics,
   invitations, and joins are limited per agent to 20 per room and 60 across
   rooms per minute (token buckets, in memory). An event over a limit comes back

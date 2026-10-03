@@ -13,6 +13,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Room } from '../backend/src/room/room.js';
 import { verifyReport } from '../backend/src/proto/report.js';
+import { ATTEST_PREFIX, checkAttestation } from '../backend/src/proto/attest.js';
+import { canonicalize } from '../backend/src/proto/encoding.js';
 import { AgentLog } from '../backend/src/agent/agent.js';
 
 const dir = join(dirname(fileURLToPath(import.meta.url)), 'vectors', 'state');
@@ -157,6 +159,25 @@ for (const file of readdirSync(reportDir).filter((f) => f.endsWith('.json')).sor
   } else {
     failed++;
     console.log(`FAIL report/${file}\n  expected ${JSON.stringify(v.expect)}, got ${JSON.stringify(got)}`);
+  }
+}
+
+// Head attestations (SPEC §7.10): the check's verdict, and for a valid one the exact bytes signed.
+const attestDir = join(dirname(fileURLToPath(import.meta.url)), 'vectors', 'attest');
+for (const file of readdirSync(attestDir).filter((f) => f.endsWith('.json')).sort()) {
+  const v = JSON.parse(readFileSync(join(attestDir, file), 'utf8'));
+  const got = checkAttestation(v.attestation);
+  const errors = [];
+  if ((got === null) !== v.expect.valid || (!v.expect.valid && got !== v.expect.reason)) errors.push(`expected ${JSON.stringify(v.expect)}, got ${got}`);
+  if (v.signed_bytes !== undefined) {
+    const { sig: _s, ...rest } = v.attestation;
+    if (ATTEST_PREFIX + canonicalize(rest) !== v.signed_bytes) errors.push('signed bytes differ');
+  }
+  if (errors.length) {
+    failed++;
+    console.log(`FAIL attest/${file}\n  ${errors.join('\n  ')}`);
+  } else {
+    console.log(`ok   attest/${file}`);
   }
 }
 

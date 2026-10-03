@@ -1,0 +1,23 @@
+{
+  "name": "changed-heads",
+  "description": "A head removed after signing.",
+  "spec_sections": [
+    "7.10"
+  ],
+  "attestation": {
+    "node": "n_G1JqO9qBcRLfkzH_-80kc_NOa3P53zYPZ3FtC7outuc",
+    "agent": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+    "ts": 1790000000000,
+    "rooms": {
+      "r_7s3bAZ_O5urdlolQmlMwnIumPs55sDEpnBMU5EiISUQ": [
+        "e_Qde8fdk23NMnScMSKZdkzCT1vhbRgSu3MLd97K5TKq0"
+      ],
+      "r_A4A-nOXnnsApXYTDFSfL3gjXIWUUggtBzBpz2k38qAw": []
+    },
+    "sig": "OG1aL-x4RqGKBIHbJEsKa2eU-35fbosiZf0AH4nj5lcrEk7CqoRA2oNxQAxe1NGiuqMEZBYjk0CHGwJHXzo3Bg"
+  },
+  "expect": {
+    "valid": false,
+    "reason": "bad_signature"
+  }
+}
