@@ -7,10 +7,12 @@ import { AGENT_KINDS, roomIdOf } from '../proto/event.js';
 import { keyFromAgentId } from '../proto/keys.js';
 import { verifyRequest } from './auth.js';
 import { chainFor } from './lookup.js';
+import { countsAsWrite } from './limits.js';
 
 export const SYNC_LIMITS = {
   outbox: 100,
   creates: 1, // new rooms per call: room spam costs one paid relay per room
+  newAgents: 1, // agents this node has no agent.register for, per /v2/sync-batch call (§7.9)
   rooms: 500,
   headsPerRoom: 20,
   defaultBytes: 1024 * 1024,
@@ -62,7 +64,8 @@ function parse(body, entry = false) {
 // `call` holds what one relay may do, shared by every entry of a batch (§7.9): new rooms, outbox
 // events, and bytes. A plain sync has its own. `first`: the call's first entry, which alone may
 // pass limit_bytes by one event or one chain, as a single sync does, so every call makes progress.
-export function sync(store, body, agent, call = null) {
+// `limits`: the node's write limits (§7.2), a WriteLimits, or null for none.
+export function sync(store, body, agent, call = null, { limits = null, now = Date.now() } = {}) {
   const { outbox, heads, limit: asked, agents: wanted } = parse(body, !!call);
   const shared = call ?? { created: 0, outboxLeft: SYNC_LIMITS.outbox, bytesLeft: asked, used: 0, first: true };
   const limit = Math.min(asked, shared.bytesLeft);
@@ -87,7 +90,18 @@ export function sync(store, body, agent, call = null) {
       pending.push({ id, missing: [], reason: 'create_limit' });
       continue;
     }
+    // Write limits (§7.2): only kinds that count, new to this node; spent only once stored.
+    const room = typeof ev.header.room === 'string' ? ev.header.room : null;
+    const limited = limits && room && countsAsWrite(ev.header) && !(id && store.room(room)?.has(id));
+    if (limited) {
+      const wait = limits.wait(agent, room, now);
+      if (wait > 0) {
+        pending.push({ id, missing: [], reason: 'rate_limit', retry_after_ms: wait });
+        continue;
+      }
+    }
     const result = store.ingest(ev);
+    if (limited && (result.outcome === 'accepted' || result.outcome === 'rejected')) limits.spend(agent, room, now);
     if (newRoom && result.outcome === 'accepted') shared.created++;
     if (result.outcome === 'accepted') accepted.push(id);
     else if (result.outcome === 'pending') pending.push({ id, missing: result.missing, ...(result.reason && { reason: result.reason }) });
@@ -184,7 +198,7 @@ const bad = (message) => new RequestError('bad_request', message);
  * limits (one new room, 100 outbox events, limit_bytes) are shared, in entry order. A malformed
  * entry fails the whole call before anything is processed; a failed signature fails its entry only.
  */
-export function syncBatch(store, body, now = Date.now(), keyOf = (agent) => store.requestKey(agent)) {
+export function syncBatch(store, body, now = Date.now(), keyOf = (agent) => store.requestKey(agent), limits = null) {
   const entries = body.syncs;
   if (!Array.isArray(entries) || entries.length < 1 || entries.length > SYNC_LIMITS.batch) throw bad(`syncs must hold 1 to ${SYNC_LIMITS.batch} sync requests`);
   const extra = Object.keys(body).filter((k) => !['syncs', 'limit_bytes'].includes(k));
@@ -200,10 +214,21 @@ export function syncBatch(store, body, now = Date.now(), keyOf = (agent) => stor
   }
   if (entries.reduce((n, e) => n + (e.agents?.length ?? 0), 0) > SYNC_LIMITS.agents) throw bad(`at most ${SYNC_LIMITS.agents} agents across the call`);
 
+  // At most one agent new to this node per call (§7.9): an agent never has to register, so
+  // without this one relay would let eight unseen agents write. Later new entries are deferred.
+  const deferredNew = new Set();
+  let newAgents = 0;
+  for (const e of entries) {
+    if (store.agent(e.auth.agent)) continue;
+    if (newAgents < SYNC_LIMITS.newAgents) newAgents++;
+    else deferredNew.add(e.auth.agent);
+  }
+
   // Each requester's own agent events first, as for /v2/sync (§7.1), before its signature is
   // checked: bounded by the call's outbox total, since nothing here is authenticated yet.
   let unauthenticated = SYNC_LIMITS.outbox;
   for (const e of entries) {
+    if (deferredNew.has(e.auth.agent)) continue;
     for (const ev of e.outbox ?? []) {
       if (unauthenticated <= 0) break;
       if (ev?.header?.author === e.auth.agent && AGENT_KINDS.has(ev.header.kind)) {
@@ -218,7 +243,7 @@ export function syncBatch(store, body, now = Date.now(), keyOf = (agent) => stor
   let more = false;
   for (const e of entries) {
     const agent = e.auth.agent;
-    if (!call.first && call.bytesLeft < SYNC_LIMITS.batchEntryMin) {
+    if (deferredNew.has(agent) || (!call.first && call.bytesLeft < SYNC_LIMITS.batchEntryMin)) {
       syncs.push({ agent, deferred: true });
       more = true;
       continue;
@@ -228,7 +253,7 @@ export function syncBatch(store, body, now = Date.now(), keyOf = (agent) => stor
       syncs.push({ agent, failed: { code: auth.error, message: 'request authentication failed (SPEC 7.1)' } });
       continue;
     }
-    const { node: _node, ...answer } = sync(store, e, auth.agent, call);
+    const { node: _node, ...answer } = sync(store, e, auth.agent, call, { limits, now });
     const entry = { agent, ...answer };
     const size = Buffer.byteLength(JSON.stringify(entry), 'utf8');
     call.used += size;

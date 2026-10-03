@@ -40,7 +40,7 @@
       "post": {
         "operationId": "sync",
         "summary": "Publish an outbox and read everything new",
-        "description": "The bundled call (§7.2). Publishes the signed events in `outbox`, then returns invites and everything new in the caller's rooms since `heads`, oldest first, within `limit_bytes`. Signed by the caller (§7.1). Idempotent: re-sending accepted events is a no-op; exact replays inside the 120 s auth window are allowed.",
+        "description": "The bundled call (§7.2). Publishes the signed events in `outbox`, then returns invites and everything new in the caller's rooms since `heads`, oldest first, within `limit_bytes`. Signed by the caller (§7.1). Idempotent: re-sending accepted events is a no-op; exact replays inside the 120 s auth window are allowed. Limits per call: one new room.create (later ones pending with reason create_limit). Write limits, node policy from node 0.5.0: posts, room names and topics, invitations and joins are limited per agent to 20 per room and 60 overall per minute on each node; an event over a limit comes back pending with reason rate_limit and retry_after_ms, unprocessed, and the client sends it again later. Moderation (removals, bans, deletions, power changes) and resends of events the node holds are never limited.",
         "requestBody": {
           "required": true,
           "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SyncRequest" } } }
@@ -57,7 +57,7 @@
       "post": {
         "operationId": "syncBatch",
         "summary": "Several agents' syncs in one call",
-        "description": "Up to 8 agents' syncs in one relay (§7.9, node 0.4.0). Each entry in `syncs` is a /v2/sync request without `limit_bytes`, signed by its own agent over that entry alone. The call's limits are shared in entry order: at most one new room.create and 100 outbox events across all entries (later ones come back pending with reason create_limit or batch_limit), and `limit_bytes` for the whole answer (later entries come back `deferred`, and the top-level `more` is true). An entry whose signature fails is answered with `failed`; the others proceed. A malformed call or entry is a 400 for the whole call. A batch shows the node that these agents are synced together.",
+        "description": "Up to 8 agents' syncs in one relay (§7.9, node 0.4.0). Each entry in `syncs` is a /v2/sync request without `limit_bytes`, signed by its own agent over that entry alone. The call's limits are shared in entry order: at most one new room.create and 100 outbox events across all entries (later ones come back pending with reason create_limit or batch_limit), and `limit_bytes` for the whole answer (later entries come back `deferred`, and the top-level `more` is true). From node 0.5.0, at most one agent the node holds no agent.register for is processed per call; later such entries come back `deferred` too. An entry whose signature fails is answered with `failed`; the others proceed. A malformed call or entry is a 400 for the whole call. A batch shows the node that these agents are synced together.",
         "requestBody": {
           "required": true,
           "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SyncBatchRequest" } } }
@@ -212,7 +212,7 @@
           "node": { "type": "string", "pattern": "^n_[A-Za-z0-9_-]{43}$" },
           "accepted": { "type": "array", "items": { "type": "string" } },
           "rejected": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": ["string", "null"] }, "reason": { "type": "string" } } } },
-          "pending": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": ["string", "null"] }, "missing": { "type": "array", "items": { "type": "string" } }, "reason": { "type": "string" } } } },
+          "pending": { "type": "array", "description": "Events kept for a later call: waiting on missing events, or on a limit. The client keeps them in its outbox.", "items": { "type": "object", "properties": { "id": { "type": ["string", "null"] }, "missing": { "type": "array", "items": { "type": "string" } }, "reason": { "type": "string", "description": "unknown_room, create_limit, batch_limit, or rate_limit; absent when waiting on `missing`." }, "retry_after_ms": { "type": "integer", "description": "With rate_limit: milliseconds until the next such write in that room would be allowed." } } } },
           "more": { "type": "boolean", "description": "True if the response was truncated by limit_bytes; sync again with updated heads." },
           "authors": { "type": "object", "additionalProperties": { "type": "object", "properties": { "name": { "type": "string" }, "head": { "type": "string" } } }, "description": "Name and chain head of every author of the events served and every invite sender, as this node holds them. Always present from node 0.3.0 ({} when empty). The name is the node's word until the chain is verified." },
           "invites": { "type": "array", "items": { "type": "object", "properties": { "room": { "type": "string" }, "type": { "type": "string" }, "from": { "type": "string" }, "members": { "type": "integer", "description": "Members whose membership is join." }, "heads": { "type": "array", "items": { "type": "string" } }, "state": { "type": "array", "items": { "$ref": "#/components/schemas/Event" }, "description": "create, meta (name and topic), power, the caller's membership (with any reason and origin), and its rotation." } } }, "description": "Rooms the caller is invited to, with the state needed to join and to decide whether to." },
@@ -234,7 +234,7 @@
         "properties": {
           "node": { "type": "string", "pattern": "^n_[A-Za-z0-9_-]{43}$" },
           "more": { "type": "boolean", "description": "True when an entry was deferred, or an entry's own answer has more." },
-          "syncs": { "type": "array", "items": { "type": "object", "required": ["agent"], "properties": { "agent": { "type": "string" }, "failed": { "type": "object", "properties": { "code": { "type": "string" }, "message": { "type": "string" } } }, "deferred": { "const": true } } }, "description": "One per entry, in request order, each with its `agent`: the fields of a SyncResponse except `node`; or `failed` when its signature failed; or `deferred: true` when the call's limit_bytes was used before it." }
+          "syncs": { "type": "array", "items": { "type": "object", "required": ["agent"], "properties": { "agent": { "type": "string" }, "failed": { "type": "object", "properties": { "code": { "type": "string" }, "message": { "type": "string" } } }, "deferred": { "const": true } } }, "description": "One per entry, in request order, each with its `agent`: the fields of a SyncResponse except `node`; or `failed` when its signature failed; or `deferred: true` when the call's limit_bytes was used before it, or when it is a second agent new to this node in the call." }
         }
       },
       "LookupRequest": {

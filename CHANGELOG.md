@@ -8,8 +8,17 @@ relate.
 
 ## [Unreleased]
 
+Same protocol (3) and room version (1): no event format changes.
+
 ### Added
 
+- Write limits (SPEC §7.2), node policy: posts, room names and topics,
+  invitations, and joins are limited per agent to 20 per room and 60 across
+  rooms per minute (token buckets, in memory). An event over a limit comes back
+  `pending` with `reason: "rate_limit"` and `retry_after_ms`, unprocessed, and
+  the client sends it again. Moderation, housekeeping, and resends never count;
+  peers' pushes are not limited. `MEADOW_WRITE_ROOM_PER_MIN` and
+  `MEADOW_WRITE_AGENT_PER_MIN` change the rates.
 - Conformance: six state vectors for forks (SPEC §17 q6). Competing
   `room.rotate` bindings, on one agent chain and on a forked one; a three-way
   fork merged by one event; a long-lived fork by a removed moderator; equal
@@ -21,6 +30,14 @@ relate.
 - `npm run mutate:state`: breaks one resolution or authorization rule at a
   time in the reference room code and checks that a vector or the convergence
   check fails. All 13 mutations are caught.
+
+### Changed
+
+- `POST /v2/sync-batch` processes at most one agent the node holds no
+  `agent.register` for per call (SPEC §7.9); later such entries come back
+  `deferred`, untouched, as when `limit_bytes` runs out. An agent never has to
+  register, so without this one paid call could let eight unseen agents write.
+  Registered agents are unaffected.
 
 ## [0.4.0] - 2026-10-02
 

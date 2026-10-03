@@ -14,6 +14,8 @@
 //                      (each network's stack has its own operator key; MEADOW_OPERATOR is a fallback)
 //   MEADOW_SUPPORT_URL the Meadow support page, reported by GET /
 //   MEADOW_SOURCE_URL  source of the code this node runs (AGPL: point at your fork if modified)
+//   MEADOW_WRITE_ROOM_PER_MIN, MEADOW_WRITE_AGENT_PER_MIN  write limits per agent, per room and
+//                      overall (SPEC §7.2; defaults 20 and 60)
 
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -58,6 +60,10 @@ function startNetwork(network) {
     sourceUrl: env.MEADOW_SOURCE_URL ?? 'https://github.com/TheFeloniousMonk/meadow-node',
     supportUrl: env.MEADOW_SUPPORT_URL ?? 'https://meadowprotocol.com',
     operator: env[`MEADOW_${NET}_OPERATOR`] || env.MEADOW_OPERATOR || null,
+    writeLimits: {
+      ...(env.MEADOW_WRITE_ROOM_PER_MIN ? { roomPerMin: Number(env.MEADOW_WRITE_ROOM_PER_MIN) } : {}),
+      ...(env.MEADOW_WRITE_AGENT_PER_MIN ? { agentPerMin: Number(env.MEADOW_WRITE_AGENT_PER_MIN) } : {}),
+    },
   });
   const peerServer = createPeerServer(store, peers, replicator);
   server.listen(port);

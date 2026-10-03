@@ -12,7 +12,7 @@ import { verifyRequest } from '../src/api/auth.js';
 import { RequestError, SYNC_LIMITS, sync, syncBatch } from '../src/api/sync.js';
 import { createServer } from '../src/server.js';
 import { Store } from '../src/store/store.js';
-import { events, signed } from './helpers.js';
+import { events, register, signed } from './helpers.js';
 
 // Two rooms: alice's public room with a post, and bob's private room with a post.
 function world() {
@@ -36,6 +36,8 @@ test('two agents in one call, each answered exactly as its own sync', () => {
   const { pub, priv, alice, bob } = world();
   const one = new Store();
   const two = new Store();
+  register(one, alice, bob);
+  register(two, alice, bob);
   const a = signed(alice, { outbox: events(pub, 'create', 'join', 'hello') });
   const b = signed(bob, { outbox: events(priv, 'create', 'join', 'secret') });
   // Separately: two calls, so two new rooms are allowed.
@@ -57,6 +59,7 @@ test('two agents in one call, each answered exactly as its own sync', () => {
 test('entries see only their own agent: a private room never reaches another entry', () => {
   const { pub, priv, alice, bob } = world();
   const store = new Store();
+  register(store, alice, bob);
   single(store, signed(alice, { outbox: events(pub, 'create', 'join', 'hello') }));
   single(store, signed(bob, { outbox: events(priv, 'create', 'join', 'secret') }));
   const res = batch(store, { syncs: [signed(alice, {}), signed(bob, {})] });
@@ -68,6 +71,7 @@ test('entries see only their own agent: a private room never reaches another ent
 test('a failed signature fails its entry only; the call answers 200 with `failed`, never `error`', () => {
   const { pub, alice, bob } = world();
   const store = new Store();
+  register(store, alice, bob);
   const good = signed(alice, { outbox: events(pub, 'create', 'join', 'hello') });
   const forged = { ...signed(bob, {}), heads: {} }; // changed after signing
   const res = batch(store, { syncs: [forged, good] });
@@ -105,6 +109,7 @@ test('the call shares 100 outbox events: past that, events come back pending wit
   for (let i = 0; i < 90; i++) pub.post(`a${i}`, alice, `alice ${i}`);
   for (let i = 0; i < 30; i++) pub.post(`b${i}`, bob, `bob ${i}`);
   const store = new Store();
+  register(store, alice, bob);
   single(store, signed(alice, { outbox: events(pub, 'create', 'join', 'hello') }));
   single(store, signed(bob, { outbox: events(pub, 'bob-join') }));
   const a = Array.from({ length: 90 }, (_, i) => `a${i}`);
@@ -144,6 +149,35 @@ test('limit_bytes is the whole call: later entries are deferred, and the first a
   // The whole answer stays under the 4 MiB response cap at the largest limit.
   const max = batch(store, { syncs: [signed(alice, {}), signed(bob, {})], limit_bytes: 64 * 1024 * 1024 });
   assert.ok(Buffer.byteLength(JSON.stringify(max), 'utf8') < SYNC_LIMITS.responseBytes);
+});
+
+test('one new agent per call: later agents the node has no registration for are deferred, untouched', () => {
+  const { pub, alice } = world();
+  const [carol, dave, erin] = ['carol', 'dave', 'erin'].map((n) => pub.agent(n));
+  const store = new Store();
+  single(store, signed(alice, { outbox: events(pub, 'create', 'join', 'hello') }));
+  for (const a of [carol, dave, erin]) pub.join(`${a.name}-join`, a, { parents: ['hello'] });
+  const reg = new Builder();
+  const regOf = (a) => { reg.agents.set(a.name, a); reg.register(`r-${a.name}`, a); return reg.steps.at(-1).event; };
+  const entry = (a) => signed(a, { outbox: [regOf(a), ...events(pub, `${a.name}-join`)] });
+  // Three agents this node has never seen, none registered yet: only the first acts.
+  const res = batch(store, { syncs: [entry(carol), entry(dave), entry(erin)] });
+  assert.equal(res.more, true);
+  assert.equal(res.syncs[0].accepted.length, 2, 'carol registered and joined');
+  assert.deepEqual(res.syncs[1], { agent: dave.id, deferred: true });
+  assert.deepEqual(res.syncs[2], { agent: erin.id, deferred: true });
+  assert.ok(store.agent(carol.id));
+  assert.equal(store.agent(dave.id), null, "a deferred entry's registration is not taken");
+  assert.equal(store.membership(pub.room.id, dave.id)?.membership ?? null, null);
+  // An agent that never registers counts as new too, so it cannot ride along either.
+  const quiet = batch(store, { syncs: [signed(dave, { outbox: events(pub, 'dave-join') }), signed(erin, { outbox: events(pub, 'erin-join') })] });
+  assert.equal(quiet.syncs[0].accepted.length, 1);
+  assert.deepEqual(quiet.syncs[1], { agent: erin.id, deferred: true });
+  // Registered agents are never held back by the rule.
+  register(store, erin);
+  const known = batch(store, { syncs: [signed(alice, {}), signed(carol, {}), signed(erin, { outbox: events(pub, 'erin-join') })] });
+  assert.equal(known.more, false);
+  assert.ok(known.syncs.every((s) => !s.deferred && !s.failed));
 });
 
 test('agents asked for are capped across the call', () => {

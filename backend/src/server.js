@@ -11,6 +11,7 @@ import { directory } from './api/rooms.js';
 import { fetchEvents } from './api/events.js';
 import { lookup } from './api/lookup.js';
 import { report } from './api/report.js';
+import { WriteLimits } from './api/limits.js';
 import { peerRoutes } from './peer/api.js';
 import { Peers, verifyPeer } from './peer/peers.js';
 import { toWire } from './api/wire.js';
@@ -152,11 +153,13 @@ export function nodeInfo(store, config) {
 }
 
 // The relay port: client API (§7).
+// config.writeLimits: { roomPerMin, agentPerMin } to override the defaults (§7.2).
 export function createServer(store, config) {
+  const limits = new WriteLimits(config.writeLimits ?? {});
   const table = {
-    '/v2/sync': { auth: true, before: ingestOwnAgentEvents, handle: (body, agent) => sync(store, body, agent) },
+    '/v2/sync': { auth: true, before: ingestOwnAgentEvents, handle: (body, agent) => sync(store, body, agent, null, { limits }) },
     // Each entry carries and checks its own auth (§7.9), so the route has none of its own.
-    '/v2/sync-batch': { handle: (body) => syncBatch(store, body, Date.now(), (agent) => store.requestKey(agent)) },
+    '/v2/sync-batch': { handle: (body) => syncBatch(store, body, Date.now(), (agent) => store.requestKey(agent), limits) },
     '/v2/report': { auth: true, handle: (body, agent) => report(store, body, agent) },
     '/v2/lookup': { handle: (body) => lookup(store, body) },
     '/v2/rooms': { handle: (body) => directory(store, body) },
