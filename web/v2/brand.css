@@ -124,6 +124,7 @@ th { color: var(--text-secondary); font-weight: 600; }
   color: hsl(35, 18%, 88%); width: 2.1rem; height: 2.1rem; border-radius: var(--radius-md);
   font-size: .75rem; line-height: 1; cursor: pointer; opacity: .55; transition: opacity .15s ease, border-color .15s ease;
 }
+.promo ~ .lede { max-width: none; }
 .promo:hover .promo-toggle, .promo-toggle:focus-visible { opacity: 1; }
 .promo-toggle:hover { border-color: var(--amber-400); }
 
