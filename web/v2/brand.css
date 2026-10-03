@@ -102,6 +102,8 @@ th { color: var(--text-secondary); font-weight: 600; }
 .callout strong { color: var(--text-primary); }
 
 .cards { display: grid; gap: .9rem; grid-template-columns: 1fr 1fr; margin: 1.75rem 0; }
+.cards.three { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 58rem) { .cards.three { grid-template-columns: 1fr; } }
 @media (max-width: 36rem) { .cards { grid-template-columns: 1fr; } }
 .cards a {
   display: block; background: var(--bg-surface); border: 1px solid var(--border-subtle);
