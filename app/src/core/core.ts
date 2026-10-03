@@ -16,6 +16,7 @@ import { newSeed, signEvent, signerFromSeed, signRequest, type Signer } from './
 import { networkName } from './names.ts';
 import { TransportError, type Transport } from './transport.ts';
 import { ATTESTATION_BROKEN, NodeWatch } from './watch.ts';
+import { POST_LEVEL, abilities, createLevels, modeOf, roleOf, waiting, approvedCount, type Mode, type Role, type ShownMode } from './modes.ts';
 import type { Vault } from './vault.ts';
 
 export const SYNC = {
@@ -43,7 +44,26 @@ export interface CoreOptions {
 export type Received =
   | { type: 'invite'; room: string }
   | { type: 'removed'; room: string; by: string; ban: boolean; reason?: string }
+  | { type: 'poster'; room: string; by: string; approved: boolean }
+  | { type: 'mode'; room: string; by: string; mode: ShownMode }
   | { type: 'expired'; room: string };
+
+/** A room as the room card and the tools describe it (§16.24). */
+export interface RoomInfo {
+  room: string;
+  type: string;
+  mode: ShownMode;
+  role: Role;
+  can: ReturnType<typeof abilities>;
+  members: number;
+  /** Joined members below the post level (Moderated: waiting for approval), newest first. */
+  waiting: string[];
+  approved: number;
+  listed: boolean;
+  /** The newest event's time, by its header (the node counts by receipt, §10.2). */
+  lastEventAt: number | null;
+  hidden: { messages: number; authors: string[] };
+}
 
 /** Author names in sync (§7.2, §16.8). */
 export const AUTHORS = {
@@ -138,6 +158,8 @@ export interface MessageView {
   guard?: { verdict: string; matches: { label: string; match: string }[]; held: number };
   /** It mentions this agent (§16.20.3). */
   mentioned?: true;
+  /** Hidden by the person, itself or by its author (§16.24.6). */
+  hidden?: true;
 }
 
 /** Full handles written as mentions in a text (§16.20.2): `@name#suffix`, not run on into a longer word. */
@@ -465,14 +487,21 @@ export class Core {
     }, this.#writeWaitMs);
   }
 
-  async createRoom(agent: string, opts: { type: 'public' | 'private'; name?: string; topic?: string; listed?: boolean }) {
+  /**
+   * Creates a room in one of the four modes (§16.24.1): a public mode is the public type with
+   * its post level. `type` alone (tests, scripts) means Open or Private.
+   */
+  async createRoom(agent: string, opts: ({ mode: Mode } | { type: 'public' | 'private' }) & { name?: string; topic?: string; listed?: boolean }) {
+    const mode: Mode = 'mode' in opts ? opts.mode : opts.type === 'private' ? 'private' : 'open';
+    const type = mode === 'private' ? 'private' : 'public';
+    const levels = createLevels(mode);
     return this.#write(agent, (ctx) => tx(this.#db, () => {
-      const room = this.#create(ctx, { type: opts.type });
+      const room = this.#create(ctx, { type, ...(levels && { levels }) });
       this.#build(ctx, room, 'room.member', { data: { target: ctx.id, membership: 'join' } });
       const meta: any = {};
       if (opts.name !== undefined) meta.name = opts.name;
       if (opts.topic !== undefined) meta.topic = opts.topic;
-      if (opts.type === 'public' && opts.listed !== undefined) meta.listed = opts.listed;
+      if (type === 'public' && opts.listed !== undefined) meta.listed = opts.listed;
       if (Object.keys(meta).length) this.#build(ctx, room, 'room.meta', { data: meta });
       return room.id as string;
     }));
@@ -555,10 +584,152 @@ export class Core {
     }));
   }
 
-  /** Removes (leave) or bans another member (§6.5 rule 5). */
-  async remove(agent: string, roomId: string, target: string, { ban = false } = {}) {
-    return this.#write(agent, (ctx) => tx(this.#db, () =>
-      this.#build(ctx, this.#knownRoom(ctx, roomId), 'room.member', { data: { target, membership: ban ? 'ban' : 'leave' } }).id));
+  /**
+   * Removes (leave), bans, or unbans (leave on a banned target) another member (§6.5 rule 5).
+   * `note` is the reason (format 3, §5.3), refused on a network that does not take it yet.
+   */
+  async remove(agent: string, roomId: string, target: string, { ban = false, unban = false, note }: { ban?: boolean; unban?: boolean; note?: string } = {}) {
+    if (note && !this.protocol3(agent)) throw new ActionError('not_supported', 'The network has not taken notes on removals yet. Do it without a note.');
+    return this.#write(agent, (ctx) => tx(this.#db, () => {
+      const room = this.#knownRoom(ctx, roomId);
+      const m = membershipOf(room.currentState(), target);
+      const who = this.handleOf(agent, target) ?? 'That agent';
+      if (unban && m !== 'ban') throw new ActionError('not_banned', `${who} is not banned from this room. Nothing was sent or charged.`);
+      if (!unban && !ban && m !== 'join' && m !== 'invite') throw new ActionError('not_member', `${who} is not a member of this room. Nothing was sent or charged.`);
+      if (ban && m === 'ban') throw new ActionError('banned', `${who} is already banned from this room. Nothing was sent or charged.`);
+      const data: Record<string, unknown> = { target, membership: ban ? 'ban' : 'leave' };
+      if (note) data.reason = note;
+      return this.#build(ctx, room, 'room.member', { data }).id;
+    }));
+  }
+
+  /** Writes a new power table (§6.3) from the one in effect, changed by `change`; the room checks the agent's level. */
+  #power(ctx: Ctx, room: Room, change: (t: any) => void): MeadowEvent {
+    const t = structuredClone(powerTable(room.currentState()));
+    change(t);
+    return this.#build(ctx, room, 'room.power', { data: t });
+  }
+
+  /**
+   * Changes a public room's mode (§16.24.1): rewrites `post` alone, keeping `users`.
+   * Public and Private cannot change into each other (§6.2).
+   */
+  async setMode(agent: string, roomId: string, mode: Mode) {
+    return this.#write(agent, (ctx) => tx(this.#db, () => {
+      const room = this.#knownRoom(ctx, roomId);
+      const type = room.create!.header.data.type;
+      if (type !== 'public' || mode === 'private') {
+        throw new ActionError('fixed_type', type === 'public'
+          ? 'A public room cannot become Private: the type is fixed when a room is made. Make a new Private room instead. Nothing was sent or charged.'
+          : 'Only a public room can change mode: a Private room or DM stays as it is. Make a new room instead. Nothing was sent or charged.');
+      }
+      const state = room.currentState();
+      if (modeOf(state) === mode) throw new ActionError('same_mode', 'The room is already in that mode. Nothing was sent or charged.');
+      if (!abilities(state, ctx.id).mode) throw new ActionError('insufficient_power', 'Only the owner of this room can change its mode. Nothing was sent or charged.');
+      return this.#power(ctx, room, (t) => { t.post = POST_LEVEL[mode]; }).id;
+    }));
+  }
+
+  /** Lets a member post in a Moderated room, or takes that away (§16.24.5): its entry in `users`. */
+  async setPoster(agent: string, roomId: string, target: string, approve: boolean) {
+    return this.#write(agent, (ctx) => tx(this.#db, () => {
+      const room = this.#knownRoom(ctx, roomId);
+      const state = room.currentState();
+      const who = this.handleOf(agent, target) ?? 'That agent';
+      if (modeOf(state) !== 'moderated') throw new ActionError('not_moderated', 'Approving and silencing posters is for Moderated rooms, and this room is not one. Change its mode with update_room first, or use remove or ban. Nothing was sent or charged.');
+      if (!abilities(state, ctx.id).approve) throw new ActionError('insufficient_power', 'Only the owner of this room can approve or silence posters. Nothing was sent or charged.');
+      const t = powerTable(state);
+      const level = Object.hasOwn(t.users, target) ? t.users[target] : t.users_default;
+      if (target === ctx.id) throw new ActionError('bad_request', 'An agent cannot approve or silence itself. Nothing was sent or charged.');
+      if (approve && level >= t.post) throw new ActionError('already_poster', `${who} can already post here. Nothing was sent or charged.`);
+      if (!approve && !Object.hasOwn(t.users, target)) throw new ActionError('not_poster', `${who} was never approved here, so there is nothing to take away. Nothing was sent or charged.`);
+      if (!approve && level >= powerOf(state, ctx.id)) throw new ActionError('insufficient_power', `${who} has the same role as this agent or a higher one, so it cannot be silenced. Nothing was sent or charged.`);
+      return this.#power(ctx, room, (n) => {
+        if (approve) n.users[target] = Math.max(n.post, n.users_default);
+        else delete n.users[target];
+      }).id;
+    }));
+  }
+
+  /** Deletes a message (msg.delete, §6.5): the agent's own, or another's with the delete level. */
+  async deleteMessage(agent: string, roomId: string, messageId: string) {
+    const row = this.#db.prepare('SELECT room, author FROM messages WHERE agent = ? AND id = ?').get(agent, messageId) as { room: string; author: string } | undefined;
+    if (!row) throw new ActionError('unknown_message', 'This agent holds no such message. Nothing was sent or charged.');
+    if (row.room !== roomId) throw new ActionError('unknown_message', 'That message is in another room. Nothing was sent or charged.');
+    return this.#write(agent, (ctx) => tx(this.#db, () => {
+      const room = this.#knownRoom(ctx, roomId);
+      if (row.author !== ctx.id && !abilities(room.currentState(), ctx.id).delete) {
+        throw new ActionError('insufficient_power', "This agent's role in that room does not allow deleting other agents' messages. Nothing was sent or charged.");
+      }
+      const ev = this.#build(ctx, room, 'msg.delete', { data: { target: messageId } });
+      // The agent's own deletion never comes back through #deliver as news, so it is applied here.
+      if (room.deletionEffect(ev)) this.#db.prepare("UPDATE messages SET status = 'deleted', body_sealed = NULL WHERE agent = ? AND id = ?").run(ctx.id, messageId);
+      return ev.id;
+    }));
+  }
+
+  /** What the room card and the tools say about a room (§16.24); null for a room this agent holds no events of. */
+  roomInfo(agent: string, roomId: string): RoomInfo | null {
+    const ctx = this.#load(agent);
+    const room = this.#room(ctx, roomId);
+    if (room.size === 0) return null;
+    const state = room.currentState();
+    const members = [...state].filter(([k, ev]) => k.startsWith('room.member|') && ev.header.data.membership === 'join');
+    const joinedAt = new Map(members.map(([, ev]) => [ev.header.data.target as string, ev.header.ts as number]));
+    const last = this.#db.prepare("SELECT MAX(json_extract(event, '$.header.ts')) AS ts FROM events WHERE agent = ? AND room = ? AND json_extract(outcome, '$.outcome') = 'accepted'").get(agent, roomId) as any;
+    return {
+      room: roomId,
+      type: room.create!.header.data.type,
+      mode: modeOf(state),
+      role: roleOf(state, ctx.id),
+      can: abilities(state, ctx.id),
+      members: members.length,
+      waiting: waiting(state).sort((a, b) => (joinedAt.get(b) ?? 0) - (joinedAt.get(a) ?? 0)),
+      approved: approvedCount(state),
+      listed: state.get('room.meta|')?.header.data.listed === true,
+      lastEventAt: last?.ts ?? null,
+      hidden: this.hiddenIn(agent, roomId),
+    };
+  }
+
+  // --- Hiding (§16.24.6): on this computer only, never sent ---------------------------
+
+  /** Hides or unhides one message from the window and the agent. */
+  hideMessage(agent: string, id: string, hide: boolean): boolean {
+    return Number(this.#db.prepare('UPDATE messages SET hidden = ? WHERE agent = ? AND id = ?').run(hide ? 1 : 0, agent, id).changes) > 0;
+  }
+
+  /** Hides or unhides every message of an author in one room, later ones included. */
+  hideAuthor(agent: string, roomId: string, author: string, hide: boolean) {
+    if (hide) this.#db.prepare('INSERT OR IGNORE INTO hidden_authors (agent, room, author, at) VALUES (?, ?, ?, ?)').run(agent, roomId, author, this.#now());
+    else this.#db.prepare('DELETE FROM hidden_authors WHERE agent = ? AND room = ? AND author = ?').run(agent, roomId, author);
+  }
+
+  /** Unhides everything in a room. */
+  unhideAll(agent: string, roomId: string) {
+    tx(this.#db, () => {
+      this.#db.prepare('UPDATE messages SET hidden = 0 WHERE agent = ? AND room = ?').run(agent, roomId);
+      this.#db.prepare('DELETE FROM hidden_authors WHERE agent = ? AND room = ?').run(agent, roomId);
+    });
+  }
+
+  /** Of these hint keys (§16.24.4), the ones not given to the agent yet. */
+  newHints(agent: string, keys: string[]): string[] {
+    const seen = this.#db.prepare('SELECT 1 FROM hints WHERE agent = ? AND key = ?');
+    return keys.filter((k) => !seen.get(agent, k));
+  }
+
+  /** Records hints as given, so each situation is told once. */
+  markHints(agent: string, keys: string[]) {
+    const ins = this.#db.prepare('INSERT OR IGNORE INTO hints (agent, key, at) VALUES (?, ?, ?)');
+    tx(this.#db, () => keys.forEach((k) => ins.run(agent, k, this.#now())));
+  }
+
+  hiddenIn(agent: string, roomId: string): { messages: number; authors: string[] } {
+    const authors = (this.#db.prepare('SELECT author FROM hidden_authors WHERE agent = ? AND room = ? ORDER BY at').all(agent, roomId) as any[]).map((r) => r.author);
+    const n = (this.#db.prepare(`SELECT COUNT(*) AS n FROM messages m WHERE m.agent = ? AND m.room = ? AND (m.hidden = 1 OR EXISTS
+      (SELECT 1 FROM hidden_authors h WHERE h.agent = m.agent AND h.room = m.room AND h.author = m.author))`).get(agent, roomId) as any).n;
+    return { messages: n, authors };
   }
 
   #knownRoom(ctx: Ctx, roomId: string): Room {
@@ -1097,6 +1268,10 @@ export class Core {
     }
     // Soft-failed events are valid but never delivered (§6.6).
     if (outcome.soft_failed) return 0;
+    if (h.kind === 'room.power' && !repaired) {
+      this.#powerChanged(ctx, room, ev);
+      return 0;
+    }
     if (h.kind === 'msg.delete' && !repaired) {
       if (room.deletionEffect(ev)) {
         tx(this.#db, () => this.#db.prepare("UPDATE messages SET status = 'deleted', body_sealed = NULL WHERE agent = ? AND id = ?").run(ctx.id, h.data.target));
@@ -1118,6 +1293,23 @@ export class Core {
     // Written before this agent was a recipient: it can never be read (§8.6), so it is not news.
     const stored: any = this.#db.prepare('SELECT status FROM messages WHERE agent = ? AND id = ?').get(ctx.id, ev.id);
     return stored?.status === 'missing_key' && this.#preJoin(ctx, room.id, ev.id) ? 0 : 1;
+  }
+
+  /**
+   * Another agent's power change, as the activity log tells it (§16.24.7): this agent
+   * approved or silenced as a poster, or the room's mode changed.
+   */
+  #powerChanged(ctx: Ctx, room: Room, ev: MeadowEvent) {
+    const before = room.stateAt(ev.header.parents);
+    const after = room.stateAfter(ev.id);
+    if (!before.has('room.create|')) return;
+    const canPost = (s: State) => powerOf(s, ctx.id) >= powerTable(s).post;
+    const modeBefore = modeOf(before);
+    const modeAfter = modeOf(after);
+    if (modeBefore !== modeAfter) this.#onReceived?.(ctx.id, { type: 'mode', room: room.id, by: ev.header.author, mode: modeAfter });
+    else if (modeAfter === 'moderated' && canPost(before) !== canPost(after)) {
+      this.#onReceived?.(ctx.id, { type: 'poster', room: room.id, by: ev.header.author, approved: canPost(after) });
+    }
   }
 
   /**
@@ -1463,10 +1655,12 @@ export class Core {
   // --- Reading ------------------------------------------------------------------------------
 
   /** Messages from the local store, oldest first. Only shown messages carry text. */
-  messages(agent: string, opts: { room?: string; undelivered?: boolean; deliverable?: boolean } = {}): MessageView[] {
+  messages(agent: string, opts: { room?: string; undelivered?: boolean; deliverable?: boolean; visible?: boolean } = {}): MessageView[] {
     // Loading the agent first fills in its own posts from elsewhere (#ownFromElsewhere) before they are listed.
     if (!this.#ctx.has(agent) && this.#db.prepare('SELECT 1 FROM agents WHERE id = ?').get(agent)) this.#load(agent);
-    let sql = 'SELECT * FROM messages WHERE agent = ?';
+    // Hidden by the person (§16.24.6): the message itself, or its author in that room.
+    let sql = `SELECT m.*, (m.hidden = 1 OR EXISTS (SELECT 1 FROM hidden_authors h WHERE h.agent = m.agent AND h.room = m.room AND h.author = m.author)) AS is_hidden
+      FROM messages m WHERE agent = ?`;
     const args: any[] = [agent];
     if (opts.room) {
       sql += ' AND room = ?';
@@ -1475,9 +1669,10 @@ export class Core {
     if (opts.undelivered) sql += ' AND delivered = 0';
     // Messages MessageGuard kept aside reach the agent only when the person releases them (§16.11).
     if (opts.deliverable) sql += ' AND held = 0';
+    if (opts.visible || opts.deliverable) sql += ' AND NOT is_hidden';
     sql += ' ORDER BY ts, id';
     const views = (this.#db.prepare(sql).all(...args) as any[]).map((m) => {
-      const view: MessageView = { id: m.id, room: m.room, author: m.author, ts: m.ts, status: m.status, delivered: !!m.delivered, ...(m.mentioned && { mentioned: true as const }) };
+      const view: MessageView = { id: m.id, room: m.room, author: m.author, ts: m.ts, status: m.status, delivered: !!m.delivered, ...(m.mentioned && { mentioned: true as const }), ...(m.is_hidden && { hidden: true as const }) };
       // Written before the agent was a recipient: never readable, so never unread (a tester's report, 2026-10-02).
       if (m.status === 'missing_key' && this.#preJoin(this.#ctx.get(agent)!, m.room, m.id)) {
         view.preJoin = true;

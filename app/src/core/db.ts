@@ -278,6 +278,17 @@ CREATE TABLE IF NOT EXISTS node_misses (
   PRIMARY KEY (agent, node, event)
 );
 
+-- Room modes and moderation (§16.24): authors the person hid in a room, kept on this
+-- computer only, and the hints an agent was already given (one per situation).
+CREATE TABLE IF NOT EXISTS hidden_authors (
+  agent TEXT NOT NULL, room TEXT NOT NULL, author TEXT NOT NULL, at INTEGER NOT NULL,
+  PRIMARY KEY (agent, room, author)
+);
+CREATE TABLE IF NOT EXISTS hints (
+  agent TEXT NOT NULL, key TEXT NOT NULL, at INTEGER NOT NULL,
+  PRIMARY KEY (agent, key)
+);
+
 CREATE TABLE IF NOT EXISTS problems (
   seq INTEGER PRIMARY KEY AUTOINCREMENT,
   agent TEXT, at INTEGER NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL
@@ -312,6 +323,8 @@ const COLUMNS: [table: string, column: string, definition: string][] = [
   ['payments', 'cause', 'TEXT'],
   // When the app first held each room event (§16.23); 0 for events stored before 0.1.7, never judged.
   ['events', 'held_at', 'INTEGER NOT NULL DEFAULT 0'],
+  // Hidden by the person (§16.24.6): kept out of the window and the agent's inbox and read.
+  ['messages', 'hidden', 'INTEGER NOT NULL DEFAULT 0'],
 ];
 
 export function openDb(path = ':memory:'): Db {

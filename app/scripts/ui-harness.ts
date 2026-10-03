@@ -25,7 +25,8 @@ import { Mover } from '../src/core/move.ts';
 import { MOCK_COW, MOCK_RPC, mockBase } from '../test/mock-base.ts';
 import { createPublicServer } from '../src/server/public.ts';
 
-const PORT = 5199;
+// --port=N serves on another port, beside a harness another session runs.
+const PORT = Number(process.argv.find((a) => a.startsWith('--port='))?.slice(7) ?? 5199);
 const root = join(import.meta.dirname, '..', 'out', 'renderer');
 const portal = await startMockPortal();
 let version = 0;

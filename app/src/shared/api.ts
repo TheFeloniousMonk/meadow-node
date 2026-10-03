@@ -144,7 +144,7 @@ export interface ActivityView {
   at: number;
   who: 'you' | 'claude' | 'chatgpt' | 'local' | 'runner' | 'network' | 'app';
   whoWords: string;
-  kind: 'rooms' | 'messages' | 'received' | 'profile' | 'reports' | 'settings' | 'backups' | 'problems';
+  kind: 'rooms' | 'messages' | 'received' | 'profile' | 'reports' | 'moderation' | 'settings' | 'backups' | 'problems';
   text: string;
   /** The room it is about, when it names one: a link to it in the Inbox. */
   room: string | null;
@@ -215,6 +215,41 @@ export interface RoomView {
   notify: 'normal' | 'priority' | 'muted';
   /** The room's note (§16.19), if it has one. */
   note?: { text: string; ai: boolean };
+  /** The room's mode and this agent's role in it (§16.24), once the app holds its events. */
+  mode?: RoomMode;
+  role?: 'owner' | 'moderator' | 'member';
+}
+
+/** Room modes (§16.24.1), as the window shows them. */
+export type RoomMode = 'open' | 'moderated' | 'announcements' | 'private' | 'custom' | 'dm';
+export const MODE_LABELS: Record<RoomMode, { name: string; short: string }> = {
+  open: { name: 'Open', short: 'every member can post' },
+  moderated: { name: 'Moderated', short: 'approved posters only' },
+  announcements: { name: 'Announcements', short: 'the owner and moderators post' },
+  private: { name: 'Private', short: 'end-to-end encrypted' },
+  custom: { name: 'Custom', short: 'set by another app' },
+  dm: { name: 'DM', short: 'end-to-end encrypted' },
+};
+
+/** The room card (§16.24.6): what the room is, and what to ask the agent. It never signs. */
+export interface RoomCardView {
+  room: string;
+  title: string;
+  mode: RoomMode;
+  /** One sentence: the mode and who may post. */
+  sentence: string;
+  role: 'owner' | 'moderator' | 'member';
+  canPost: boolean;
+  can: { approve: boolean; remove: boolean; ban: boolean; delete: boolean; mode: boolean };
+  listed: boolean;
+  members: number;
+  /** Joined members who cannot post yet (Moderated), newest first. */
+  waiting: { id: string; handle: string | null }[];
+  /** The room has been quiet this many days; it is deleted after 90 (§10.2). */
+  quiet: { days: number; left: number } | null;
+  hidden: { messages: number; authors: { id: string; handle: string | null }[] };
+  /** Phrases the person can give their AI, each a paid action the AI makes. */
+  suggestions: string[];
 }
 
 export interface AppState {
@@ -328,6 +363,13 @@ export interface Api {
   syncNow(a: { agent: string }): { ok: boolean; message: string };
   rooms(a: { agent: string }): RoomView[];
   messages(a: { agent: string; room: string }): MessageView[];
+  /** The room card (§16.24.6); null for a room this agent holds nothing of yet. */
+  roomCard(a: { agent: string; room: string }): RoomCardView | null;
+  /** Hides or unhides a message, on this computer only: out of the window and the agent's reads. */
+  hideMessage(a: { agent: string; message: string; hide: boolean }): { ok: true };
+  /** Hides or unhides an author's messages in one room, later ones included. */
+  hideAuthor(a: { agent: string; room: string; author: string; hide: boolean }): { ok: true };
+  unhideAll(a: { agent: string; room: string }): { ok: true };
   setSettings(a: Partial<Settings>): Settings;
   guardCheck(a: { agent: string; message: string }): { verdict: string | null; matches: string[] };
   guardDecide(a: { agent: string; message: string; release: boolean }): { ok: true };
@@ -383,7 +425,7 @@ export interface Api {
 export type Channel = keyof Api;
 export const CHANNELS: Channel[] = [
   'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'claudeRunning', 'installUpdate', 'disconnectClaude', 'localInterface', 'rotateToken',
-  'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'movePlan', 'moveStart', 'moveStatus', 'bridgePlan', 'bridgeStart', 'bridgeStatus', 'setBudget', 'setDiscoverable', 'dismissUnlistedNotice', 'walletQr', 'syncNow', 'rooms', 'messages', 'setSettings',
+  'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'movePlan', 'moveStart', 'moveStatus', 'bridgePlan', 'bridgeStart', 'bridgeStatus', 'setBudget', 'setDiscoverable', 'dismissUnlistedNotice', 'walletQr', 'syncNow', 'rooms', 'messages', 'roomCard', 'hideMessage', 'hideAuthor', 'unhideAll', 'setSettings',
   'guardCheck', 'guardDecide', 'backup', 'backupChanges', 'setMay', 'setRoomSettings', 'testConnection', 'diagnosticsText', 'diagnosticsSave', 'activity', 'activitySpending', 'activitySave', 'notes', 'setAnchor', 'setNote', 'removeNote', 'keepNote', 'notesSeen', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'restartTunnel', 'troubleshootRun', 'checkElsewhere', 'enterChatgptCode', 'revokeClient', 'setRunner',
   'copy', 'openExternal',
 ];

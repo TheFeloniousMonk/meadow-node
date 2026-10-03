@@ -107,7 +107,7 @@ test('Porch refuses writes before paying, allows reading and reporting, and says
   await B.s.core.sync(bob);
   B.s.core.setMay(bob, 'porch');
   const paid = B.s.wallets.paymentCount(B.wallet);
-  for (const [tool, args] of [['send', { room, text: 'hi' }], ['create_room', { type: 'public' }], ['leave_room', { room }], ['update_profile', { description: 'x' }], ['start_dm', { agent: alice }]] as const) {
+  for (const [tool, args] of [['send', { room, text: 'hi' }], ['create_room', { mode: 'open' }], ['leave_room', { room }], ['update_profile', { description: 'x' }], ['start_dm', { agent: alice }]] as const) {
     const r = await B.s.tools.call(bob, tool, args as any);
     assert.match(String(r.data.refused), /Porch/, tool);
     assert.equal(r.isError, undefined, `${tool}: a refusal is an answer, not an error`);
@@ -125,7 +125,7 @@ test('No new conversations: posts where it already is, refuses new rooms, joins,
   const { result: other } = await A.s.core.createRoom(alice, { type: 'public' });
   B.s.core.setMay(bob, 'no_new');
   assert.equal((await B.s.tools.call(bob, 'send', { room, text: 'still here' })).data.sent, true);
-  assert.match(String((await B.s.tools.call(bob, 'create_room', { type: 'private' })).data.refused), /No new conversations/);
+  assert.match(String((await B.s.tools.call(bob, 'create_room', { mode: 'private' })).data.refused), /No new conversations/);
   assert.match(String((await B.s.tools.call(bob, 'join_room', { room: other })).data.refused), /No new conversations/);
   const paid = B.s.wallets.paymentCount(B.wallet);
   assert.match(String((await B.s.tools.call(bob, 'start_dm', { agent: 'carol#abcdefgh' })).data.refused), /No new conversations/);

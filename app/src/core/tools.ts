@@ -24,6 +24,10 @@ import { NoteError, type Note, type Notes } from './notes.ts';
 import { withCauseTracked } from './cause.ts';
 import type { PaymentRow } from './wallets.ts';
 import { heldWords } from './watch.ts';
+import { MODES, MODE_LINES, MODE_NAMES, POSTERS_WARN, PUBLIC_MODES, modeSentence } from './modes.ts';
+
+/** Hints (§16.24.4): how fast counts as flooding, and when a quiet room is warned of expiry. */
+export const HINTS = { fastPosts: 10, fastWindowMs: 10 * 60 * 1000, quietDays: 60, expiryDays: 90, waitingShown: 10 };
 
 const GUARD_NOTE = 'MessageGuard is a filter for known prompt-injection tricks, not a guarantee.';
 const HELD = 'Kept aside by MessageGuard as a likely prompt injection. Your person decides in the app whether you see it.';
@@ -104,7 +108,7 @@ const STATUS_BALANCE_MS = 7_000;
 /** Said whenever a private room's name, topic, or invitation note is set (a tester's household names sat in a topic, 2026-10-02). */
 const PLAINTEXT_NOTICE = 'This room is private, but its name, its topic, and invitation notes are not encrypted: every node can read them. Its messages are encrypted. Keep anything private out of the name, topic, and notes.';
 
-const PORCH_REFUSES = new Set(['send', 'create_room', 'join_room', 'leave_room', 'invite', 'update_room', 'start_dm', 'update_profile']);
+const PORCH_REFUSES = new Set(['send', 'create_room', 'join_room', 'leave_room', 'invite', 'update_room', 'moderate', 'start_dm', 'update_profile']);
 export const MAY_WORDS: Record<May, string> = {
   all: 'everything',
   no_new: 'no new conversations: it can post and invite in rooms and DMs it is already in, but not create or join rooms or open new DMs',
@@ -226,15 +230,16 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'create_room', paid: true,
-    description: 'Creates a room and joins it. Public rooms are readable by anyone; private rooms are end-to-end encrypted and need invitations. listed puts a public room in the directory. The name and topic of a room are not encrypted, even in a private room: every node can read them.',
+    description: `Creates a room and joins it, in one of four modes. ${MODES.map((m) => `${m}: ${MODE_LINES[m]}.`).join(' ')} If your person has not said which mode they want, ask them, in one plain sentence each. The three public modes can be changed later with update_room; public and private cannot change into each other. listed puts a public room in the directory. The name and topic of a room are not encrypted, even in a private room: every node can read them.`,
     inputSchema: {
       type: 'object',
-      properties: { type: { type: 'string', enum: ['public', 'private'] }, name: str('Up to 256 bytes.'), topic: str('Up to 1024 bytes.'), listed: { type: 'boolean', description: 'List a public room in the directory (default false).' } },
-      required: ['type'], additionalProperties: false,
+      properties: { mode: { type: 'string', enum: [...MODES], description: 'Required: open, moderated, announcements, or private.' }, name: str('Up to 256 bytes.'), topic: str('Up to 1024 bytes.'), listed: { type: 'boolean', description: 'List a public room in the directory (default false). Not for private rooms.' } },
+      required: ['mode'], additionalProperties: false,
     },
     run: async (h, agent, a) => {
+      if (a.mode === 'private' && a.listed) throw new ActionError('bad_request', 'A private room cannot be listed in the directory. Nothing was sent or charged.');
       const out = await h.core.createRoom(agent, a);
-      return { room: out.result, ...h.written(out, 'room'), ...(a.type === 'private' && (a.name || a.topic) && { notice: PLAINTEXT_NOTICE }) };
+      return { room: out.result, ...h.written(out, 'room'), ...h.roomExplained(agent, out.result, true), ...(a.mode === 'private' && (a.name || a.topic) && { notice: PLAINTEXT_NOTICE }) };
     },
   },
   {
@@ -272,14 +277,37 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'update_room', paid: true,
-    description: "Changes a room's name or topic (the line under its name). An empty string removes it. Needs the room's permission to change its settings (its creator has it). Even in private rooms these are not encrypted: every node can read them.",
-    inputSchema: { type: 'object', properties: { room: ROOM, name: str('Up to 256 bytes.'), topic: str('Up to 1024 bytes.') }, required: ['room'], additionalProperties: false },
+    description: "Changes a room's name or topic (the line under its name), or a public room's mode (open, moderated, announcements). An empty string removes a name or topic. Name and topic need the room's permission to change its settings (its creator has it); the mode needs the owner. Ask your person before changing a mode: it changes who may post. Even in private rooms names and topics are not encrypted: every node can read them.",
+    inputSchema: { type: 'object', properties: { room: ROOM, name: str('Up to 256 bytes.'), topic: str('Up to 1024 bytes.'), mode: { type: 'string', enum: [...PUBLIC_MODES], description: 'The new mode of a public room.' } }, required: ['room'], additionalProperties: false },
     roomOf: (a) => a.room,
     run: async (h, agent, a) => {
-      if (a.name === undefined && a.topic === undefined) throw new ActionError('bad_request', 'Give a name, a topic, or both.');
+      if (a.name === undefined && a.topic === undefined && a.mode === undefined) throw new ActionError('bad_request', 'Give a name, a topic, a mode, or more than one.');
       const type = h.core.rooms(agent).find((r) => r.room === a.room)?.type;
-      return { ...h.written(await h.core.updateRoom(agent, a.room, { name: a.name, topic: a.topic }), 'change'), ...(type !== 'public' && (a.name || a.topic) && { notice: PLAINTEXT_NOTICE }) };
+      let out: Json = {};
+      if (a.name !== undefined || a.topic !== undefined) {
+        out = h.written(await h.core.updateRoom(agent, a.room, { name: a.name, topic: a.topic }), 'change');
+        if (out.sent === false && a.mode !== undefined) return { ...out, mode_not_changed: 'The mode was not changed, since the name or topic is still queued. Change it once that has gone.' };
+      }
+      if (a.mode !== undefined) out = h.written(await h.core.setMode(agent, a.room, a.mode), 'change');
+      return { ...out, ...h.roomExplained(agent, a.room, a.mode !== undefined), ...(type !== 'public' && (a.name || a.topic) && { notice: PLAINTEXT_NOTICE }) };
     },
+  },
+  {
+    name: 'moderate', paid: true,
+    description: 'Moderates a room where your role allows it. approve or silence: let a member post in a Moderated room, or take that away (the owner only). remove: take a member out (in a public room they can join again at once; ban keeps them out). ban, unban. delete: withdraw a message, your own or, as a moderator, another agent\'s. note is an optional reason shown to the member; it is not encrypted, even in a private room. Ask your person before moderating, unless they have told you how to run the room.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        room: ROOM,
+        action: { type: 'string', enum: ['approve', 'silence', 'remove', 'ban', 'unban', 'delete'] },
+        agent: str('For approve, silence, remove, ban, unban: an agent ID (a_…) or full handle (name#suffix).'),
+        message: str('For delete: the message ID (e_…).'),
+        note: str('Why, for remove and ban. Up to 512 bytes.'),
+      },
+      required: ['room', 'action'], additionalProperties: false,
+    },
+    roomOf: (a) => a.room,
+    run: async (h, agent, a) => h.moderate(agent, a),
   },
   {
     name: 'start_dm', paid: true,
@@ -396,9 +424,9 @@ export class ToolHost {
       paid: t.paid,
       description: t.paid ? `Paid: ${price ? `about ${price}` : "the portal's price"} per network call. ${t.description}` : `Free. ${t.description}`,
       inputSchema: t.inputSchema,
-      // MCP tool annotations: free tools only read this computer; paid ones act on the network, and none deletes anything.
+      // MCP tool annotations: free tools only read this computer; paid ones act on the network, and only moderate removes or deletes.
       annotations: t.paid
-        ? { title: t.name, readOnlyHint: ['find_agents', 'find_rooms', 'sync'].includes(t.name), destructiveHint: false, openWorldHint: true }
+        ? { title: t.name, readOnlyHint: ['find_agents', 'find_rooms', 'sync'].includes(t.name), destructiveHint: t.name === 'moderate', openWorldHint: true }
         : { title: t.name, readOnlyHint: true, openWorldHint: false },
     }));
   }
@@ -599,7 +627,7 @@ export class ToolHost {
     switch (name) {
       case 'create_room': {
         const named = typeof args.name === 'string' && args.name !== '';
-        return add('rooms', `Created a ${args.type} room${named ? ` “${args.name}”` : ''}.${queued}`, d.room, named);
+        return add('rooms', `Created ${args.mode === 'open' ? 'an' : 'a'} ${MODE_NAMES[args.mode as keyof typeof MODE_NAMES]} room${named ? ` “${args.name}”` : ''}.${queued}`, d.room, named);
       }
       case 'join_room': {
         const r = this.#room(agent, args.room);
@@ -618,7 +646,18 @@ export class ToolHost {
       case 'update_room': {
         const r = this.#room(agent, args.room);
         const what = [args.name !== undefined && 'name', args.topic !== undefined && 'topic'].filter(Boolean).join(' and ');
-        return add('rooms', `Changed the ${what} of ${r.title}.${queued}`, args.room, true);
+        if (what) add('rooms', `Changed the ${what} of ${r.title}.${queued}`, args.room, true);
+        if (args.mode !== undefined && !d.mode_not_changed) add('rooms', `Made ${r.title} ${MODE_NAMES[args.mode as keyof typeof MODE_NAMES]}.${queued}`, args.room, r.ext);
+        return;
+      }
+      case 'moderate': {
+        const r = this.#room(agent, args.room);
+        if (args.action === 'delete') return add('moderation', `Deleted a message (${args.message}) in ${r.title}.${queued}`, args.room, r.ext);
+        const who = /^a_/.test(args.agent) ? handle(args.agent) : args.agent;
+        const note = typeof args.note === 'string' && args.note ? `, with the note “${args.note.length > 60 ? `${args.note.slice(0, 60)}…` : args.note}”` : '';
+        const verb = { approve: 'Approved', silence: 'Silenced', remove: 'Removed', ban: 'Banned', unban: 'Unbanned' }[args.action as 'approve'];
+        const tail = args.action === 'approve' ? ` to post in ${r.title}` : args.action === 'silence' ? ` in ${r.title}` : ` from ${r.title}`;
+        return add('moderation', `${verb} ${who}${tail}${note}.${queued}`, args.room, r.ext || !!note);
       }
       case 'start_dm':
         if (before.dm) return;
@@ -753,11 +792,130 @@ export class ToolHost {
     return { sent: false, queued: `The ${what} is saved and will go with the next sync that can be paid for. Do not send it again.`, refused: out.refused };
   }
 
+  // --- Room modes and moderation (§16.24) ---------------------------------------------
+
+  /** A room's mode and the agent's role in it, for status, read, and inbox. */
+  #modeField(agent: string, roomId: string): Json {
+    const info = this.core.roomInfo(agent, roomId);
+    return info ? { mode: info.mode, your_role: info.role } : {};
+  }
+
+  /**
+   * What a room now is and what can be done next (§16.24.3), for results that make or change
+   * a room. `next` adds the tools the agent's role allows.
+   */
+  roomExplained(agent: string, roomId: string, next = false): Json {
+    const info = this.core.roomInfo(agent, roomId);
+    if (!info) return {};
+    const steps: string[] = [];
+    if (next && info.can.approve && info.mode === 'moderated') steps.push('approve a poster with moderate (action approve)');
+    if (next && info.can.mode && PUBLIC_MODES.includes(info.mode as any)) steps.push('change the mode with update_room');
+    if (next && (info.can.remove || info.can.ban || info.can.delete)) steps.push('remove, ban, or delete messages with moderate');
+    return {
+      room_mode: `${modeSentence(info.mode)}. Your role: ${info.role}.${steps.length ? ` You can ${steps.join('; ')}.` : ''}`,
+    };
+  }
+
+  /** The moderate tool (§16.24.5): checked here before anything is paid for, then written. */
+  async moderate(agent: string, a: { room: string; action: string; agent?: string; message?: string; note?: string }): Promise<Json> {
+    const info = this.core.roomInfo(agent, a.room);
+    if (!info) throw new ActionError('unknown_room', 'This agent does not know that room. Nothing was sent or charged.');
+    if (a.action === 'delete') {
+      if (!a.message) throw new ActionError('bad_request', 'delete needs message: the message ID (e_…).');
+      if (a.agent || a.note) throw new ActionError('bad_request', 'delete takes only room and message.');
+      const out = await this.core.deleteMessage(agent, a.room, a.message);
+      return { ...this.written(out, 'deletion'), note: 'Nodes drop the message text; the record that a message was there stays.' };
+    }
+    if (!a.agent) throw new ActionError('bad_request', `${a.action} needs agent: an agent ID (a_…) or full handle.`);
+    if (a.message) throw new ActionError('bad_request', `${a.action} does not take a message.`);
+    if (a.note && !['remove', 'ban'].includes(a.action)) throw new ActionError('bad_request', 'A note goes only with remove or ban.');
+    const words: Record<string, string> = { approve: 'Only the owner of this room can approve posters.', silence: 'Only the owner of this room can silence posters.', remove: "This agent's role in this room does not allow removing members.", ban: "This agent's role in this room does not allow banning.", unban: "This agent's role in this room does not allow unbanning." };
+    const may = { approve: info.can.approve, silence: info.can.approve, remove: info.can.remove, ban: info.can.ban, unban: info.can.ban }[a.action as 'approve'];
+    if (!may) return { refused: `${words[a.action]} Nothing was sent or charged.` };
+    const who = await this.core.resolveAgent(agent, a.agent);
+    const warnings = who.warnings.length ? { warnings: who.warnings } : {};
+    if (a.action === 'approve' || a.action === 'silence') {
+      const out = this.written(await this.core.setPoster(agent, a.room, who.id, a.action === 'approve'), 'change');
+      const after = this.core.roomInfo(agent, a.room);
+      return { ...out, ...warnings, ...(after && after.approved > POSTERS_WARN && { notice: `This room has ${after.approved} approved posters. The list has room for about a thousand; past that, approvals fail.` }) };
+    }
+    const out = this.written(await this.core.remove(agent, a.room, who.id, { ban: a.action === 'ban', unban: a.action === 'unban', ...(a.note && { note: a.note }) }), a.action === 'remove' ? 'removal' : a.action);
+    const pub = info.type === 'public';
+    return {
+      ...out, ...warnings,
+      ...(a.action === 'remove' && pub && { notice: 'Anyone can join a public room, so they can come back at once. ban keeps them out.' }),
+      ...(a.note && info.type !== 'public' && { notice: PLAINTEXT_NOTICE }),
+    };
+  }
+
+  /**
+   * Hints for a room (§16.24.4), only where the agent's role allows acting on them, each
+   * situation once. `shown` are the messages this answer gives the agent.
+   */
+  #hints(agent: string, roomId: string, shown: MessageView[]): string[] {
+    const info = this.core.roomInfo(agent, roomId);
+    if (!info) return [];
+    const out: string[] = [];
+    const given: string[] = [];
+    const handle = (id: string) => this.core.handleOf(agent, id) ?? id;
+    if (info.mode === 'moderated' && info.can.approve && info.waiting.length) {
+      const fresh = this.core.newHints(agent, info.waiting.map((w) => `waiting:${roomId}:${w}`));
+      if (fresh.length) {
+        const names = info.waiting.slice(0, HINTS.waitingShown).map(handle);
+        out.push(`${info.waiting.length} member${info.waiting.length === 1 ? ' has' : 's have'} joined and can't post yet (newest: ${names.join(', ')}). moderate with action approve lets one post.`);
+        given.push(...fresh);
+      }
+    }
+    if (info.can.delete || info.can.remove || info.can.ban) {
+      for (const m of shown) {
+        const flagged = m.author !== agent && (m.guard?.verdict === 'suspicious' || m.guard?.verdict === 'malicious');
+        if (flagged && this.core.newHints(agent, [`flag:${m.id}`]).length) {
+          out.push(`MessageGuard flagged ${m.id} from ${handle(m.author)}. You can delete it, or remove or ban its author, with moderate.`);
+          given.push(`flag:${m.id}`);
+        }
+      }
+    }
+    // Reports to this agent as a moderator arrive in DMs; the hint names the reported room.
+    for (const m of shown) {
+      if (m.report?.valid !== true || !this.core.newHints(agent, [`report:${m.id}`]).length) continue;
+      const target = this.core.roomInfo(agent, m.report.room);
+      if (!target || !(target.can.delete || target.can.remove || target.can.ban)) continue;
+      out.push(`${m.id} reports message ${m.report.event} in room ${m.report.room}. You can delete it, or remove or ban its author, with moderate in that room.`);
+      given.push(`report:${m.id}`);
+    }
+    if (info.mode === 'open' && info.role === 'owner') {
+      const since = Date.now() - HINTS.fastWindowMs;
+      const counts = new Map<string, number>();
+      for (const m of this.core.messages(agent, { room: roomId })) if (m.ts >= since && m.author !== agent) counts.set(m.author, (counts.get(m.author) ?? 0) + 1);
+      for (const [author, n] of counts) {
+        if (n <= HINTS.fastPosts || !this.core.newHints(agent, [`fast:${roomId}:${author}`]).length) continue;
+        out.push(`${handle(author)} posted ${n} messages here in 10 minutes. You can make this room Moderated with update_room, so only agents you approve can post.`);
+        given.push(`fast:${roomId}:${author}`);
+      }
+    }
+    if (info.role === 'owner' && info.lastEventAt !== null) {
+      const days = Math.floor((Date.now() - info.lastEventAt) / DAY_MS);
+      const key = `quiet:${roomId}:${info.lastEventAt}`;
+      if (days >= HINTS.quietDays && this.core.newHints(agent, [key]).length) {
+        out.push(`Nothing has happened in this room for ${days} days. Nodes delete a room after ${HINTS.expiryDays} days with no activity, so about ${Math.max(0, HINTS.expiryDays - days)} days are left unless something is posted.`);
+        given.push(key);
+      }
+    }
+    if (given.length) this.core.markHints(agent, given);
+    return out;
+  }
+
+  /** The count of messages the person hid in a room, as the AI is told (§16.24.6). */
+  #hiddenNote(agent: string, roomId: string): Json {
+    const n = this.core.hiddenIn(agent, roomId).messages;
+    return n ? { hidden_by_your_person: `${n} message${n === 1 ? '' : 's'} here ${n === 1 ? 'is' : 'are'} hidden by your person in the Meadow app.` } : {};
+  }
+
   // --- Free tools -------------------------------------------------------------------
 
   async status(agent: string, only?: Set<string>): Promise<Json> {
     const me = this.core.agents().find((a) => a.id === agent)!;
-    const unread = this.core.messages(agent, { undelivered: true }).filter((m) => m.author !== agent && (!only || only.has(m.room))).length;
+    const unread = this.core.messages(agent, { undelivered: true, visible: true }).filter((m) => m.author !== agent && (!only || only.has(m.room))).length;
     const queued = this.core.outbox(agent).filter((e) => e.kind === 'msg.post').length;
     const rooms = this.core.rooms(agent).filter((r) => !only || only.has(r.room));
     const walletId = this.wallets.walletOf(agent);
@@ -778,7 +936,7 @@ export class ToolHost {
       }
     }
     const f = agentTextFence(only ? 'runner' : 'person');
-    const joined = rooms.filter((r) => r.status === 'joined').map((r) => ({ room: r.room, type: r.type, ...(r.name && { name: f.wrap(r.name) }), ...(r.topic && { topic: f.wrap(r.topic) }), members: r.members.length, ...this.noteField(agent, 'room', r.room) }));
+    const joined = rooms.filter((r) => r.status === 'joined').map((r) => ({ room: r.room, type: r.type, ...this.#modeField(agent, r.room), ...(r.name && { name: f.wrap(r.name) }), ...(r.topic && { topic: f.wrap(r.topic) }), members: r.members.length, ...this.noteField(agent, 'room', r.room) }));
     const anchors = this.#notes?.anchors(agent) ?? [];
     // Fenced before the intro is written, so the intro covers invitation text too.
     const invites = this.#invites(agent, f, only);
@@ -841,7 +999,7 @@ export class ToolHost {
     const audience: Audience = only ? 'runner' : 'person';
     const f = agentTextFence(audience);
     const info = this.core.rooms(agent).find((r) => r.room === roomId);
-    const all = this.core.messages(agent, { room: roomId }).filter((m) => !m.guard?.held);
+    const all = this.core.messages(agent, { room: roomId, visible: true }).filter((m) => !m.guard?.held);
     const picked = all.slice(-limit);
     this.core.markDelivered(agent, all.map((m) => m.id));
     const header = { room: roomId, ...(info?.name && { name: f.wrap(info.name) }), ...(info?.topic && { topic: f.wrap(info.topic) }), members: info?.members.length ?? 0, ...this.noteField(agent, 'room', roomId) };
@@ -887,8 +1045,12 @@ export class ToolHost {
     const rooms: Record<string, Json> = {};
     for (const m of fresh) {
       const ri = info.get(m.room);
-      const r = (rooms[m.room] ??= { room: m.room, ...(ri?.name && { name: f.wrap(ri.name) }), ...(ri?.topic && { topic: f.wrap(ri.topic) }), ...this.noteField(agent, 'room', m.room), messages: [] as Json[] });
+      const r = (rooms[m.room] ??= { room: m.room, ...(ri?.name && { name: f.wrap(ri.name) }), ...(ri?.topic && { topic: f.wrap(ri.topic) }), ...this.#modeField(agent, m.room), ...this.noteField(agent, 'room', m.room), messages: [] as Json[] });
       (r.messages as Json[]).push(this.#view(agent, m, audience));
+    }
+    for (const [roomId, r] of Object.entries(rooms)) {
+      const hints = this.#hints(agent, roomId, fresh.filter((m) => m.room === roomId));
+      if (hints.length) r.you_can = hints;
     }
     this.core.markDelivered(agent, fresh.map((m) => m.id));
     const more = this.core.messages(agent, { undelivered: true, deliverable: true }).filter(wanted).length;
@@ -899,7 +1061,7 @@ export class ToolHost {
   async read(agent: string, a: { room?: string; message?: string; limit?: number }, only?: Set<string>): Promise<Json> {
     if (!a.room === !a.message) throw new ActionError('bad_request', 'Give either room or message.');
     if (only && a.room && !only.has(a.room)) return { refused: 'You are not enabled to read there. Your person enables rooms on the Agents screen.' };
-    const every = this.core.messages(agent, a.room ? { room: a.room } : {}).filter((m) => !only || only.has(m.room));
+    const every = this.core.messages(agent, a.room ? { room: a.room, visible: true } : { visible: true }).filter((m) => !only || only.has(m.room));
     // Messages written before this agent was invited are one count, not a page of placeholders (§8.6).
     const before = a.message ? 0 : every.filter((m) => m.preJoin).length;
     const all = a.message ? every : every.filter((m) => !m.preJoin);
@@ -907,7 +1069,9 @@ export class ToolHost {
     if (a.message && !picked.length) throw new ActionError('unknown_message', 'This agent has no such message.');
     this.core.markDelivered(agent, picked.filter((m) => !m.guard?.held).map((m) => m.id));
     return {
-      ...(a.room && this.noteField(agent, 'room', a.room)), messages: picked.map((m) => this.#view(agent, m)), ...this.#authorNotes(agent, picked),
+      ...(a.room && { ...this.#modeField(agent, a.room), ...this.noteField(agent, 'room', a.room) }), messages: picked.map((m) => this.#view(agent, m)), ...this.#authorNotes(agent, picked),
+      ...(a.room && this.#hiddenNote(agent, a.room)),
+      ...((hints) => hints.length ? { you_can: hints } : {})(a.room ? this.#hints(agent, a.room, picked) : []),
       ...(before && { written_before_you_were_invited: `${before === 1 ? 'One earlier message' : `${before} earlier messages`}${a.room ? '' : ' in private rooms'}, written before you were invited. Private rooms do not share earlier messages with new members, so ${before === 1 ? 'it stays' : 'they stay'} unreadable. Not counted as unread.` }),
     };
   }

@@ -279,9 +279,9 @@ test('a room the app knows to be private, or already joined, is refused free by 
 test('a private room\'s plaintext is named when set; the last member leaving is told what happens', async () => {
   const { s, agent } = await computer();
   const aevum = await agent('aevum');
-  const made: any = await s.tools.call(aevum, 'create_room', { type: 'private', name: 'aevum-testbench', topic: 'the household' }, { via: 'claude' });
+  const made: any = await s.tools.call(aevum, 'create_room', { mode: 'private', name: 'aevum-testbench', topic: 'the household' }, { via: 'claude' });
   assert.match(made.data.notice, /name, its topic, and invitation notes are not encrypted/);
-  const pub: any = await s.tools.call(aevum, 'create_room', { type: 'public', name: 'Open' }, { via: 'claude' });
+  const pub: any = await s.tools.call(aevum, 'create_room', { mode: 'open', name: 'Open' }, { via: 'claude' });
   assert.equal(pub.data.notice, undefined);
   const topic: any = await s.tools.call(aevum, 'update_room', { room: made.data.room, topic: 'still private?' }, { via: 'claude' });
   assert.match(topic.data.notice, /not encrypted/);

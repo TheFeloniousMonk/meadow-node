@@ -193,6 +193,13 @@ th { color: var(--text-secondary); font-weight: 600; font-size: .9rem; }
 .msg .tools { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; margin-top: .7rem; padding-top: .55rem; border-top: 1px solid var(--border-subtle); font-size: .88rem; color: var(--text-secondary); }
 .msg .tools .label { font-weight: 600; letter-spacing: .02em; }
 .msg .tools button.link { font-size: .88rem; }
+/* Room modes (§16.24.6): the label opens the room card; phrases are for the person to give their AI. */
+.mode-label { font: inherit; font-size: .85rem; font-weight: 600; color: var(--accent-text); background: var(--accent-bg); border: 1px solid transparent; border-radius: 999px; padding: .15rem .7rem; cursor: pointer; }
+.mode-label:hover { background: var(--accent-hover); }
+.mode-label:focus-visible { outline: 2px solid var(--amber-500); outline-offset: 2px; }
+.msg .tools details.ask summary { cursor: pointer; font-weight: 600; }
+.ask-phrase { background: var(--bg-surface-alt); border-radius: var(--radius-md); padding: .35rem .6rem; gap: .6rem; }
+.ask-phrase span { overflow-wrap: anywhere; }
 .check-panel { border-top: 1px solid var(--border-subtle); padding-top: .8rem; }
 .steps { list-style: none; padding: 0; margin: .7rem 0; display: flex; flex-direction: column; gap: .45rem; }
 .steps li { display: flex; gap: .6rem; align-items: baseline; }

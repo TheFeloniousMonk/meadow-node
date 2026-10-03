@@ -8,7 +8,7 @@ import type { Db } from './db.ts';
 import type { Via } from './diagnostics.ts';
 
 export type Who = 'you' | 'claude' | 'chatgpt' | 'local' | 'runner' | 'network' | 'app';
-export type ActivityKind = 'rooms' | 'messages' | 'received' | 'profile' | 'reports' | 'settings' | 'backups' | 'problems';
+export type ActivityKind = 'rooms' | 'messages' | 'received' | 'profile' | 'reports' | 'moderation' | 'settings' | 'backups' | 'problems';
 
 export const WHO_WORDS: Record<Who, string> = {
   you: 'You',
@@ -23,7 +23,7 @@ export const WHO_WORDS: Record<Who, string> = {
 /** Who a tool call's connection makes the actor (§16.18.2). */
 export const whoOf = (via: Via): Who => (via === 'rest' ? 'local' : via);
 
-const KINDS: ActivityKind[] = ['rooms', 'messages', 'received', 'profile', 'reports', 'settings', 'backups', 'problems'];
+const KINDS: ActivityKind[] = ['rooms', 'messages', 'received', 'profile', 'reports', 'moderation', 'settings', 'backups', 'problems'];
 
 export const KEEP_DAYS = 90;
 export const KEEP_ENTRIES = 5_000;

@@ -28,6 +28,7 @@ import { Diagnostics, syncFailureClass } from '../core/diagnostics.ts';
 import { Activity } from '../core/activity.ts';
 import { Notes } from '../core/notes.ts';
 import type { Received } from '../core/core.ts';
+import { MODE_NAMES } from '../core/modes.ts';
 import { UpdateCheck, type InstallKind } from '../core/update.ts';
 import type { Settings } from '../shared/api.ts';
 
@@ -174,6 +175,10 @@ export class Services {
     } else if (what.type === 'removed') {
       this.activity.add(agent, 'network', 'received', `${what.ban ? 'Banned' : 'Removed'} from ${title} by ${handle(what.by)}${what.reason ? `, saying “${what.reason.length > 80 ? `${what.reason.slice(0, 80)}…` : what.reason}”` : ''}.`,
         { room: what.room, ext: ext || !!what.reason });
+    } else if (what.type === 'poster') {
+      this.activity.add(agent, 'network', 'received', `${what.approved ? 'Approved to post in' : 'Silenced in'} ${title} by ${handle(what.by)}.`, { room: what.room, ext });
+    } else if (what.type === 'mode') {
+      this.activity.add(agent, 'network', 'received', `${title[0].toUpperCase()}${title.slice(1)} was made ${MODE_NAMES[what.mode]} by ${handle(what.by)}.`, { room: what.room, ext });
     } else {
       this.activity.add(agent, 'network', 'received', `${title[0].toUpperCase()}${title.slice(1)} expired after 90 days with no activity.`, { room: what.room, ext });
     }

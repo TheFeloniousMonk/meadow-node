@@ -19,6 +19,8 @@ import { withCause } from '../core/cause.ts';
 import { WHO_WORDS, type ActivityKind } from '../core/activity.ts';
 import type { Note } from '../core/notes.ts';
 import { heldWords } from '../core/watch.ts';
+import { MODE_NAMES, PUBLIC_MODES, modeSentence } from '../core/modes.ts';
+import { HINTS } from '../core/tools.ts';
 
 export interface HandlerEnv {
   /** The app's executable, which runs the Claude bridge as Node. */
@@ -127,7 +129,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
         settings: s.settings(),
         agents: s.core.agents().map((a) => {
           const conn = s.connections.get(a.id) as any;
-          const messages = s.core.messages(a.id, { undelivered: true }).filter((m) => m.author !== a.id);
+          const messages = s.core.messages(a.id, { undelivered: true, visible: true }).filter((m) => m.author !== a.id);
           return {
             id: a.id, displayName: a.display_name, name: a.name, handle: a.handle, registered: a.registered,
             connection: conn,
@@ -253,7 +255,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       const unread = new Map<string, number>();
       const mentions = new Map<string, number>();
       const last = new Map<string, number>();
-      for (const m of s.core.messages(agent)) {
+      for (const m of s.core.messages(agent, { visible: true })) {
         if (!m.delivered && m.author !== agent) unread.set(m.room, (unread.get(m.room) ?? 0) + 1);
         if (!m.delivered && m.mentioned) mentions.set(m.room, (mentions.get(m.room) ?? 0) + 1);
         last.set(m.room, Math.max(last.get(m.room) ?? 0, m.ts));
@@ -268,6 +270,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
           return {
             room: r.room, type: r.type ?? i?.type ?? null, status: r.status, guard: r.guard, notify: r.notify, ...(name && { name }), ...(topic && { topic }),
             ...((n) => (n ? { note: { text: n.text, ai: n.who !== 'you' } } : {}))(s.notes.get(agent, 'room', r.room)),
+            ...((info) => (info ? { mode: info.mode, role: info.role } : {}))(s.core.roomInfo(agent, r.room)),
             ...(r.dmWith && { with: s.core.handleOf(agent, r.dmWith) ?? r.dmWith }), members: r.members, unread: unread.get(r.room) ?? 0, mentions: mentions.get(r.room) ?? 0, last: last.get(r.room) ?? 0,
             ...(i && { invite: { from: i.from ? s.core.handleOf(agent, i.from) ?? i.from : null, members: i.members, ...(i.note && { note: i.note }), ...(i.origin && { sent: i.origin as 'manual' | 'automatic' }) } }),
           };
@@ -277,7 +280,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
 
     messages({ agent, room }): MessageView[] {
       const queued = new Map(s.core.outbox(agent).map((e) => [e.id, e.reason]));
-      return s.core.messages(agent, { room }).map((m) => ({
+      return s.core.messages(agent, { room, visible: true }).map((m) => ({
         id: m.id, room: m.room, author: m.author, authorHandle: s.core.handleOf(agent, m.author), mine: m.author === agent,
         ts: m.ts, status: m.status, statusWords: m.status === 'shown' ? null : m.preJoin ? STATUS_WORDS.pre_join : STATUS_WORDS[m.status] ?? m.status,
         ...(m.text !== undefined && { text: m.text }), ...(m.reply_to && { replyTo: m.reply_to }),
@@ -285,6 +288,47 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
         ...(m.guard && { guard: { verdict: m.guard.verdict, matches: m.guard.matches.map((x) => x.label), held: m.guard.held } }),
         ...(m.report && { report: m.report.valid ? { valid: true, reason: m.report.reason, text: m.report.text, note: m.report.note } : { valid: false, why: m.report.why } }),
       }));
+    },
+
+    roomCard({ agent, room }) {
+      const info = s.core.roomInfo(agent, room);
+      if (!info) return null;
+      const t = roomTitle(agent, room).title.replace(/^a room with no name$/, 'this room');
+      const h = (id: string) => ({ id, handle: s.core.handleOf(agent, id) });
+      const suggestions: string[] = [];
+      if (info.can.mode && PUBLIC_MODES.includes(info.mode as any)) {
+        for (const m of PUBLIC_MODES) if (m !== info.mode) suggestions.push(`Make ${t} ${MODE_NAMES[m]}`);
+      }
+      if (info.mode === 'moderated' && info.can.approve) {
+        for (const w of info.waiting.slice(0, 3)) suggestions.push(`Approve ${s.core.handleOf(agent, w) ?? w} to post in ${t}`);
+      }
+      const days = info.lastEventAt === null ? 0 : Math.floor((Date.now() - info.lastEventAt) / (24 * 3600 * 1000));
+      return {
+        room, title: t, mode: info.mode, sentence: modeSentence(info.mode) + '.', role: info.role, canPost: info.can.post,
+        can: { approve: info.can.approve, remove: info.can.remove, ban: info.can.ban, delete: info.can.delete, mode: info.can.mode },
+        listed: info.listed, members: info.members, waiting: info.waiting.map(h),
+        quiet: days >= HINTS.quietDays ? { days, left: Math.max(0, HINTS.expiryDays - days) } : null,
+        hidden: { messages: info.hidden.messages, authors: info.hidden.authors.map(h) },
+        suggestions,
+      };
+    },
+
+    hideMessage({ agent, message, hide }) {
+      const m = s.core.messages(agent).find((x) => x.id === message);
+      if (m && s.core.hideMessage(agent, message, hide)) you(agent, 'settings', `${hide ? 'Hid' : 'Unhid'} a message in {room}, on this computer only.`, m.room);
+      return { ok: true };
+    },
+
+    hideAuthor({ agent, room, author, hide }) {
+      s.core.hideAuthor(agent, room, author, hide);
+      you(agent, 'settings', `${hide ? 'Hid' : 'Unhid'} the messages of ${s.core.handleOf(agent, author) ?? author} in {room}, on this computer only.`, room);
+      return { ok: true };
+    },
+
+    unhideAll({ agent, room }) {
+      s.core.unhideAll(agent, room);
+      you(agent, 'settings', 'Unhid everything in {room}.', room);
+      return { ok: true };
     },
 
     setSettings(changes) {

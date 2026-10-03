@@ -3,7 +3,7 @@
 // person reads; the agent writes. What the agent sent shows as it wrote it,
 // queued or sent, and nothing here writes or edits a message.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { AppState, MessageView, RoomView } from '../../../shared/api.ts';
+import { MODE_LABELS, type AppState, type MessageView, type RoomCardView, type RoomView } from '../../../shared/api.ts';
 import { Dialog, meadow, useAction, when } from '../lib.tsx';
 import type { ScreenProps } from '../App.tsx';
 import { guardCost } from './Settings.tsx';
@@ -27,6 +27,8 @@ export function Inbox({ state }: ScreenProps) {
   const [messages, setMessages] = useState<MessageView[]>([]);
   const [checking, setChecking] = useState<MessageView | null>(null);
   const [settingRoom, setSettingRoom] = useState(false);
+  const [card, setCard] = useState<RoomCardView | null>(null);
+  const [showCard, setShowCard] = useState(false);
   const [noting, setNoting] = useState<{ about: string; title: string } | null>(null);
   // A reply's inset scrolls to the message it answers and highlights it briefly (§16.10.2).
   const [flash, setFlash] = useState<string | null>(null);
@@ -35,7 +37,11 @@ export function Inbox({ state }: ScreenProps) {
     setFlash(id);
     setTimeout(() => setFlash((f) => (f === id ? null : f)), 1600);
   };
-  const reload = () => agent && room && meadow.messages({ agent, room }).then(setMessages);
+  const reload = async () => {
+    if (!agent || !room) return;
+    setMessages(await meadow.messages({ agent, room }));
+    setCard(await meadow.roomCard({ agent, room }));
+  };
   // Newest at the bottom, in view: a room opens there, and new messages are followed while the
   // view is at the bottom. Scrolled up to read, it stays put.
   // Whether the view was at the bottom is measured against the content before this update,
@@ -45,6 +51,7 @@ export function Inbox({ state }: ScreenProps) {
   const jump = useRef(true);
   useEffect(() => {
     jump.current = true;
+    setShowCard(false);
   }, [agent, room]);
   useLayoutEffect(() => {
     const el = thread.current;
@@ -65,8 +72,13 @@ export function Inbox({ state }: ScreenProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agent, state]);
   useEffect(() => {
-    if (agent && room) meadow.messages({ agent, room }).then(setMessages);
-    else setMessages([]);
+    if (agent && room) {
+      meadow.messages({ agent, room }).then(setMessages);
+      meadow.roomCard({ agent, room }).then(setCard);
+    } else {
+      setMessages([]);
+      setCard(null);
+    }
   }, [agent, room, state]);
 
   if (!state.agents.length) return <p className="muted">No agents yet.</p>;
@@ -94,7 +106,7 @@ export function Inbox({ state }: ScreenProps) {
             <button key={r.room} role="listitem" className={`convo${r.unread ? ' unread' : ''}`} aria-current={r.room === room ? 'true' : undefined} onClick={() => setRoom(r.room)}>
               <span className="title">{title(r)}{r.mentions > 0 && <span className="at" aria-label={`${r.mentions} mention${r.mentions === 1 ? '' : 's'} of your agent`}>@</span>}</span>
               <span className="small muted">
-                {r.type === 'dm' ? 'Private, two agents' : `${r.type === 'private' ? 'Private' : 'Public'}, ${(() => { const n = r.invite?.members ?? r.members.length; return `${n} member${n === 1 ? '' : 's'}`; })()}`}
+                {r.type === 'dm' ? 'Private, two agents' : `${r.type === 'private' ? 'Private' : r.mode && r.mode !== 'open' ? `Public, ${MODE_LABELS[r.mode].name}` : 'Public'}, ${(() => { const n = r.invite?.members ?? r.members.length; return `${n} member${n === 1 ? '' : 's'}`; })()}`}
                 {r.status === 'invited' ? ' · invited' : r.status === 'previewed' ? ' · read without joining' : r.status === 'removed' ? ' · removed' : r.status === 'left' ? ' · left' : ''}
                 {r.unread ? ` · ${r.unread} unread` : ''}
                 {r.notify === 'muted' ? ' · muted' : r.notify === 'priority' ? ' · priority' : ''}
@@ -108,7 +120,9 @@ export function Inbox({ state }: ScreenProps) {
               <div className="row spread">
                 <h2 style={{ margin: 0 }}>{title(current)}</h2>
                 <div className="row">
-                  <span className="small muted">{current.type === 'public' ? 'Anyone can read this room.' : 'End-to-end encrypted.'}</span>
+                  {card
+                    ? <button className="mode-label" onClick={() => setShowCard(true)} title="What this room is, and what to ask your agent">{MODE_LABELS[card.mode].name} · {MODE_LABELS[card.mode].short}</button>
+                    : <span className="small muted">{current.type === 'public' ? 'Anyone can read this room.' : 'End-to-end encrypted.'}</span>}
                   <button className="secondary small" onClick={() => setSettingRoom(true)}>Room settings</button>
                 </div>
               </div>
@@ -153,13 +167,18 @@ export function Inbox({ state }: ScreenProps) {
                 </div>
               )}
               {!m.mine && (m.text !== undefined || m.guard) && (
-                <MessageTools m={m} onNote={() => setNoting({ about: m.author, title: m.authorHandle ?? 'this agent' })} onCheck={() => setChecking(m)} onDecide={async (release) => { await meadow.guardDecide({ agent, message: m.id, release }); await reload(); }} />
+                <MessageTools m={m} card={card} me={me?.displayName} onHide={async (author) => {
+                  if (author) await meadow.hideAuthor({ agent, room: m.room, author: m.author, hide: true });
+                  else await meadow.hideMessage({ agent, message: m.id, hide: true });
+                  await reload();
+                }} onNote={() => setNoting({ about: m.author, title: m.authorHandle ?? 'this agent' })} onCheck={() => setChecking(m)} onDecide={async (release) => { await meadow.guardDecide({ agent, message: m.id, release }); await reload(); }} />
               )}
             </article>
           ))}
         </div>
       </div>
       {noting && <NoteEditor agent={agent} kind="agent" about={noting.about} title={noting.title} onClose={() => setNoting(null)} />}
+      {showCard && card && <RoomCard card={card} agent={agent} me={me?.displayName ?? 'your agent'} onChanged={reload} onClose={() => setShowCard(false)} />}
       {settingRoom && current && (
         <RoomSettings room={current} rooms={rooms} agent={agent} state={state} title={title(current)} onClose={async () => { setSettingRoom(false); setRooms(await meadow.rooms({ agent })); }} />
       )}
@@ -211,8 +230,9 @@ const VERDICT_WORDS: Record<string, string> = {
  * nothing here reads as the message. MessageGuard's verdict, the person's check, and the
  * choices for a message kept aside; later per-message actions go here too.
  */
-function MessageTools({ m, onCheck, onDecide, onNote }: { m: MessageView; onCheck: () => void; onDecide: (release: boolean) => Promise<void>; onNote: () => void }) {
+function MessageTools({ m, card, me, onCheck, onDecide, onNote, onHide }: { m: MessageView; card: RoomCardView | null; me?: string; onCheck: () => void; onDecide: (release: boolean) => Promise<void>; onNote: () => void; onHide: (author: boolean) => Promise<void> }) {
   const g = m.guard;
+  const ask = card ? messagePhrases(m, card) : [];
   return (
     <div className="tools" role="group" aria-label="Message tools">
       <span className="label">Message tools</span>
@@ -232,7 +252,15 @@ function MessageTools({ m, onCheck, onDecide, onNote }: { m: MessageView; onChec
       {g?.held === 2 && <span className="pill warn">Kept held</span>}
       {m.text !== undefined && <button className="link small" onClick={onCheck}>Check for prompt injection</button>}
       <button className="link small" onClick={onNote}>Note about this agent</button>
+      <button className="link small" onClick={() => onHide(false)} title="On this computer only: out of this window and away from your agent">Hide</button>
+      <button className="link small" onClick={() => onHide(true)} title="Hides this agent's messages in this room, later ones too, on this computer only">Hide this agent here</button>
       {g && g.verdict !== 'unchecked' && <span className="small muted">A filter for known tricks, not a guarantee.</span>}
+      {ask.length > 0 && (
+        <details className="ask" style={{ width: '100%' }}>
+          <summary className="small">Ask {me ?? 'your agent'} to moderate this</summary>
+          <AskList phrases={ask} />
+        </details>
+      )}
     </div>
   );
 }
@@ -335,6 +363,91 @@ function RoomSettings({ room, rooms, agent, state, title, onClose }: { room: Roo
           onClose();
         })}>Save</button>
       </div>
+    </Dialog>
+  );
+}
+
+/** What the person can ask the agent about one message, by what its role allows (§16.24.6). */
+function messagePhrases(m: MessageView, card: RoomCardView): string[] {
+  const who = m.authorHandle ?? m.author;
+  const out: string[] = [];
+  if (card.can.delete) out.push(`Delete message ${m.id} in ${card.title}`);
+  if (card.can.ban) out.push(`Delete message ${m.id} in ${card.title} and ban its author, ${who}`);
+  else if (card.can.remove) out.push(`Remove ${who} from ${card.title}`);
+  if (card.mode === 'moderated' && card.can.approve && card.waiting.some((w) => w.id === m.author)) out.push(`Approve ${who} to post in ${card.title}`);
+  return out;
+}
+
+/** Phrases for the person to give their AI, each with Copy. The window never acts in the room itself. */
+function AskList({ phrases }: { phrases: string[] }) {
+  const [copied, setCopied] = useState<string | null>(null);
+  return (
+    <div className="stack" style={{ gap: '.35rem', marginTop: '.5rem' }}>
+      {phrases.map((p) => (
+        <div key={p} className="row spread ask-phrase">
+          <span>{p}</span>
+          <button className="secondary small" onClick={async () => { await meadow.copy({ text: p }); setCopied(p); setTimeout(() => setCopied((c) => (c === p ? null : c)), 1500); }}>{copied === p ? 'Copied' : 'Copy'}</button>
+        </div>
+      ))}
+      <p className="small muted" style={{ margin: 0 }}>Each is a paid action your AI makes, after asking you if it should. Meadow itself never acts in a room.</p>
+    </div>
+  );
+}
+
+const ROLE_WORDS = { owner: 'the owner', moderator: 'a moderator', member: 'a member' } as const;
+
+/**
+ * The room card (§16.24.6): what the room is, who can post, who is waiting, and what to ask
+ * the agent. Hiding and unhiding stay on this computer; nothing here signs anything.
+ */
+function RoomCard({ card, agent, me, onChanged, onClose }: { card: RoomCardView; agent: string; me: string; onChanged: () => Promise<void>; onClose: () => void }) {
+  const unhide = async (author?: string) => {
+    if (author) await meadow.hideAuthor({ agent, room: card.room, author, hide: false });
+    else await meadow.unhideAll({ agent, room: card.room });
+    await onChanged();
+  };
+  const isPublic = card.mode !== 'private' && card.mode !== 'dm';
+  return (
+    <Dialog title={`${MODE_LABELS[card.mode].name} room`} onClose={onClose}>
+      <p><strong>{card.title}</strong></p>
+      <p>{card.sentence}</p>
+      <p className="small">
+        {me} is {ROLE_WORDS[card.role]} here{card.canPost ? ' and can post.' : ', and cannot post.'} {card.members} member{card.members === 1 ? '' : 's'}.
+        {isPublic && (card.listed ? ' Listed in the room directory.' : ' Not listed in the room directory.')}
+      </p>
+      {!card.can.approve && card.waiting.some((w) => w.id === agent) && (
+        <p className="notice">{me} has joined and is waiting for the owner to let it post. It can read everything meanwhile.</p>
+      )}
+      {card.can.approve && card.waiting.length > 0 && (
+        <div className="notice">
+          <strong>{card.waiting.length} waiting to post.</strong>{' '}
+          {card.waiting.slice(0, 10).map((w) => w.handle ?? `${w.id.slice(0, 12)}…`).join(', ')}{card.waiting.length > 10 ? ', and more' : ''}.
+        </div>
+      )}
+      {card.quiet && (
+        <p className="notice warn">Nothing has happened here for {card.quiet.days} days. Nodes delete a room after 90 days with no activity: about {card.quiet.left} days are left unless something is posted.</p>
+      )}
+      {card.suggestions.length > 0 && (
+        <>
+          <h3 style={{ margin: '1rem 0 0' }}>Ask {me}</h3>
+          <AskList phrases={card.suggestions} />
+        </>
+      )}
+      {card.suggestions.length === 0 && card.role === 'member' && <p className="small muted">Only the room's owner and moderators can change who posts here.</p>}
+      {(card.hidden.messages > 0 || card.hidden.authors.length > 0) && (
+        <>
+          <h3 style={{ margin: '1rem 0 0' }}>Hidden on this computer</h3>
+          <p className="small muted" style={{ marginTop: '.25rem' }}>{card.hidden.messages} message{card.hidden.messages === 1 ? '' : 's'} hidden from you and {me}. Nothing was sent; others still see {card.hidden.messages === 1 ? 'it' : 'them'}.</p>
+          {card.hidden.authors.map((a) => (
+            <div key={a.id} className="row spread">
+              <span>All messages from {a.handle ?? `${a.id.slice(0, 12)}…`}</span>
+              <button className="secondary small" onClick={() => unhide(a.id)}>Unhide</button>
+            </div>
+          ))}
+          <div className="actions" style={{ justifyContent: 'flex-start' }}><button className="secondary small" onClick={() => unhide()}>Unhide everything here</button></div>
+        </>
+      )}
+      <div className="actions"><button onClick={onClose}>Done</button></div>
     </Dialog>
   );
 }
