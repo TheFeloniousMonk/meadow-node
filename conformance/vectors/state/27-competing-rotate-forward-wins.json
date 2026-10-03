@@ -1,0 +1,299 @@
+{
+  "name": "competing-rotate-forward-wins",
+  "description": "Two concurrent room.rotate bindings by one agent, to two events on one chain (rot1, then rot2). Neither is a power event, so mainline order applies them (no power table: depth 0, then ts). The binding to rot2 has the lower ts and applies first; the binding to rot1 then fails rule 10, because a binding only moves forward along the chain. The furthest binding wins whatever the order.",
+  "spec_sections": [
+    "3.4",
+    "6.5",
+    "6.8"
+  ],
+  "agents": {
+    "alice": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+    "bob": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg"
+  },
+  "steps": [
+    {
+      "label": "create",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.create",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000001000,
+          "parents": [],
+          "auth": [],
+          "data": {
+            "room_version": 1,
+            "type": "public"
+          }
+        },
+        "id": "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+        "sig": "ceujs60yvTYg6NrNJ2dMrsgBtuIPDMolSltqJ7BvyGAGddSdf_HP48gAgbmUIJa44su34Moe_rqDdtxItZYvCQ"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "alice-join",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000002000,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc"
+          ],
+          "data": {
+            "target": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+            "membership": "join"
+          },
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc"
+          ]
+        },
+        "id": "e_7E9n0bk9mHzmQdSl1fGjT7riD3QUVRkZ6Oi3oEs9Y2Q",
+        "sig": "UtgSrBWAUssgmfrogA-Ath6lRgMyLnfizVo08AKqHR_jeQzHeOYkoteQ7RhBDh9bZFzv5fsKc6ads3S4vYM2Cw"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "bob-register",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "agent.register",
+          "author": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+          "parents": [],
+          "auth": [],
+          "ts": 1790000003000,
+          "data": {
+            "name": "bob",
+            "keys": {
+              "curve25519": "grjcqfO7uObK7JNBBjOvu6NCKZoLH4lnjN3s8puZa8w",
+              "fallback": "K6gfPX6A-siZYMC89EZAWPCgWelQgyjtT77Yof2onU8"
+            }
+          }
+        },
+        "id": "e_evdkNx-9tcBw8U-6poigA9mArVgE8vMaI32LOqsZ6kM",
+        "sig": "RK12JYhBKh28b451rz2jm89CQXcPOjk-GFMcy7VxvVTFbNnvYTAhnMLc-yrET1phAkwSj9yT1dxf_-gOeT2VBw"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "bob-join",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+          "ts": 1790000004000,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_7E9n0bk9mHzmQdSl1fGjT7riD3QUVRkZ6Oi3oEs9Y2Q"
+          ],
+          "data": {
+            "target": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+            "membership": "join"
+          },
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc"
+          ]
+        },
+        "id": "e_whuYm8yx96QmTkBwLiWRK9ACJY7G39TwBc9GzmfvajY",
+        "sig": "IjPHrNnaegzPoBux7bP_u_QvD4n24OE5EunDEYX4WKAH9V5BHoq4cUKk4FxhhxnIAuV_oz6s8h37kkRxtwUqDQ"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "bob-rot1",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "agent.rotate",
+          "author": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+          "parents": [
+            "e_evdkNx-9tcBw8U-6poigA9mArVgE8vMaI32LOqsZ6kM"
+          ],
+          "auth": [],
+          "ts": 1790000005000,
+          "data": {
+            "key": "mLuC1kCTunI53COoKuDH6dCFB4Vtz7f2qf1RapaHjVQ"
+          }
+        },
+        "id": "e_3hU20Vcf8yS7Fnu7nDpyA3jFb04LFh2eUr-hlpahTb4",
+        "sig": "4iVkOteQ2k5t_Wi0_gcy4ZX9aZ3pWqlwgTeQ0J4N6ytfRnlxqIm8R99QE4AqvvzhZYNrhIEgBLRrI6BVl1QRDQ"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "bob-rot2",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "agent.rotate",
+          "author": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+          "parents": [
+            "e_3hU20Vcf8yS7Fnu7nDpyA3jFb04LFh2eUr-hlpahTb4"
+          ],
+          "auth": [],
+          "ts": 1790000006000,
+          "data": {
+            "key": "q2qJsOBr2KhHyLY-8xQG5Ref5tcklZ0pomzutgF82lA"
+          },
+          "signer": "mLuC1kCTunI53COoKuDH6dCFB4Vtz7f2qf1RapaHjVQ"
+        },
+        "id": "e_5qspXFQAmr6NCba60aRJ6Z459ke_0rnuiQ-4IkPkq-w",
+        "sig": "1XLYD4GHABdQiyEfVWDq2pgFrd-sos2BPAJko0GLOlXAzhRjAPqTbe53BYZhmDjOZqGNA1c1p8IYZRojJkyDBA"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "bind-rot2",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.rotate",
+          "author": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+          "ts": 1790000007000,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_whuYm8yx96QmTkBwLiWRK9ACJY7G39TwBc9GzmfvajY"
+          ],
+          "data": {
+            "chain": "e_5qspXFQAmr6NCba60aRJ6Z459ke_0rnuiQ-4IkPkq-w"
+          },
+          "signer": "q2qJsOBr2KhHyLY-8xQG5Ref5tcklZ0pomzutgF82lA",
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+            "e_whuYm8yx96QmTkBwLiWRK9ACJY7G39TwBc9GzmfvajY"
+          ]
+        },
+        "id": "e_a1NKgK9KHlYEa-2mWtIKawXiIqBW8KL5MInC4zMG5dc",
+        "sig": "GTF_5nT-f-uphxdG721izqa_wRQ5fkExipIW_l5sD3T6ZHBBRqgexP1ZdF5-yyJiE_ZJaiderSPZAWivSQzUDA"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "bind-rot1",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.rotate",
+          "author": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+          "ts": 1790000008000,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_whuYm8yx96QmTkBwLiWRK9ACJY7G39TwBc9GzmfvajY"
+          ],
+          "data": {
+            "chain": "e_3hU20Vcf8yS7Fnu7nDpyA3jFb04LFh2eUr-hlpahTb4"
+          },
+          "signer": "mLuC1kCTunI53COoKuDH6dCFB4Vtz7f2qf1RapaHjVQ",
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+            "e_whuYm8yx96QmTkBwLiWRK9ACJY7G39TwBc9GzmfvajY"
+          ]
+        },
+        "id": "e_gX_2ajNVU_hufljlym3vG7fcOVUDXE47hHuqcASqYd4",
+        "sig": "lpWzb-mChGLy9JIaG1NSUvwCjYPYH-VaE45ZxHT2aHTeew0PknjJaCmoSDSjDhEZTd2kYqU6TXMj7VBKuNoAAw"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": true
+      }
+    },
+    {
+      "label": "bob-merge",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "msg.post",
+          "author": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+          "ts": 1790000009000,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_a1NKgK9KHlYEa-2mWtIKawXiIqBW8KL5MInC4zMG5dc",
+            "e_gX_2ajNVU_hufljlym3vG7fcOVUDXE47hHuqcASqYd4"
+          ],
+          "content_hash": "EdZd9wwqmgAGjECBBn6AUipZZ8D5SlWIGZjXZJIr5AM",
+          "content_len": 16,
+          "signer": "q2qJsOBr2KhHyLY-8xQG5Ref5tcklZ0pomzutgF82lA",
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+            "e_whuYm8yx96QmTkBwLiWRK9ACJY7G39TwBc9GzmfvajY",
+            "e_a1NKgK9KHlYEa-2mWtIKawXiIqBW8KL5MInC4zMG5dc"
+          ]
+        },
+        "id": "e_MNIXuowcxa9S5qxgVpL2eapACipnRSlKQxtSuBtoY4s",
+        "sig": "4_JvIm5oPMn90E4rv8NUft3Edqj9vwC5LkMVBjhfE2mBWPLXUPMkXm0R03BmE2JxubYv13S0e0LZWSzcAenrBg",
+        "content": "{\"text\":\"merge\"}"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "bob-post-second-key",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "msg.post",
+          "author": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+          "ts": 1790000010000,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_MNIXuowcxa9S5qxgVpL2eapACipnRSlKQxtSuBtoY4s"
+          ],
+          "content_hash": "HJTjGez4knCl4u2K6Lu6HH-f8FvDqfuGThNnd91BOg0",
+          "content_len": 22,
+          "signer": "mLuC1kCTunI53COoKuDH6dCFB4Vtz7f2qf1RapaHjVQ",
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+            "e_whuYm8yx96QmTkBwLiWRK9ACJY7G39TwBc9GzmfvajY",
+            "e_a1NKgK9KHlYEa-2mWtIKawXiIqBW8KL5MInC4zMG5dc"
+          ]
+        },
+        "id": "e_evHlYoM-xphqDWbbFuaTzA9Wk00fZTtB-_FvvqEvCAU",
+        "sig": "y2t6iOpc-zM41yQPlgnWNSQkHlWFa9CmgsRj-k1FTJ_KmvfQdCLtsCXnpyu42qkGOkkgjPhKLfoIPUBIrroZBA",
+        "content": "{\"text\":\"retired key\"}"
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "wrong_signer"
+      }
+    }
+  ],
+  "final": {
+    "heads": [
+      "bob-merge"
+    ],
+    "state": {
+      "room.create|": "create",
+      "room.member|a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o": "alice-join",
+      "room.member|a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg": "bob-join",
+      "room.rotate|a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg": "bind-rot2"
+    }
+  }
+}

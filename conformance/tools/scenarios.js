@@ -656,4 +656,265 @@ export const scenarios = [
       ],
     }),
   },
+  {
+    name: 'competing-rotate-forward-wins',
+    description: 'Two concurrent room.rotate bindings by one agent, to two events on one chain (rot1, then rot2). Neither is a power event, so '
+      + 'mainline order applies them (no power table: depth 0, then ts). The binding to rot2 has the lower ts and applies first; the binding '
+      + 'to rot1 then fails rule 10, because a binding only moves forward along the chain. The furthest binding wins whatever the order.',
+    sections: ['3.4', '6.5', '6.8'],
+    build(s) {
+      const alice = s.agent('alice'), bob = s.agent('bob');
+      s.create('create', alice, { type: 'public' });
+      s.join('alice-join', alice);
+      s.register('bob-register', bob);
+      s.join('bob-join', bob);
+      s.agentEvent('bob-rot1', bob, 'agent.rotate', { parent: 'bob-register', data: { key: s.newKey(bob, 'second') } });
+      s.agentEvent('bob-rot2', bob, 'agent.rotate', { parent: 'bob-rot1', data: { key: s.newKey(bob, 'third') }, key: 'second' });
+      const t = s.clock;
+      s.bind('bind-rot2', bob, 'bob-rot2', { key: 'third', parents: ['bob-join'], ts: t + 1000 });
+      s.bind('bind-rot1', bob, 'bob-rot1', { key: 'second', parents: ['bob-join'], ts: t + 2000 });
+      s.clock = t + 2000;
+      s.post('bob-merge', bob, 'merge', { key: 'third' });
+      s.post('bob-post-second-key', bob, 'retired key', { key: 'second' });
+    },
+    // Hand derivation:
+    // - bind-rot2 arrives first: valid at bob-join (no binding yet; signed with rot2's key), and the current state agrees. bob's chain
+    //   head is rot2 (most rotations), whose key signed it. Accepted.
+    // - bind-rot1: valid at its parents (no binding there), so accepted; but the current state binds rot2, and rot1 is not a strict
+    //   descendant of rot2 (rule 10), so soft-failed. Its key is also not the head's.
+    // - bob-merge, parents both bindings: conflicted key room.rotate|bob = {bind-rot2, bind-rot1}. No power events, no power table, so
+    //   no mainline root: depth 0, then ts. bind-rot2 (t+1000) applies; bind-rot1 (t+2000) fails rule 10 against it. The state binds
+    //   rot2, so the merge is signed with rot2's key: accepted.
+    // - bob-post-second-key: the room expects rot2's key, so wrong_signer.
+    expect: () => ({
+      outcomes: {
+        create: 'accepted', 'alice-join': 'accepted', 'bob-register': 'accepted', 'bob-join': 'accepted', 'bob-rot1': 'accepted',
+        'bob-rot2': 'accepted', 'bind-rot2': 'accepted', 'bind-rot1': 'soft_failed', 'bob-merge': 'accepted',
+        'bob-post-second-key': 'rejected:wrong_signer',
+      },
+      heads: ['bob-merge'],
+      state: [
+        ['room.create', '', 'create'], ['room.member', 'alice', 'alice-join'], ['room.member', 'bob', 'bob-join'],
+        ['room.rotate', 'bob', 'bind-rot2'],
+      ],
+    }),
+  },
+  {
+    name: 'competing-rotate-forked-chain',
+    description: 'The agent chain forks: two clients each rotate from agent.register (rotA, rotB), and each binds the room to its own rotation '
+      + 'at the same ts. Neither binding descends from the other, so resolution applies the lower event ID first and the other fails rule 10. '
+      + 'The room then expects the winning binding\'s key. The agent\'s head (§5.4: a tie on rotations and length, so the lower agent event ID) '
+      + 'decides only soft-failing, never validity.',
+    sections: ['3.4', '5.4', '6.5', '6.6', '6.8'],
+    build(s) {
+      const alice = s.agent('alice'), bob = s.agent('bob');
+      s.create('create', alice, { type: 'public' });
+      s.join('alice-join', alice);
+      s.register('bob-register', bob);
+      s.join('bob-join', bob);
+      s.agentEvent('bob-rotA', bob, 'agent.rotate', { parent: 'bob-register', data: { key: s.newKey(bob, 'second') } });
+      s.agentEvent('bob-rotB', bob, 'agent.rotate', { parent: 'bob-register', data: { key: s.newKey(bob, 'third') } });
+      const t = s.clock + 1000;
+      s.bind('bindA', bob, 'bob-rotA', { key: 'second', parents: ['bob-join'], ts: t });
+      s.bind('bindB', bob, 'bob-rotB', { key: 'third', parents: ['bob-join'], ts: t });
+      s.clock = t;
+      s.post('alice-merge', alice, 'merge');
+      const aWins = s.id('bindA') < s.id('bindB');
+      s.post('bob-post-winning-key', bob, 'winning key', { key: aWins ? 'second' : 'third' });
+      s.post('bob-post-losing-key', bob, 'losing key', { key: aWins ? 'third' : 'second' });
+    },
+    // Hand derivation:
+    // - bindA arrives first: valid, and the current state allows it. Soft-failed only if bob's chain head is rotB (key check, §6.6).
+    // - bindB: valid at bob-join; the current state binds rotA, and rotB is not a descendant of rotA: soft-failed.
+    // - alice-merge: room.rotate|bob conflicted, no power events, no root, same depth and ts, so the lower ID applies first and the
+    //   other fails rule 10. The winner is the binding with the lower ID.
+    // - bob-post-winning-key: allowed; soft-failed only if its key is not the chain head's. bob-post-losing-key: wrong_signer.
+    expect: (s) => {
+      const aWins = s.id('bindA') < s.id('bindB');
+      const headIsA = s.id('bob-rotA') < s.id('bob-rotB');
+      return {
+        outcomes: {
+          create: 'accepted', 'alice-join': 'accepted', 'bob-register': 'accepted', 'bob-join': 'accepted', 'bob-rotA': 'accepted',
+          'bob-rotB': 'accepted', bindA: headIsA ? 'accepted' : 'soft_failed', bindB: 'soft_failed', 'alice-merge': 'accepted',
+          'bob-post-winning-key': aWins === headIsA ? 'accepted' : 'soft_failed', 'bob-post-losing-key': 'rejected:wrong_signer',
+        },
+        heads: ['bob-post-winning-key'],
+        state: [
+          ['room.create', '', 'create'], ['room.member', 'alice', 'alice-join'], ['room.member', 'bob', 'bob-join'],
+          ['room.rotate', 'bob', aWins ? 'bindA' : 'bindB'],
+        ],
+      };
+    },
+  },
+  {
+    name: 'three-way-fork',
+    description: 'Three branches from one power table, merged by one event with three parents. The owner demotes carol; carol, still a '
+      + 'moderator on her branch, bans dave; bob removes erin. The owner\'s power event sorts first, so carol\'s ban fails in resolution and '
+      + 'bob\'s removal stands. The demotion has the latest ts: sender power, not time, puts it first.',
+    sections: ['6.6', '6.8'],
+    build(s) {
+      const [alice, bob, carol, dave, erin] = ['alice', 'bob', 'carol', 'dave', 'erin'].map((n) => s.agent(n));
+      s.create('create', alice, { type: 'public' });
+      for (const a of [alice, bob, carol, dave, erin]) s.join(`${a.name}-join`, a);
+      s.power('p1', alice, { alice: 100, bob: 50, carol: 50 });
+      const t = s.clock;
+      s.power('p2-demotes-carol', alice, { alice: 100, bob: 50 }, {}, { parents: ['p1'], ts: t + 3000 });
+      s.member('carol-bans-dave', carol, dave, 'ban', { parents: ['p1'], ts: t + 1000 });
+      s.member('bob-removes-erin', bob, erin, 'leave', { parents: ['p1'], ts: t + 2000 });
+      s.clock = t + 3000;
+      s.post('alice-merge', alice, 'merge');
+    },
+    // Hand derivation, resolving the three branches at alice-merge (§6.8):
+    // - conflicted: room.power {p2, p1}, member dave {dave-join, carol-bans-dave}, member erin {erin-join, bob-removes-erin}.
+    //   Auth difference: {p2, carol-bans-dave, bob-removes-erin}. No new subgraph events. Nothing is left after X.
+    // - X: the power events p1, p2, the ban, the removal, plus dave-join and erin-join from their auth chains.
+    // - order: p1 (alice 100); p2 (alice 100, though its ts is the latest); then, as each becomes available: dave-join (0, earlier ts), the ban (carol 50 in p1),
+    //   erin-join (0), the removal (bob 50).
+    // - iterative: p1, p2 pass. dave-join passes. The ban: carol's power under p2 is 0 < ban 50: fails. erin-join passes. The removal:
+    //   bob 50 >= remove 50, erin 0 < 50: passes.
+    // - Arrival: the ban is checked against the current state (p2 only), where carol has 0: soft-failed. The removal arrives when
+    //   the current state resolves p2 with the ban (the ban fails as above), so it is allowed: not soft-failed.
+    expect: () => ({
+      outcomes: {
+        create: 'accepted', 'alice-join': 'accepted', 'bob-join': 'accepted', 'carol-join': 'accepted', 'dave-join': 'accepted',
+        'erin-join': 'accepted', p1: 'accepted', 'p2-demotes-carol': 'accepted', 'carol-bans-dave': 'soft_failed',
+        'bob-removes-erin': 'accepted', 'alice-merge': 'accepted',
+      },
+      heads: ['alice-merge'],
+      state: [
+        ['room.create', '', 'create'], ['room.power', '', 'p2-demotes-carol'], ['room.member', 'alice', 'alice-join'],
+        ['room.member', 'bob', 'bob-join'], ['room.member', 'carol', 'carol-join'], ['room.member', 'dave', 'dave-join'],
+        ['room.member', 'erin', 'bob-removes-erin'],
+      ],
+    }),
+  },
+  {
+    name: 'long-lived-fork',
+    description: 'A moderator removed on one branch keeps acting on a long branch of his own: posts, a room name, a ban. Every event on his '
+      + 'branch is valid at its parents, so all are accepted, but soft-failed once the removal is known. At the merge his removal sorts '
+      + 'first, so his ban and his room name fail in resolution; his posts stay accepted. After the merge he cannot post.',
+    sections: ['6.6', '6.7', '6.8'],
+    build(s) {
+      const alice = s.agent('alice'), bob = s.agent('bob'), carol = s.agent('carol');
+      s.create('create', alice, { type: 'public' });
+      for (const a of [alice, bob, carol]) s.join(`${a.name}-join`, a);
+      s.power('p1', alice, { alice: 100, bob: 50 });
+      // Alice's branch, first in time.
+      s.meta('a-meta1', alice, { name: 'Alice 1' }, { parents: ['p1'] });
+      s.member('a-removes-bob', alice, bob, 'leave');
+      for (const i of [1, 2, 3]) s.post(`a-post${i}`, alice, `alice ${i}`);
+      s.meta('a-meta2', alice, { name: 'Alice 2' });
+      // Bob's branch from p1, later in time, each event on the one before.
+      let prev = 'p1';
+      const b = (label, fn) => { fn(label, [prev]); prev = label; };
+      for (const i of [1, 2, 3]) b(`b-post${i}`, (l, parents) => s.post(l, bob, `bob ${i}`, { parents }));
+      b('b-meta1', (l, parents) => s.meta(l, bob, { name: 'Bob 1' }, { parents }));
+      b('b-bans-carol', (l, parents) => s.member(l, bob, carol, 'ban', { parents }));
+      for (const i of [4, 5]) b(`b-post${i}`, (l, parents) => s.post(l, bob, `bob ${i}`, { parents }));
+      b('b-meta2', (l, parents) => s.meta(l, bob, { name: 'Bob 2' }, { parents }));
+      s.post('alice-merge', alice, 'merge');
+      s.post('bob-post-after-merge', bob, 'still here?');
+    },
+    // Hand derivation:
+    // - Alice's branch is checked against itself: all accepted.
+    // - Bob's branch: each event is valid at its parents (bob joined, 50 >= meta and ban, carol 0), so accepted. The current state
+    //   at each arrival resolves Alice's tip with Bob's branch so far; her removal (a power event by 100) sorts before anything of
+    //   bob's, so bob is not joined there: every event on his branch is soft-failed.
+    // - alice-merge (parents a-meta2, b-meta2): conflicted member bob {bob-join, a-removes-bob}, member carol {carol-join,
+    //   b-bans-carol}, room.meta {a-meta2, b-meta2}; p1 is in both. a-meta1 and b-meta1 are in no state's auth chain.
+    //   X = {a-removes-bob, b-bans-carol, bob-join, carol-join}, ordered bob-join (0, earlier), a-removes-bob (alice 100),
+    //   carol-join (0), b-bans-carol (bob 50). The removal passes; the ban fails (bob not joined).
+    // - Mainline: no power event in X, so the root is the unconflicted p1, depth 1 for both metas. By ts a-meta2 applies first and
+    //   b-meta2 fails (bob not joined); it would fail in either order.
+    // - bob-post-after-merge: bob is not joined: rejected.
+    expect: () => {
+      const outcomes = {
+        create: 'accepted', 'alice-join': 'accepted', 'bob-join': 'accepted', 'carol-join': 'accepted', p1: 'accepted',
+        'a-meta1': 'accepted', 'a-removes-bob': 'accepted', 'a-post1': 'accepted', 'a-post2': 'accepted', 'a-post3': 'accepted',
+        'a-meta2': 'accepted', 'alice-merge': 'accepted', 'bob-post-after-merge': 'rejected:not_joined',
+      };
+      for (const l of ['b-post1', 'b-post2', 'b-post3', 'b-meta1', 'b-bans-carol', 'b-post4', 'b-post5', 'b-meta2']) outcomes[l] = 'soft_failed';
+      return {
+        outcomes,
+        heads: ['alice-merge'],
+        state: [
+          ['room.create', '', 'create'], ['room.power', '', 'p1'], ['room.meta', '', 'a-meta2'],
+          ['room.member', 'alice', 'alice-join'], ['room.member', 'bob', 'a-removes-bob'], ['room.member', 'carol', 'carol-join'],
+        ],
+      };
+    },
+  },
+  {
+    name: 'equal-power-later-ts-wins',
+    description: 'Two moderators of equal power act on one member concurrently: bob bans dave, then carol removes him. Equal sender power, '
+      + 'so the earlier ts applies first. The removal, checked against the ban, is allowed (carol may unban), so the later one wins: dave '
+      + 'ends removed, not banned.',
+    sections: ['6.5', '6.8'],
+    build(s) {
+      const [alice, bob, carol, dave] = ['alice', 'bob', 'carol', 'dave'].map((n) => s.agent(n));
+      s.create('create', alice, { type: 'public' });
+      for (const a of [alice, bob, carol, dave]) s.join(`${a.name}-join`, a);
+      s.power('p1', alice, { alice: 100, bob: 50, carol: 50 });
+      const t = s.clock;
+      s.member('bob-bans-dave', bob, dave, 'ban', { parents: ['p1'], ts: t + 1000 });
+      s.member('carol-removes-dave', carol, dave, 'leave', { parents: ['p1'], ts: t + 2000 });
+      s.clock = t + 2000;
+      s.post('alice-merge', alice, 'merge');
+    },
+    // Hand derivation:
+    // - carol-removes-dave arrives after the ban. At its parents dave is joined: allowed. The current state has dave banned; carol
+    //   has 50 >= ban (may unban) and >= remove, dave 0 < 50: allowed, so not soft-failed.
+    // - Merge: member dave conflicted {ban, removal}, both power events. dave-join is in both auth chains: not in the full set.
+    //   Sender power 50 each, so ts: the ban, then the removal. The ban passes; the removal, against the ban, passes as above.
+    expect: () => ({
+      outcomes: {
+        create: 'accepted', 'alice-join': 'accepted', 'bob-join': 'accepted', 'carol-join': 'accepted', 'dave-join': 'accepted',
+        p1: 'accepted', 'bob-bans-dave': 'accepted', 'carol-removes-dave': 'accepted', 'alice-merge': 'accepted',
+      },
+      heads: ['alice-merge'],
+      state: [
+        ['room.create', '', 'create'], ['room.power', '', 'p1'], ['room.member', 'alice', 'alice-join'],
+        ['room.member', 'bob', 'bob-join'], ['room.member', 'carol', 'carol-join'], ['room.member', 'dave', 'carol-removes-dave'],
+      ],
+    }),
+  },
+  {
+    name: 'auth-difference-replays-promotion',
+    description: 'The room starts with the default power table. On one branch alice promotes carol to 100 (p2) and carol then changes a '
+      + 'level (p3); on the other alice writes a table without carol (pb). p2 is in the auth difference but on no auth path between '
+      + 'conflicted events, so only the auth difference brings it into resolution. Replayed first, p2 makes carol a peer of alice, so pb '
+      + '(which would demote a peer) fails and p3 stands. Without p2, pb would apply and p3 fail.',
+    sections: ['6.5', '6.8'],
+    build(s) {
+      const alice = s.agent('alice'), carol = s.agent('carol');
+      s.create('create', alice, { type: 'public' });
+      s.join('alice-join', alice);
+      s.join('carol-join', carol);
+      const t = s.clock;
+      s.power('p2', alice, { alice: 100, carol: 100 }, {}, { parents: ['carol-join'], ts: t + 1000 });
+      s.power('p3', carol, { alice: 100, carol: 100 }, { meta: 0 }, { parents: ['p2'], ts: t + 3000 });
+      s.power('pb', alice, { alice: 100 }, { invite: 50 }, { parents: ['carol-join'], ts: t + 2000 });
+      s.clock = t + 3000;
+      s.post('alice-merge', alice, 'merge');
+    },
+    // Hand derivation:
+    // - p2, p3 accepted. pb is valid at carol-join (default table: alice 100; only a level changes), but the current state is p3,
+    //   where removing carol (100, equal to alice's power) demotes a peer: soft-failed.
+    // - Merge: room.power conflicted {p3, pb}. Auth difference {p2, p3, pb}. p2's auth chain (create, alice-join) holds nothing
+    //   conflicted, so p2 is not in the conflicted subgraph; it is in the full set only through the auth difference.
+    // - X = {p2, p3, pb}, sender power 100 each (p2 and pb under the default table, p3 under p2). p2 (t+1000) first, then pb
+    //   (t+2000), then p3 (t+3000). p2 passes. pb, against p2, removes carol whose old level equals alice's: fails. p3, against p2:
+    //   carol 100 changes meta 50 -> 0: passes. Room power: p3.
+    expect: () => ({
+      outcomes: {
+        create: 'accepted', 'alice-join': 'accepted', 'carol-join': 'accepted', p2: 'accepted', p3: 'accepted', pb: 'soft_failed',
+        'alice-merge': 'accepted',
+      },
+      heads: ['alice-merge'],
+      state: [
+        ['room.create', '', 'create'], ['room.power', '', 'p3'], ['room.member', 'alice', 'alice-join'],
+        ['room.member', 'carol', 'carol-join'],
+      ],
+    }),
+  },
 ];

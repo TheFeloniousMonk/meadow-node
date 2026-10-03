@@ -8,6 +8,20 @@ relate.
 
 ## [Unreleased]
 
+### Added
+
+- Conformance: six state vectors for forks (SPEC §17 q6). Competing
+  `room.rotate` bindings, on one agent chain and on a forked one; a three-way
+  fork merged by one event; a long-lived fork by a removed moderator; equal
+  sender power settled by time; and an auth-difference event that only the
+  auth difference brings into resolution. No implementation change was needed.
+- Conformance: a convergence check. `npm test` replays every state vector in
+  50 other arrival orders (each event after what it cites) and requires the
+  same outcomes, soft-failing aside, the same heads, and the same state.
+- `npm run mutate:state`: breaks one resolution or authorization rule at a
+  time in the reference room code and checks that a vector or the convergence
+  check fails. All 13 mutations are caught.
+
 ## [0.4.0] - 2026-10-02
 
 Same protocol (3) and room version (1) as 0.3.x: no event format changes, so

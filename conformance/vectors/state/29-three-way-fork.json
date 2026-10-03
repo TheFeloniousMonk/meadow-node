@@ -1,0 +1,367 @@
+{
+  "name": "three-way-fork",
+  "description": "Three branches from one power table, merged by one event with three parents. The owner demotes carol; carol, still a moderator on her branch, bans dave; bob removes erin. The owner's power event sorts first, so carol's ban fails in resolution and bob's removal stands. The demotion has the latest ts: sender power, not time, puts it first.",
+  "spec_sections": [
+    "6.6",
+    "6.8"
+  ],
+  "agents": {
+    "alice": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+    "bob": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+    "carol": "a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc",
+    "dave": "a_cxWFBj3dx4pagEIiyaJGaZDSG48RWnDcQC1YNU67lGI",
+    "erin": "a_kfgY7B1Mo4scS_0NFYjgd1bLLFdk-7xc94Xy0CNoGos"
+  },
+  "steps": [
+    {
+      "label": "create",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.create",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000001000,
+          "parents": [],
+          "auth": [],
+          "data": {
+            "room_version": 1,
+            "type": "public"
+          }
+        },
+        "id": "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+        "sig": "ceujs60yvTYg6NrNJ2dMrsgBtuIPDMolSltqJ7BvyGAGddSdf_HP48gAgbmUIJa44su34Moe_rqDdtxItZYvCQ"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "alice-join",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000002000,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc"
+          ],
+          "data": {
+            "target": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+            "membership": "join"
+          },
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc"
+          ]
+        },
+        "id": "e_7E9n0bk9mHzmQdSl1fGjT7riD3QUVRkZ6Oi3oEs9Y2Q",
+        "sig": "UtgSrBWAUssgmfrogA-Ath6lRgMyLnfizVo08AKqHR_jeQzHeOYkoteQ7RhBDh9bZFzv5fsKc6ads3S4vYM2Cw"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "bob-join",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+          "ts": 1790000003000,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_7E9n0bk9mHzmQdSl1fGjT7riD3QUVRkZ6Oi3oEs9Y2Q"
+          ],
+          "data": {
+            "target": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+            "membership": "join"
+          },
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc"
+          ]
+        },
+        "id": "e_RXTcAxHGJQXu5BZNbcWjh_EeqJ0gF0K6OAj1CdS8Rio",
+        "sig": "-EnJwkS2THj2KNxH8zB99YuNtB3Hg1GYD3tQCRH3xqydAT5qFGZAHy5k9qOyPiNV-Q3klCCIA-sXa_acGM1OBA"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "carol-join",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc",
+          "ts": 1790000004000,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_RXTcAxHGJQXu5BZNbcWjh_EeqJ0gF0K6OAj1CdS8Rio"
+          ],
+          "data": {
+            "target": "a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc",
+            "membership": "join"
+          },
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc"
+          ]
+        },
+        "id": "e_HHr4H8PAWAuK27l3jKmbMGSq8CbZh17NRILleeCDvw4",
+        "sig": "SKPTTwgOfw2-2nHCmIaWS5C_1nkOTrepJr6jAj4Z_wGsNHRMyjky-jTp94G5BbgJahPlA3y6NO9bM_zGAKsdBQ"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "dave-join",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_cxWFBj3dx4pagEIiyaJGaZDSG48RWnDcQC1YNU67lGI",
+          "ts": 1790000005000,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_HHr4H8PAWAuK27l3jKmbMGSq8CbZh17NRILleeCDvw4"
+          ],
+          "data": {
+            "target": "a_cxWFBj3dx4pagEIiyaJGaZDSG48RWnDcQC1YNU67lGI",
+            "membership": "join"
+          },
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc"
+          ]
+        },
+        "id": "e_2kCXiCbkxYOgl9-YS5Bs8OrT81vrcCDIxwSfa-TRI90",
+        "sig": "IXbQ09rzzxtqrfN7T9tG1HFOU2VdHLUS3aKwkSDie5VBnF0BzUi-BSF9_XCuyBoEATP_bR-o1xwiCW6L2bf4Cg"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "erin-join",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_kfgY7B1Mo4scS_0NFYjgd1bLLFdk-7xc94Xy0CNoGos",
+          "ts": 1790000006000,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_2kCXiCbkxYOgl9-YS5Bs8OrT81vrcCDIxwSfa-TRI90"
+          ],
+          "data": {
+            "target": "a_kfgY7B1Mo4scS_0NFYjgd1bLLFdk-7xc94Xy0CNoGos",
+            "membership": "join"
+          },
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc"
+          ]
+        },
+        "id": "e_PjAcNuLPuFrnSl9uIw28PVA5dDWGZ5jTEhBP-4aQ_Ws",
+        "sig": "AjN4UDyhmlbvMfWLSklvlo5ZJX2lLj4oRybY4mq-J-6wSgGNWNeOPxv-wnSurEjmJU_de5WHvGDr2B68hIEhAg"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "p1",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.power",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000007000,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_PjAcNuLPuFrnSl9uIw28PVA5dDWGZ5jTEhBP-4aQ_Ws"
+          ],
+          "data": {
+            "users_default": 0,
+            "post": 0,
+            "invite": 0,
+            "remove": 50,
+            "ban": 50,
+            "delete": 50,
+            "meta": 50,
+            "power": 100,
+            "users": {
+              "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o": 100,
+              "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg": 50,
+              "a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc": 50
+            }
+          },
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+            "e_7E9n0bk9mHzmQdSl1fGjT7riD3QUVRkZ6Oi3oEs9Y2Q"
+          ]
+        },
+        "id": "e_Uj5DQN3Hre-jSXdf_PmoSwKfD87McWYIQ9ZoqYXw8LQ",
+        "sig": "K5hpV6-S_vwX50SIThaQhcmV3lXyH7pQf-WVReJNUqNC886i1e7KgpKEBXc4lCtxLuvHVGEku1-VFcpHrVEFCA"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "p2-demotes-carol",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.power",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000010000,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_Uj5DQN3Hre-jSXdf_PmoSwKfD87McWYIQ9ZoqYXw8LQ"
+          ],
+          "data": {
+            "users_default": 0,
+            "post": 0,
+            "invite": 0,
+            "remove": 50,
+            "ban": 50,
+            "delete": 50,
+            "meta": 50,
+            "power": 100,
+            "users": {
+              "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o": 100,
+              "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg": 50
+            }
+          },
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+            "e_Uj5DQN3Hre-jSXdf_PmoSwKfD87McWYIQ9ZoqYXw8LQ",
+            "e_7E9n0bk9mHzmQdSl1fGjT7riD3QUVRkZ6Oi3oEs9Y2Q"
+          ]
+        },
+        "id": "e_1J9e59MOCNoCTkK8QURU-K2Lvo8_c1q_Qe2_bTc7Wb4",
+        "sig": "NgerBhUbFgIZAbIfWbp_RKbUQC2jaZNqmHbdGwggpXo45aFw4ZjAxskQiYZIaqvp8wSAMYZLrzFEHF6NcAO7AQ"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "carol-bans-dave",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc",
+          "ts": 1790000008000,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_Uj5DQN3Hre-jSXdf_PmoSwKfD87McWYIQ9ZoqYXw8LQ"
+          ],
+          "data": {
+            "target": "a_cxWFBj3dx4pagEIiyaJGaZDSG48RWnDcQC1YNU67lGI",
+            "membership": "ban"
+          },
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+            "e_Uj5DQN3Hre-jSXdf_PmoSwKfD87McWYIQ9ZoqYXw8LQ",
+            "e_HHr4H8PAWAuK27l3jKmbMGSq8CbZh17NRILleeCDvw4",
+            "e_2kCXiCbkxYOgl9-YS5Bs8OrT81vrcCDIxwSfa-TRI90"
+          ]
+        },
+        "id": "e_Vm1IrI0wX20p4-BGQ08bSi89Sgimq5bA-K3CLf3hEhw",
+        "sig": "n9MU1fjtkPlp4MnwJDyASfgvy6I80BkhNLPB2G3sluQqh-H1KZBD4Vc71ZH1Fbynz7eknoAeKwTaAC-5HSByDw"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": true
+      }
+    },
+    {
+      "label": "bob-removes-erin",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "room.member",
+          "author": "a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg",
+          "ts": 1790000009000,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_Uj5DQN3Hre-jSXdf_PmoSwKfD87McWYIQ9ZoqYXw8LQ"
+          ],
+          "data": {
+            "target": "a_kfgY7B1Mo4scS_0NFYjgd1bLLFdk-7xc94Xy0CNoGos",
+            "membership": "leave"
+          },
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+            "e_Uj5DQN3Hre-jSXdf_PmoSwKfD87McWYIQ9ZoqYXw8LQ",
+            "e_RXTcAxHGJQXu5BZNbcWjh_EeqJ0gF0K6OAj1CdS8Rio",
+            "e_PjAcNuLPuFrnSl9uIw28PVA5dDWGZ5jTEhBP-4aQ_Ws"
+          ]
+        },
+        "id": "e_WtzMjj_xpuXP5YVmSignwDrScXLZCv2tDjj9kPJynlU",
+        "sig": "AHJFENe6mJp5VxkM9hREOmy9bH4JhB-t7cqAfNNiPk1hegHTyGRpj9InJvs2UqS4Fi1EwK9eqNNlw61I-r7dDA"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    },
+    {
+      "label": "alice-merge",
+      "event": {
+        "header": {
+          "v": 2,
+          "kind": "msg.post",
+          "author": "a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o",
+          "ts": 1790000011000,
+          "room": "r_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+          "parents": [
+            "e_1J9e59MOCNoCTkK8QURU-K2Lvo8_c1q_Qe2_bTc7Wb4",
+            "e_Vm1IrI0wX20p4-BGQ08bSi89Sgimq5bA-K3CLf3hEhw",
+            "e_WtzMjj_xpuXP5YVmSignwDrScXLZCv2tDjj9kPJynlU"
+          ],
+          "content_hash": "EdZd9wwqmgAGjECBBn6AUipZZ8D5SlWIGZjXZJIr5AM",
+          "content_len": 16,
+          "auth": [
+            "e_S-zPEK2Bbiw4IusdwEXkXvh-yKxNUA_mVQQtm2pU0Fc",
+            "e_1J9e59MOCNoCTkK8QURU-K2Lvo8_c1q_Qe2_bTc7Wb4",
+            "e_7E9n0bk9mHzmQdSl1fGjT7riD3QUVRkZ6Oi3oEs9Y2Q"
+          ]
+        },
+        "id": "e_i8UFDWpT1TbovaL-zM7ud3gFbttWSKQYTJBS1TwKXpo",
+        "sig": "7psBj2n2V1QCo3zAYWku2XTPXJRG0GPTw6wJWi1-0eGEEeuHLO2v0xi1XEDfLLYITXML7MNJiAVWZHQOm41qAQ",
+        "content": "{\"text\":\"merge\"}"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "soft_failed": false
+      }
+    }
+  ],
+  "final": {
+    "heads": [
+      "alice-merge"
+    ],
+    "state": {
+      "room.create|": "create",
+      "room.member|a_GtcsYFMHU0J4gPku0zTQ7_GxiZrliecaVpGWxjWY9-o": "alice-join",
+      "room.member|a_SXWzKQdSipM4ji9CsdPySgxoPpKpCY34PGo6NtnT-Tg": "bob-join",
+      "room.member|a_ZDzMTOJDw3TnkP4xnv1qubxsHzFHqgCwwwnrIsaqDjc": "carol-join",
+      "room.member|a_cxWFBj3dx4pagEIiyaJGaZDSG48RWnDcQC1YNU67lGI": "dave-join",
+      "room.member|a_kfgY7B1Mo4scS_0NFYjgd1bLLFdk-7xc94Xy0CNoGos": "bob-removes-erin",
+      "room.power|": "p2-demotes-carol"
+    }
+  }
+}
