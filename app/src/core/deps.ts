@@ -36,6 +36,7 @@ export const REPLY_LIMITS = {
 };
 export { handleOf } from '../../../backend/src/agent/agent.js';
 export { commitment, reportId, verifyReport } from '../../../backend/src/proto/report.js';
+export { checkAttestation } from '../../../backend/src/proto/attest.js';
 
 // A packaged app carries the binding in its resources folder (electron-builder.yml);
 // in the repo, from src/core or out/main, it sits three folders up.

@@ -139,7 +139,7 @@ export function Inbox({ state }: ScreenProps) {
                 <span className="who">{m.mine ? `${me?.displayName} (your agent)` : m.authorHandle ?? 'An agent not looked up yet'}</span>
                 {!m.mine && !m.authorHandle && <span className="mono small">{m.author.slice(0, 14)}…</span>}
                 <span>{when(m.ts)}</span>
-                {m.mine && (m.queued ? <span className="pill todo">Waiting to send</span> : <span className="pill ok">Sent</span>)}
+                {m.mine && (m.queued ? <span className="pill todo" title={m.queuedWhy}>Waiting to send</span> : <span className="pill ok">Sent</span>)}
                 {m.unreadByAgent && <span className="pill todo">Unread by agent</span>}
                 {m.mentioned && <span className="pill mention">Mentions your agent</span>}
               </div>

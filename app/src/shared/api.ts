@@ -190,6 +190,8 @@ export interface MessageView {
   replyTo?: string;
   unreadByAgent: boolean;
   queued: boolean;
+  /** Why a node kept it waiting, in plain words (§16.23), when it did. */
+  queuedWhy?: string;
   /** It mentions this agent (§16.20.3). */
   mentioned?: boolean;
   guard?: { verdict: string; matches: string[]; held: number };

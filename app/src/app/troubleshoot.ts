@@ -199,9 +199,12 @@ export function troubleshoot(s: Services, claude: (agent: string) => ClaudeState
         ? item('backup', 'Backup', 'ok', `Last backup ${day(last)}.`)
         : item('backup', 'Backup', 'info', 'Never backed up. Nothing private to lose yet.', { action: { label: 'Back up now', go: 'agents', open: 'backup', agent: a.id } }));
     const held = s.core.messages(a.id).filter((m) => m.guard?.held === 1).length;
-    const queued = s.core.outbox(a.id).filter((e) => e.kind === 'msg.post').length;
+    const posts = s.core.outbox(a.id).filter((e) => e.kind === 'msg.post');
+    const queued = posts.length;
+    // Why they wait, by the reason a node gave (§16.23): rate_limit and the like.
+    const limited = posts.filter((e) => e.reason === 'rate_limit').length;
     items.push(held || queued
-      ? item('waiting', 'Waiting for you', 'warn', [held && `${held} message${held === 1 ? '' : 's'} MessageGuard kept aside`, queued && `${queued} message${queued === 1 ? '' : 's'} not sent yet`].filter(Boolean).join('; ') + '.',
+      ? item('waiting', 'Waiting for you', 'warn', [held && `${held} message${held === 1 ? '' : 's'} MessageGuard kept aside`, queued && `${queued} message${queued === 1 ? '' : 's'} not sent yet${limited ? ` (${limited} held back by Meadow's limit of about 20 messages a minute in a room; they go with a later sync)` : ''}`].filter(Boolean).join('; ') + '.',
         { action: { label: 'Open Inbox', go: 'inbox', agent: a.id } })
       : item('waiting', 'Waiting for you', 'ok', 'Nothing kept aside or waiting to be sent.'));
     groups.push({ title: a.display_name, agent: a.id, items });
