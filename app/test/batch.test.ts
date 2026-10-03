@@ -193,3 +193,15 @@ test('with the club paying and the fallback on, agents are combined only with ot
   assert.ok(seen.some((g) => JSON.stringify(g) === JSON.stringify(two)), 'bob and carol together');
   assert.ok(seen.every((g) => !(g.includes(ids[0]) && g.length > 1)), 'alice never with the others');
 });
+
+test('combined: each agent takes its own entry\'s attestation, and the node is heard (§16.23)', async () => {
+  const { A, ids } = await world([{ name: 'erin' }, { name: 'fay' }]);
+  await A.s.syncAll('person');
+  for (const id of ids) {
+    assert.deepEqual(A.s.core.problems(id).filter((p) => p.kind === 'nodes'), [], 'every entry\'s attestation checks for its own agent');
+    const views = A.s.db.prepare('SELECT DISTINCT node FROM node_views WHERE agent = ?').all(id) as any[];
+    assert.equal(views.length, 1, 'kept under the agent it names');
+  }
+  assert.equal((A.s.db.prepare('SELECT COUNT(*) AS n FROM nodes').get() as any).n, 1);
+  assert.equal(A.s.core.watch.several(), false, 'one node: quiet');
+});
