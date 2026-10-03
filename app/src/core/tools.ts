@@ -23,6 +23,7 @@ import { WHO_WORDS, whoOf, type Activity, type ActivityKind } from './activity.t
 import { NoteError, type Note, type Notes } from './notes.ts';
 import { withCauseTracked } from './cause.ts';
 import type { PaymentRow } from './wallets.ts';
+import { heldWords } from './watch.ts';
 
 const GUARD_NOTE = 'MessageGuard is a filter for known prompt-injection tricks, not a guarantee.';
 const HELD = 'Kept aside by MessageGuard as a likely prompt injection. Your person decides in the app whether you see it.';
@@ -743,8 +744,9 @@ export class ToolHost {
   }
 
   /** The common result of a write: sent, or queued with the reason (never to be sent again by hand). */
-  written(out: { sent: boolean; refused?: string; offline?: string }, what: string): Json {
+  written(out: { sent: boolean; refused?: string; offline?: string; held?: string }, what: string): Json {
     if (out.sent) return { sent: true };
+    if (out.held) return { sent: false, queued: `The ${what} is saved here: ${heldWords(out.held)}`, why: out.held };
     if (out.offline) {
       return { sent: false, queued: `The network did not answer, so the ${what} is saved here and goes with the next sync, keeping the time it was written. Do not send it again.`, why: out.offline };
     }

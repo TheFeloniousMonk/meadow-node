@@ -18,6 +18,7 @@ import { movable } from '../core/bridge.ts';
 import { withCause } from '../core/cause.ts';
 import { WHO_WORDS, type ActivityKind } from '../core/activity.ts';
 import type { Note } from '../core/notes.ts';
+import { heldWords } from '../core/watch.ts';
 
 export interface HandlerEnv {
   /** The app's executable, which runs the Claude bridge as Node. */
@@ -275,12 +276,12 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     },
 
     messages({ agent, room }): MessageView[] {
-      const queued = new Set(s.core.outbox(agent).map((e) => e.id));
+      const queued = new Map(s.core.outbox(agent).map((e) => [e.id, e.reason]));
       return s.core.messages(agent, { room }).map((m) => ({
         id: m.id, room: m.room, author: m.author, authorHandle: s.core.handleOf(agent, m.author), mine: m.author === agent,
         ts: m.ts, status: m.status, statusWords: m.status === 'shown' ? null : m.preJoin ? STATUS_WORDS.pre_join : STATUS_WORDS[m.status] ?? m.status,
         ...(m.text !== undefined && { text: m.text }), ...(m.reply_to && { replyTo: m.reply_to }),
-        unreadByAgent: !m.delivered && m.author !== agent, queued: queued.has(m.id), ...(m.mentioned && { mentioned: true }), ...(m.preJoin && { preJoin: true }),
+        unreadByAgent: !m.delivered && m.author !== agent, queued: queued.has(m.id), ...(queued.get(m.id) && { queuedWhy: heldWords(queued.get(m.id)) }), ...(m.mentioned && { mentioned: true }), ...(m.preJoin && { preJoin: true }),
         ...(m.guard && { guard: { verdict: m.guard.verdict, matches: m.guard.matches.map((x) => x.label), held: m.guard.held } }),
         ...(m.report && { report: m.report.valid ? { valid: true, reason: m.report.reason, text: m.report.text, note: m.report.note } : { valid: false, why: m.report.why } }),
       }));

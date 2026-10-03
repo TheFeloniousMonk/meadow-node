@@ -15,6 +15,7 @@ import { AgentCrypto, E2E_LIMITS, bundleKey, newAccount, vodozemacKey, NeedBundl
 import { newSeed, signEvent, signerFromSeed, signRequest, type Signer } from './identity.ts';
 import { networkName } from './names.ts';
 import { TransportError, type Transport } from './transport.ts';
+import { ATTESTATION_BROKEN, NodeWatch } from './watch.ts';
 import type { Vault } from './vault.ts';
 
 export const SYNC = {
@@ -175,6 +176,8 @@ export class Core {
   #ctx = new Map<string, Ctx>();
   #locks = new Map<string, Promise<unknown>>();
   #writeWaitMs: number;
+  /** Watching the nodes (§16.23). */
+  readonly watch: NodeWatch;
 
   constructor({ db, vault, transport, now = Date.now, afterSync, onSyncError, onReceived, writeWaitMs = WRITE_WAIT_MS }: CoreOptions) {
     this.#writeWaitMs = writeWaitMs;
@@ -185,6 +188,10 @@ export class Core {
     this.#vault = vault;
     this.#transport = transport;
     this.#now = now;
+    this.watch = new NodeWatch({
+      db, now: () => this.#now(), problem: (agent, kind, text) => this.#problem(agent, kind, text),
+      meta: (k) => this.#meta(k), setMeta: (k, v) => this.#setMeta(k, v),
+    });
   }
 
   // --- Agents (§16.2, §16.6) ----------------------------------------------------
@@ -388,9 +395,9 @@ export class Core {
   /** Stores an event the agent's room processed, in arrival order. */
   #storeEvent(ctx: Ctx, roomId: string, ev: MeadowEvent, outcome: unknown, withheld?: string) {
     const seq = (this.#db.prepare('SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM events WHERE agent = ?').get(ctx.id) as any).n;
-    this.#db.prepare(`INSERT OR IGNORE INTO events (agent, room, id, seq, event, outcome, content, withheld)
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(ctx.id, roomId, ev.id, seq, JSON.stringify({ header: ev.header, id: ev.id, sig: ev.sig }), JSON.stringify(outcome), ev.content ?? null, withheld ?? null);
+    this.#db.prepare(`INSERT OR IGNORE INTO events (agent, room, id, seq, event, outcome, content, withheld, held_at)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(ctx.id, roomId, ev.id, seq, JSON.stringify({ header: ev.header, id: ev.id, sig: ev.sig }), JSON.stringify(outcome), ev.content ?? null, withheld ?? null, this.#now());
   }
 
   /**
@@ -437,12 +444,18 @@ export class Core {
    * were written, and the caller is told so (an AI that saw an error might send it twice).
    * A write that cannot start within WRITE_WAIT_MS is refused and never sent.
    */
-  async #write<T>(agent: string, build: (ctx: Ctx) => T | Promise<T>): Promise<{ result: T; sent: boolean; refused?: string; offline?: string; report?: SyncReport }> {
+  async #write<T>(agent: string, build: (ctx: Ctx) => T | Promise<T>): Promise<{ result: T; sent: boolean; refused?: string; offline?: string; held?: string; report?: SyncReport }> {
     return this.#exclusive(agent, async () => {
       const ctx = this.#load(agent);
+      const before = new Set(this.outbox(agent).map((e) => e.id));
       const result = await build(ctx);
+      const mine = this.outbox(agent).filter((e) => !before.has(e.id)).map((e) => e.id);
       try {
         const report = await this.#sync(ctx);
+        // A node that answered but kept this write's event pending (§7.2) did not take it yet (§16.23).
+        const left = new Map(this.outbox(agent).map((e) => [e.id, e.reason]));
+        const held = mine.find((id) => left.has(id));
+        if (held) return { result, sent: false, held: left.get(held) ?? 'missing', report };
         return { result, sent: true, report };
       } catch (err) {
         if (err instanceof TransportError && err.kind === 'refused') return { result, sent: false, refused: err.message };
@@ -939,14 +952,19 @@ export class Core {
   }
 
   async #ingestSyncInner(ctx: Ctx, data: any, report: SyncReport, received: Received[]) {
+    const node = typeof data.node === 'string' ? data.node : null;
+    this.watch.heard(node);
     tx(this.#db, () => this.#ingestNames(ctx, data));
     tx(this.#db, () => {
+      const delivered: { id: string; room: string }[] = [];
       for (const id of data.accepted ?? []) {
-        const row: any = this.#db.prepare('SELECT kind FROM outbox WHERE agent = ? AND id = ?').get(ctx.id, id);
+        const row: any = this.#db.prepare('SELECT kind, room FROM outbox WHERE agent = ? AND id = ?').get(ctx.id, id);
+        if (row?.room && !String(row.kind).startsWith('agent.')) delivered.push({ id, room: row.room });
         if (row?.kind === 'agent.register') this.#db.prepare('UPDATE agents SET registered_at = COALESCE(registered_at, ?) WHERE id = ?').run(this.#now(), ctx.id);
         this.#db.prepare('DELETE FROM outbox WHERE agent = ? AND id = ?').run(ctx.id, id);
         report.accepted.push(id);
       }
+      if (node && delivered.length) this.watch.accepted(ctx.id, node, delivered);
       for (const r of data.rejected ?? []) {
         const row: any = this.#db.prepare('SELECT kind FROM outbox WHERE agent = ? AND id = ?').get(ctx.id, r.id);
         this.#db.prepare('DELETE FROM outbox WHERE agent = ? AND id = ?').run(ctx.id, r.id);
@@ -987,6 +1005,19 @@ export class Core {
       } else if (entry.events?.length) {
         countNew(report, roomId, await this.ingestRoomEvents(ctx.id, roomId, entry.events));
       }
+    }
+    // Watching the nodes (§16.23): what this node served, and what it attests holding.
+    if (node) {
+      const served = new Map<string, Set<string>>();
+      for (const [roomId, entry] of Object.entries<any>(data.rooms ?? {})) {
+        if (Array.isArray(entry?.events)) served.set(roomId, new Set(entry.events.map((e: any) => e?.id).filter((x: unknown) => typeof x === 'string')));
+      }
+      const ok = this.watch.observe(ctx.id, node, served, data.attestation, (roomId) => {
+        const room = this.#room(ctx, roomId);
+        return room.size > 0 ? room : null;
+      });
+      if (!ok) this.#problem(ctx.id, 'nodes', ATTESTATION_BROKEN);
+      this.watch.notices(ctx.id);
     }
   }
 

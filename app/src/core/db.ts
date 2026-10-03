@@ -258,6 +258,26 @@ CREATE TABLE IF NOT EXISTS conn_events (
 );
 
 -- Refusals and errors for the Dashboard (§16.10.1), in plain words.
+-- Watching the nodes (§16.23): nodes heard from; each node's latest attestation per room;
+-- delivery confirmation of the agent's own events; and evidence of events a node left out.
+CREATE TABLE IF NOT EXISTS nodes (node TEXT PRIMARY KEY, first_at INTEGER NOT NULL, last_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS node_views (
+  agent TEXT NOT NULL, node TEXT NOT NULL, room TEXT NOT NULL, ts INTEGER NOT NULL, attestation TEXT NOT NULL,
+  PRIMARY KEY (agent, node, room)
+);
+CREATE TABLE IF NOT EXISTS deliveries (
+  agent TEXT NOT NULL, id TEXT NOT NULL, room TEXT NOT NULL, accepted_by TEXT NOT NULL, accepted_at INTEGER NOT NULL,
+  confirmed_by TEXT, confirmed_at INTEGER, noticed INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (agent, id)
+);
+CREATE TABLE IF NOT EXISTS node_misses (
+  agent TEXT NOT NULL, node TEXT NOT NULL, room TEXT NOT NULL, event TEXT NOT NULL,
+  held_at INTEGER NOT NULL, attest_ts INTEGER NOT NULL, attestation TEXT NOT NULL, at INTEGER NOT NULL,
+  -- the latest attestation that also left this event out (the first is kept as attestation)
+  last_attest_ts INTEGER NOT NULL, last_attestation TEXT NOT NULL,
+  PRIMARY KEY (agent, node, event)
+);
+
 CREATE TABLE IF NOT EXISTS problems (
   seq INTEGER PRIMARY KEY AUTOINCREMENT,
   agent TEXT, at INTEGER NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL
@@ -290,6 +310,8 @@ const COLUMNS: [table: string, column: string, definition: string][] = [
   ['messages', 'mention_notified', 'INTEGER NOT NULL DEFAULT 0'],
   // What caused each payment (§16.9.4): tool:<name>, background, person, runner, messageguard, app.
   ['payments', 'cause', 'TEXT'],
+  // When the app first held each room event (§16.23); 0 for events stored before 0.1.7, never judged.
+  ['events', 'held_at', 'INTEGER NOT NULL DEFAULT 0'],
 ];
 
 export function openDb(path = ':memory:'): Db {
