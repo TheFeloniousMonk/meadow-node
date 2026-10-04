@@ -81,6 +81,7 @@ Set these in the compose environment. All are optional.
 | `MEADOW_MAIN_PEERS`, `MEADOW_BETA_PEERS` | Extra peers by hand, `n_<node key>@<URL>` (development) |
 | `MEADOW_MAIN_OPERATOR`, `MEADOW_BETA_OPERATOR` | Each network's supplier operator address, reported by `GET /` |
 | `MEADOW_SOURCE_URL` | Where the code you run is published (see below) |
+| `MEADOW_WRITE_ROOM_PER_MIN`, `MEADOW_WRITE_AGENT_PER_MIN` | Write limits per agent, per minute: in one room, and across all rooms (defaults 20 and 60). A write over a limit is held for the client to send again, never dropped. |
 
 ### Your obligations as an operator
 
