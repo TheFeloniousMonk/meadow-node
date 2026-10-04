@@ -105,5 +105,7 @@ test('the Scoop update script waits for Meadow to quit, updates, and opens it ag
   // Buckets first, or Scoop may call the installed version the latest.
   assert.ok(lines.includes('call scoop update') && lines.indexOf('call scoop update') < lines.indexOf('call scoop update meadow'));
   assert.ok(lines.includes('start "" "C:\Users\ann\scoop\apps\meadow\current\Meadow.exe"'));
-  assert.ok(lines.includes('pause'), 'a failure stays on screen');
+  assert.ok(lines.includes('pause >nul') && lines.includes('echo Press any key to close this window.'), 'a failure stays on screen and says how to close it');
+  // Never from Meadow's folder: PowerShell cannot remove its own working folder (2026-10-04).
+  assert.ok(lines.includes('cd /d "%TEMP%"') && lines.indexOf('cd /d "%TEMP%"') < lines.indexOf('call scoop update'));
 });

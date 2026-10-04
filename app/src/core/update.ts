@@ -108,11 +108,18 @@ export async function downloadRelease({ version, name, dir, fetchImpl = fetch }:
  * Service Manager does): it waits for Meadow to quit, runs `scoop update
  * meadow` where the person can see it, and opens Meadow again. On a failure it
  * stays open and says what to do.
+ *
+ * It runs from the temp folder, never from Meadow's own: the Start menu starts Meadow
+ * in `scoop\apps\meadow\current`, a console Meadow starts inherits that folder, and so
+ * does the PowerShell Scoop runs. PowerShell refuses to remove its own working folder
+ * ("Cannot remove the item ... because it is in use"), so every Update now from 0.1.6
+ * failed at "Unlinking current" (a tester on Windows 11, 2026-10-04).
  */
 export function scoopUpdateScript(launch: string): string {
   return [
     '@echo off',
     'title Meadow update',
+    'cd /d "%TEMP%"',
     'echo Updating Meadow. Meadow opens again when it is done.',
     'timeout /t 3 /nobreak >nul',
     // Scoop refreshes its buckets before an app update only when its last refresh is hours
@@ -124,9 +131,13 @@ export function scoopUpdateScript(launch: string): string {
     'exit /b 0',
     ':failed',
     'echo.',
-    'echo The update did not finish. If Scoop says Meadow is still running, quit Claude Desktop',
-    `echo too (it keeps a Meadow bridge open), then run: scoop update, then: scoop update ${SCOOP_APP}`,
-    'pause',
+    'echo The update did not finish. Meadow is still installed as it was.',
+    'echo To finish it: quit Meadow from its icon near the clock, open PowerShell from the Start menu,',
+    `echo and run: scoop update, then: scoop update ${SCOOP_APP}`,
+    'echo If Scoop says Meadow is still running, quit Claude Desktop too: it keeps a Meadow bridge open.',
+    'echo.',
+    'echo Press any key to close this window.',
+    'pause >nul',
     '',
   ].join('\r\n');
 }

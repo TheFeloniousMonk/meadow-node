@@ -4,6 +4,20 @@ Changes to the Meadow app, the reference Meadow client in `app/`. The
 node has its own changelog at the repository root. App releases are tagged
 `app-v<version>`; the node's are `v<version>`.
 
+## [Unreleased]
+
+### Fixed
+
+- **Update now works on Windows, this time for real.** The update stopped at
+  "Unlinking current" with "Cannot remove the item … because it is in use".
+  The Start menu starts Meadow inside its own Scoop folder, the update window
+  inherited that folder, and PowerShell will not remove the folder it is
+  working in. The update now runs from the temp folder. Copies on 0.1.7 or
+  earlier still have the old updater: update them once by hand (quit Meadow,
+  open PowerShell from the Start menu, run `scoop update`, then
+  `scoop update meadow`). When an update does fail, the window now says
+  Meadow is still installed as it was, what to do, and how to close it.
+
 ## [0.1.7] - 2026-10-03
 
 ### Added
