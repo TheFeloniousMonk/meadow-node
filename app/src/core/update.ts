@@ -105,23 +105,29 @@ export async function downloadRelease({ version, name, dir, fetchImpl = fetch }:
 
 /**
  * The console script a Scoop install runs to update itself (as the Pocket
- * Service Manager does): it waits for Meadow to quit, runs `scoop update
- * meadow` where the person can see it, and opens Meadow again. On a failure it
- * stays open and says what to do.
+ * Service Manager does): it waits until nothing of Meadow's is running (the
+ * wait script below), runs `scoop update meadow` where the person can see it,
+ * and opens Meadow again. On a failure it stays open and says what to do.
  *
  * It runs from the temp folder, never from Meadow's own: the Start menu starts Meadow
  * in `scoop\apps\meadow\current`, a console Meadow starts inherits that folder, and so
  * does the PowerShell Scoop runs. PowerShell refuses to remove its own working folder
  * ("Cannot remove the item ... because it is in use"), so every Update now from 0.1.6
  * failed at "Unlinking current" (a tester on Windows 11, 2026-10-04).
+ *
+ * `wait` is the path of the wait script. Its exit code: 0 go on, 2 the person chose not
+ * to close what is still running, 3 something would not close.
  */
-export function scoopUpdateScript(launch: string): string {
+export function scoopUpdateScript(launch: string, wait: string): string {
   return [
     '@echo off',
     'title Meadow update',
     'cd /d "%TEMP%"',
     'echo Updating Meadow. Meadow opens again when it is done.',
-    'timeout /t 3 /nobreak >nul',
+    'echo Waiting for Meadow to close...',
+    `powershell -NoProfile -ExecutionPolicy Bypass -File "${wait}"`,
+    'if errorlevel 3 goto failed',
+    'if errorlevel 2 goto declined',
     // Scoop refreshes its buckets before an app update only when its last refresh is hours
     // old; otherwise it reports the installed version as the latest. Refresh first.
     'call scoop update',
@@ -129,15 +135,62 @@ export function scoopUpdateScript(launch: string): string {
     'if errorlevel 1 goto failed',
     `start "" "${launch}"`,
     'exit /b 0',
+    ':declined',
+    'echo.',
+    'echo Nothing was changed. Meadow is still installed as it was.',
+    'echo To update later, press Update now in Meadow again.',
+    'goto close',
     ':failed',
     'echo.',
     'echo The update did not finish. Meadow is still installed as it was.',
     'echo To finish it: quit Meadow from its icon near the clock, open PowerShell from the Start menu,',
     `echo and run: scoop update, then: scoop update ${SCOOP_APP}`,
     'echo If Scoop says Meadow is still running, quit Claude Desktop too: it keeps a Meadow bridge open.',
+    ':close',
     'echo.',
     'echo Press any key to close this window.',
     'pause >nul',
+    '',
+  ].join('\r\n');
+}
+
+/**
+ * The wait script (PowerShell) the update runs first, so Scoop never meets a running
+ * Meadow ("The following instances of meadow are still running", a tester, 2026-10-04).
+ * Meadow's own processes get 20 seconds to finish quitting. Whatever of Meadow's is still
+ * running after that, the app or the bridges Claude Desktop and Claude Code keep open
+ * (every process whose executable is under Meadow's Scoop folder), is named in plain
+ * words, and closed only if the person says so. ASCII only: Windows PowerShell 5 reads a
+ * file without a byte-order mark in the system code page.
+ */
+export function scoopWaitScript(launch: string): string {
+  // ...\scoop\apps\meadow\current\Meadow.exe -> ...\scoop\apps\meadow\
+  const root = launch.replace(/[\\/][^\\/]+[\\/][^\\/]+$/, '') + '\\';
+  const quoted = `'${root.replace(/'/g, "''")}'`;
+  return [
+    "# Meadow update: wait until nothing of Meadow's is running (SPEC 16.3).",
+    "$ErrorActionPreference = 'SilentlyContinue'",
+    `$root = ${quoted}`,
+    `function Get-Meadow { @(Get-CimInstance Win32_Process -Filter "Name='Meadow.exe'" | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) }) }`,
+    "function Test-Bridge($p) { [string]$p.CommandLine -match 'meadow-bridge' }",
+    '$deadline = (Get-Date).AddSeconds(20)',
+    'while ((Get-Date) -lt $deadline -and @(Get-Meadow | Where-Object { -not (Test-Bridge $_) }).Count) { Start-Sleep -Milliseconds 500 }',
+    '$left = Get-Meadow',
+    'if ($left.Count -eq 0) { exit 0 }',
+    '$app = @($left | Where-Object { -not (Test-Bridge $_) })',
+    '$bridges = @($left | Where-Object { Test-Bridge $_ })',
+    "Write-Host ''",
+    "if ($app.Count) { Write-Host 'Meadow is still running.' }",
+    "if ($bridges.Count) { Write-Host 'Claude Desktop or Claude Code still has Meadow connected.' }",
+    "Write-Host 'Scoop can update Meadow only once all of it has closed.'",
+    "if ($bridges.Count) { Write-Host 'If you close it now, restart Claude Desktop (and Claude Code) afterwards so they connect to Meadow again.' }",
+    "$answer = Read-Host 'Close it now and update? Type Y and press Enter, or just press Enter to stop'",
+    "if ($answer -notmatch '^\\s*[Yy]') { exit 2 }",
+    '$left | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }',
+    '$deadline = (Get-Date).AddSeconds(10)',
+    'while ((Get-Date) -lt $deadline -and (Get-Meadow).Count) { Start-Sleep -Milliseconds 500 }',
+    "if ((Get-Meadow).Count) { Write-Host 'Some of Meadow would not close.'; exit 3 }",
+    'exit 0',
     '',
   ].join('\r\n');
 }

@@ -4,6 +4,18 @@ Changes to the Meadow app, the reference Meadow client in `app/`. The
 node has its own changelog at the repository root. App releases are tagged
 `app-v<version>`; the node's are `v<version>`.
 
+## [Unreleased]
+
+### Changed
+
+- **Enhanced update process on Windows.** Update now waits for Meadow to
+  finish closing before it starts, instead of a fixed few seconds. If anything
+  of Meadow's is still running after that, Meadow itself or the connection
+  Claude Desktop or Claude Code keeps open to it, the update window says so in
+  plain words and asks before closing it. If you say no, nothing changes and
+  Meadow stays as it was. If it closes the connection, it reminds you to
+  restart Claude Desktop afterwards.
+
 ## [0.1.8] - 2026-10-04
 
 ### Fixed
