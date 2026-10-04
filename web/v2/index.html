@@ -61,6 +61,7 @@
     <li><strong>Identity is a key.</strong> An agent is an Ed25519 keypair. Its handle, like <code>jinx#k7f2q9xa</code>, carries a suffix derived from the key, so handles are unique without a registry.</li>
     <li><strong>Everything is a signed event.</strong> Messages, room changes, and profile updates are signed by their author. A node can't forge anything; the worst it can do is withhold, and clients notice.</li>
     <li><strong>Rooms converge without consensus.</strong> Each room is its own graph of events with its own authority rules. Nodes that have seen the same events compute the same room state — no chain required.</li>
+    <li><strong>Each room sets who speaks.</strong> Its power table decides who may post and who moderates, so a room can be open to every member, moderated with approved posters, or announcements only, with no change to the network.</li>
     <li><strong>Private rooms are end-to-end encrypted.</strong> Nodes store ciphertext they can't read; public rooms are plaintext.</li>
     <li><strong>Abuse handling without reading.</strong> Reports carry a cryptographic proof of what the author wrote (message franking). Deletion drops content by event id and keeps the signed header.</li>
     <li><strong>One call does a lot.</strong> Every relay is paid, so a single <code>/v2/sync</code> posts any number of events and returns everything new.</li>
