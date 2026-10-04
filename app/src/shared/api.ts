@@ -11,6 +11,8 @@ export interface Settings {
   textScale: number; // 1 = 16 px body text
   syncEnabled: boolean;
   syncMinutes: number;
+  /** Combine agents' syncs (§16.8, §7.9): up to 8 agents in one paid call. Off by default: it shows nodes these agents belong together. */
+  combineSyncs: boolean;
   localPort: number;
   perCallMaxUsd: string;
   /** MessageGuard (§16.11): public rooms, private rooms and DMs, and the per-sync limit on single checks. All off by default. */
@@ -83,7 +85,7 @@ export type TroubleState = 'ok' | 'warn' | 'bad' | 'info';
 /** What a line's button does: an action here, or the place in the app that does it (opening its dialog). */
 export type TroubleAction =
   | { label: string; run: 'syncNow' | 'restartTunnel' | 'startAtLogin' | 'updateNow'; agent?: string }
-  | { label: string; go: 'agents' | 'wallets' | 'settings' | 'inbox'; open?: 'topOff' | 'budget' | 'backup' | 'chatgpt' | 'claude' | 'chooseWallet'; agent?: string; wallet?: string };
+  | { label: string; go: 'agents' | 'wallets' | 'settings' | 'inbox'; open?: 'topOff' | 'budget' | 'backup' | 'chatgpt' | 'claude' | 'chooseWallet' | 'alumni'; agent?: string; wallet?: string };
 export interface TroubleItem {
   key: string;
   label: string;
@@ -169,6 +171,8 @@ export interface PaymentView {
   agent: string | null;
   status: string;
   tx: string | null;
+  /** The wallet that paid: a wallet's name, or "Alumni club" (§18.8). */
+  wallet: string | null;
 }
 
 export interface MessageView {
@@ -271,6 +275,39 @@ export interface AppState {
   catalogError: string | null;
   /** Troubleshoot (§16.21), from local records and the outside checks' last results. */
   troubleshoot: TroubleshootView;
+  /** The Meadow v1 alumni club (SPEC §18.8). */
+  alumni: AlumniView;
+}
+
+/** The alumni membership on this computer, from the club's last answer (§18.8). */
+export interface AlumniView {
+  /** A membership key is on this computer. */
+  linked: boolean;
+  active: boolean;
+  tierName: string | null;
+  paidThrough: string | null;
+  cancelled: boolean;
+  /** A downgrade waiting for the end of the paid period. */
+  changesTo: string | null;
+  changesOn: string | null;
+  capUsd: string | null;
+  allowanceLeftUsd: string | null;
+  messageguard: boolean;
+  /** The tier's background receive interval, in force while active (§18.8). */
+  receiveMinutes: number | null;
+  /** Combine agents' syncs, as the tier sets it while active (§18.8). */
+  combineSyncs: boolean;
+  /** Why the club is not paying just now: its allowance used up until `until`, or the club unreachable. */
+  held: { code: 'cap' | 'unavailable'; text: string; until: number | null } | null;
+  /** Why it is not active, when it was and is no longer. */
+  ended: string | null;
+  history: { date: string; amount: string; currency: string; tier: string | null; status: string }[];
+  /** Use my own wallet when the club allowance is used up. */
+  fallback: boolean;
+  checkedAt: number | null;
+  /** The browser link in progress, and the last link's error. */
+  linking: boolean;
+  linkError: string | null;
 }
 
 export interface MovePlanView {
@@ -361,6 +398,8 @@ export interface Api {
   bridgeStatus(a: { walletId: string }): BridgeStateView[];
   walletQr(a: { walletId: string }): { svg: string; address: string };
   syncNow(a: { agent: string }): { ok: boolean; message: string };
+  /** Sync Now on the Dashboard (§16.8): every agent something pays for, combined when the setting says so. */
+  syncAllNow(): { agent: string; ok: boolean; message: string }[];
   rooms(a: { agent: string }): RoomView[];
   messages(a: { agent: string; room: string }): MessageView[];
   /** The room card (§16.24.6); null for a room this agent holds nothing of yet. */
@@ -420,14 +459,21 @@ export interface Api {
   setRunner(a: { agent: string; enabled: boolean; provider: 'anthropic' | 'openai'; endpoint?: string; model: string; rooms: string[]; apiKey?: string }): { ok: true };
   copy(a: { text: string }): { ok: true };
   openExternal(a: { url: string }): { ok: boolean };
+  /** Join alumni club, or Get a new key: opens the club's site, which hands the key back to the app (§18.6). */
+  alumniLink(a: { rotate: boolean }): { opened: true };
+  /** Validate alumni membership: a key pasted from the club's site. */
+  alumniValidate(a: { key: string }): { ok: true } | { ok: false; error: string };
+  alumniRefresh(): { ok: boolean };
+  alumniCancel(): { ok: true; runsUntil: string | null } | { ok: false; error: string };
+  alumniSetFallback(a: { on: boolean }): { ok: true };
 }
 
 export type Channel = keyof Api;
 export const CHANNELS: Channel[] = [
   'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'claudeRunning', 'installUpdate', 'disconnectClaude', 'localInterface', 'rotateToken',
-  'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'movePlan', 'moveStart', 'moveStatus', 'bridgePlan', 'bridgeStart', 'bridgeStatus', 'setBudget', 'setDiscoverable', 'dismissUnlistedNotice', 'walletQr', 'syncNow', 'rooms', 'messages', 'roomCard', 'hideMessage', 'hideAuthor', 'unhideAll', 'setSettings',
+  'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'movePlan', 'moveStart', 'moveStatus', 'bridgePlan', 'bridgeStart', 'bridgeStatus', 'setBudget', 'setDiscoverable', 'dismissUnlistedNotice', 'walletQr', 'syncNow', 'syncAllNow', 'rooms', 'messages', 'roomCard', 'hideMessage', 'hideAuthor', 'unhideAll', 'setSettings',
   'guardCheck', 'guardDecide', 'backup', 'backupChanges', 'setMay', 'setRoomSettings', 'testConnection', 'diagnosticsText', 'diagnosticsSave', 'activity', 'activitySpending', 'activitySave', 'notes', 'setAnchor', 'setNote', 'removeNote', 'keepNote', 'notesSeen', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'restartTunnel', 'troubleshootRun', 'checkElsewhere', 'enterChatgptCode', 'revokeClient', 'setRunner',
-  'copy', 'openExternal',
+  'copy', 'openExternal', 'alumniLink', 'alumniValidate', 'alumniRefresh', 'alumniCancel', 'alumniSetFallback',
 ];
 
 /** Links the window may open in the browser. */

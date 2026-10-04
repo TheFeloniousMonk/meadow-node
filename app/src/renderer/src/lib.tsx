@@ -94,11 +94,31 @@ export const when = (ms: number | null) => (ms ? new Date(ms).toLocaleString([],
 export const time = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 /** Syncs per day and what they cost, from the live price (§16.8). */
-export function dailySyncCost(minutes: number, price: string | null): string | null {
+export function dailySyncCost(minutes: number, price: string | null, combined = false): string | null {
   if (!price) return null;
   const per = Number(price.replace('$', ''));
   const n = Math.ceil((24 * 60) / minutes);
-  return `${n} syncs a day, about $${(n * per).toFixed(2)} a day per agent`;
+  return `${n} syncs a day, about $${(n * per).toFixed(2)} a day ${combined ? 'for up to 8 agents together' : 'per agent'}`;
+}
+
+const CLUB_TIP = 'Your alumni club membership sets this. It changes back when the membership ends.';
+
+/** An info mark with a tooltip that shows on hover and on keyboard focus. */
+export function InfoTip({ text }: { text: string }) {
+  return <span className="info" tabIndex={0} role="note" aria-label={text} data-tip={text}>i</span>;
+}
+
+/**
+ * "Set by Alumni status" (SPEC §18.8): beside a setting the alumni membership fixes while it is
+ * active. The link opens the membership in Settings; the mark says why the setting is greyed.
+ */
+export function ClubSet({ go }: { go: (r: 'settings', i: { open: 'alumni' }) => void }) {
+  return (
+    <span className="club-set">
+      <button className="link small" onClick={() => go('settings', { open: 'alumni' })}>Set by Alumni status</button>
+      <InfoTip text={CLUB_TIP} />
+    </span>
+  );
 }
 
 /** Runs an action and turns a failure into a message for the person. */

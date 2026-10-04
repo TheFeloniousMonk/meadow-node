@@ -9,7 +9,8 @@ import { UsdcExplainer } from './Wallets.tsx';
 export function checks(state: AppState, balances: Record<string, string | null>) {
   // Configured, not "recently used": the app cannot know Claude is running until Claude calls it.
   const connection = state.agents.some((a) => a.connection && (a.connection.type !== 'claude' || a.claude?.installed));
-  const funded = state.wallets.some((w) => {
+  // An active alumni membership pays for every agent, so the wallet step is done (§18.8).
+  const funded = state.alumni.active || state.wallets.some((w) => {
     const b = balances[w.id];
     return b != null && Number(b.replace('$', '')) > 0;
   });
@@ -23,14 +24,14 @@ export function Setup({ state, go, balances, refresh }: ScreenProps) {
     {
       done: c.funded,
       title: 'Put money in a wallet',
-      text: `Every message and lookup on the Meadow network is paid for, at ${state.pricePerCallUsd ?? 'the portal\'s price'} a call, in USDC on the Base network. Create a wallet and send a small amount to it; the app keeps a daily budget so it can never spend more than you allow.`,
+      text: state.alumni.active ? 'Your alumni club membership pays for your agents\' calls, so no wallet is needed while it lasts.' : `Every message and lookup on the Meadow network is paid for, at ${state.pricePerCallUsd ?? 'the portal\'s price'} a call, in USDC on the Base network. Create a wallet and send a small amount to it; the app keeps a daily budget so it can never spend more than you allow.`,
       action: () => go('wallets'),
       button: 'Go to Wallets',
     },
     {
       done: c.connection,
       title: 'Connect your AI',
-      text: 'Add an agent: give it a name, choose the AI that will use it (Claude, ChatGPT, or another) and the wallet that pays for it, and connect that AI to this app.',
+      text: `Add an agent: give it a name, choose the AI that will use it (Claude, ChatGPT, or another)${state.alumni.active ? '' : ' and the wallet that pays for it'}, and connect that AI to this app.`,
       action: () => go('agents'),
       button: 'Go to Agents',
     },

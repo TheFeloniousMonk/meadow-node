@@ -9,6 +9,7 @@
 //
 // --seed adds two registered agents, a wallet, a public room, and a DM.
 // --update shows the update banner as a Scoop install would (§16.3); add --update-download for a Mac's.
+// --alumni[=basic] adds an active alumni membership from a stand-in club (§18.8); --alumni-cap, at its cap.
 
 import http from 'node:http';
 import { randomBytes } from 'node:crypto';
@@ -24,20 +25,60 @@ import { seed } from './seed.ts';
 import { Mover } from '../src/core/move.ts';
 import { MOCK_COW, MOCK_RPC, mockBase } from '../test/mock-base.ts';
 import { createPublicServer } from '../src/server/public.ts';
+import { addressOf, signTransfer } from '../src/core/evm.ts';
 
 // --port=N serves on another port, beside a harness another session runs.
 const PORT = Number(process.argv.find((a) => a.startsWith('--port='))?.slice(7) ?? 5199);
 const root = join(import.meta.dirname, '..', 'out', 'renderer');
 const portal = await startMockPortal();
 let version = 0;
+// --alumni[=basic] (§18.8): a stand-in alumni club with an active Premium (or Basic) membership,
+// never the real club; --alumni-cap makes it refuse payments as at the day's cap.
+const alumniArg = process.argv.find((a) => a.startsWith('--alumni') && !a.startsWith('--alumni-cap'));
+const club = alumniArg ? await startStandInClub(alumniArg.endsWith('=basic') ? 'basic' : 'premium') : null;
 const services = new Services({
   dbPath: join(mkdtempSync(join(tmpdir(), 'meadow-ui-')), 'meadow.db'),
   masterKey: randomBytes(32),
   version: '0.0.1-harness',
   changed: () => version++,
   catalog: new Catalog({ url: portal.catalogUrl }),
+  ...(club && { alumniUrl: club.url }),
 });
 await services.catalog.refresh();
+if (club) await services.alumni.validate(club.key);
+
+async function startStandInClub(tier: 'basic' | 'premium') {
+  const club = { url: '', key: '', cap: false };
+  const key = 'mclub1.eyJtIjoibV9oYXJuZXNzIn0.c3RhbmQtaW4';
+  const payerKey = randomBytes(32);
+  const from = addressOf(payerKey);
+  const capUsd = tier === 'basic' ? 0.7 : 1.5;
+  let spent = 0;
+  const server = http.createServer(async (req, res) => {
+    const body = await new Promise<any>((r) => { let s = ''; req.on('data', (c) => (s += c)).on('end', () => r(s ? JSON.parse(s) : {})); });
+    const send = (v: unknown) => res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(v));
+    const path = req.url!.replace(/^\/alumni\/api\//, '');
+    const left = () => `$${Math.max(0, capUsd - spent).toFixed(3).replace(/0$/, '')}`;
+    if (path === 'status') {
+      return send({ active: true, member: 'Harness', tier, tier_name: tier === 'basic' ? 'Basic' : 'Premium', paid_through: '2099-01-01', cancelled: false,
+        settings: { daily_cap_usd: capUsd.toFixed(2), receive_interval_min: 15, messageguard: tier !== 'basic', combine_syncs: true },
+        spent_24h_usd: `$${spent.toFixed(3)}`, allowance_left_usd: left(), payer_address: from,
+        history: [{ date: '2026-10-02', amount: tier === 'basic' ? '25.00' : '50.00', currency: 'USD', tier: tier === 'basic' ? 'Basic' : 'Premium', status: 'completed' }] });
+    }
+    if (path === 'pay') {
+      if (club.cap) return send({ refused: `The alumni club's allowance for today is used up; it frees up at ${new Date(Date.now() + 3 * 3600_000).toISOString().slice(11, 16)} UTC.`, code: 'cap' });
+      const t = body.term;
+      const nowS = Math.floor(Date.now() / 1000);
+      const authorization = { from, to: t.payTo, value: t.amount, validAfter: String(nowS - 60), validBefore: String(nowS + 60), nonce: `0x${randomBytes(32).toString('hex')}` };
+      const signature = signTransfer(payerKey, { name: 'USD Coin', version: '2', chainId: 8453, verifyingContract: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' }, authorization as any);
+      spent += Number(t.amount) / 1e6;
+      return send({ from, authorization, signature, allowance_left_usd: left() });
+    }
+    res.writeHead(404, { 'content-type': 'application/json' }).end('{}');
+  });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  return Object.assign(club, { url: `http://127.0.0.1:${(server.address() as any).port}/alumni`, key });
+}
 const files = mkdtempSync(join(tmpdir(), 'meadow-ui-files-'));
 let lastSaved: string | null = null;
 const handle = createHandlers(services, {
@@ -85,6 +126,11 @@ const baseFetch = base.fetchImpl;
 
 const seeded = process.argv.includes('--seed') ? await seed(services) : null;
 if (seeded) console.log('seeded', seeded);
+// The club's cap from here on, so seeding could still pay; one background sync meets it.
+if (club && process.argv.includes('--alumni-cap')) {
+  club.cap = true;
+  await services.syncAll('background');
+}
 // --busy (with --seed): 40 more messages in the garden club, then a new one every 4 seconds, to see the Inbox scroll.
 if (seeded && process.argv.includes('--busy')) {
   const { chappy, scout, room } = seeded;

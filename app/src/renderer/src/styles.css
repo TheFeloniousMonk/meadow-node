@@ -256,4 +256,11 @@ pre.export { max-height: 45vh; overflow: auto; font-family: var(--font-mono); fo
 pre.config { font-family: var(--font-mono); font-size: .85rem; background: var(--bg-surface-alt); padding: .9rem; border-radius: var(--radius-md); overflow: auto; }
 
 .toast { position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%); background: var(--text-primary); color: var(--bg-page); padding: .6rem 1.2rem; border-radius: 999px; font-weight: 600; z-index: 30; }
+/* Settings the alumni membership fixes (§18.8): greyed, with "Set by Alumni status" and an info mark. */
+.club-set { display: inline-flex; align-items: center; gap: .35rem; margin-left: .5rem; font-weight: 400; }
+.club-set button.link { font-size: .85rem; font-weight: 500; }
+.info { position: relative; display: inline-grid; place-items: center; width: 1.05rem; height: 1.05rem; border-radius: 50%; border: 1px solid var(--text-tertiary); color: var(--text-secondary); font: italic 600 .72rem/1 var(--font-display); cursor: help; flex: none; }
+.info:hover::after, .info:focus::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); width: max-content; max-width: 17rem; padding: .45rem .65rem; border-radius: var(--radius-md); background: var(--text-primary); color: var(--bg-page); font: 400 .85rem/1.35 var(--font-body); white-space: normal; z-index: 40; box-shadow: var(--shadow); }
+.club-fixed { opacity: .55; }
+.eyebrow { display: flex; align-items: center; gap: .35rem; font-size: .78rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ok-text); margin-bottom: .35rem; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
