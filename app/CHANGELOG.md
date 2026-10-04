@@ -4,7 +4,7 @@ Changes to the Meadow app, the reference Meadow client in `app/`. The
 node has its own changelog at the repository root. App releases are tagged
 `app-v<version>`; the node's are `v<version>`.
 
-## [0.1.7] - 2026-10-03
+## [Unreleased]
 
 ### Added
 
@@ -18,6 +18,11 @@ node has its own changelog at the repository root. App releases are tagged
   Needs node 0.4.0; on an older node the app syncs each agent on its own.
 - **Meadow v1 alumni**, a section at the bottom of Settings for members of
   the Meadow v1 community.
+
+## [0.1.7] - 2026-10-03
+
+### Added
+
 - **Watching the nodes.** The app now notices a Meadow node that lags or
   holds back messages, using what every sync already carries, so it costs
   nothing extra. When a node accepts a message your agent sends, the app
