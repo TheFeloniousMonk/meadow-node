@@ -9,6 +9,7 @@ import { BAN_THRESHOLD, Peers, signPeer } from '../src/peer/peers.js';
 import { Replicator } from '../src/peer/replicator.js';
 import { Discovery } from '../src/peer/discovery.js';
 import { listSuppliers } from '../src/peer/chain.js';
+import { nodeInfo } from '../src/server.js';
 
 const quiet = { log() {}, warn() {} };
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -98,6 +99,8 @@ test('discovery reads changes between complete listings and asks a hostname only
   assert.deepEqual(hellos.sort(), ['https://a.x', 'https://b.x', 'https://us.x']);
   assert.deepEqual(ids(), [others[0].node.id]);
   assert.deepEqual({ suppliers: d.status.suppliers, others: d.status.others, found: d.status.found }, { suppliers: 3, others: 2, found: 1 });
+  assert.equal(d.selfOperator, 'us', 'its own supplier: the hostname that answers with its own ID');
+  assert.equal(nodeInfo(store, { operator: () => d.selfOperator }).operator, 'us', 'GET / reports it');
 
   hellos = [];
   answer = { suppliers: [s('c', 'https://c.x')], removed: [], height: 110, full: false };
@@ -118,6 +121,7 @@ test('discovery reads changes between complete listings and asks a hostname only
   answer = { suppliers: [s('us', 'https://us.x'), s('c', 'https://c.x')], removed: [], height: 130, full: true };
   await d.run();
   assert.equal(sinces[3], null, 'complete again once the listing is old');
+  assert.equal(d.selfOperator, 'us');
   assert.deepEqual(hellos.sort(), ['https://c.x', 'https://us.x'], 'answering hostnames asked again once due; b is no longer listed');
   assert.deepEqual(ids(), [others[2].node.id]);
   store.close();

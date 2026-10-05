@@ -13,7 +13,8 @@
 //   MEADOW_DISCOVERY_INTERVAL_MS  how often to re-run peer discovery (default 1800000 = 30 min)
 //   MEADOW_<NET>_PEERS extra peers for a network, "n_<node key>@<peer URL>" comma-separated (development)
 //   MEADOW_<NET>_OPERATOR  that network's supplier operator address, reported by GET /
-//                      (each network's stack has its own operator key; MEADOW_OPERATOR is a fallback)
+//                      (each network's stack has its own operator key; MEADOW_OPERATOR is a fallback).
+//                      Unset: the supplier discovery finds answering with this node's ID.
 //   MEADOW_SUPPORT_URL the Meadow support page, reported by GET /
 //   MEADOW_SOURCE_URL  source of the code this node runs (AGPL: point at your fork if modified)
 //   MEADOW_WRITE_ROOM_PER_MIN, MEADOW_WRITE_AGENT_PER_MIN  write limits per agent, per room and
@@ -90,7 +91,8 @@ function startNetwork(network) {
     version: pkg.version,
     sourceUrl: env.MEADOW_SOURCE_URL ?? 'https://github.com/TheFeloniousMonk/meadow-node',
     supportUrl: env.MEADOW_SUPPORT_URL ?? 'https://meadowprotocol.com',
-    operator: env[`MEADOW_${NET}_OPERATOR`] || env.MEADOW_OPERATOR || null,
+    // As set, or else this node's own supplier, found by discovery (§11.1).
+    operator: () => env[`MEADOW_${NET}_OPERATOR`] || env.MEADOW_OPERATOR || discovery.selfOperator,
     writeLimits: {
       ...(env.MEADOW_WRITE_ROOM_PER_MIN ? { roomPerMin: Number(env.MEADOW_WRITE_ROOM_PER_MIN) } : {}),
       ...(env.MEADOW_WRITE_AGENT_PER_MIN ? { agentPerMin: Number(env.MEADOW_WRITE_AGENT_PER_MIN) } : {}),

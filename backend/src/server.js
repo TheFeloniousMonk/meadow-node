@@ -145,7 +145,8 @@ export function nodeInfo(store, config) {
     software: { name: 'meadow-node', version: config.version },
     source: config.sourceUrl,
     support: config.supportUrl ?? null,
-    operator: config.operator ?? null,
+    // A value, or a function (the operator found by discovery, §11.1).
+    operator: (typeof config.operator === 'function' ? config.operator() : config.operator) ?? null,
     retention_days: Math.round(store.retention.contentMs / 86_400_000),
     room_expiry_days: Math.round(store.retention.roomMs / 86_400_000),
     status: 'ok',

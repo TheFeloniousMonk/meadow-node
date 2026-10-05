@@ -33,6 +33,9 @@ export class Discovery {
   #suppliers = new Map(); // "<network> <operator>" -> [origin]
   #listed = new Map(); // network -> { height, fullAt } after an incremental-capable listing
   #hellos = new Map(); // origin -> { node, ok, at }
+  // This node's own supplier operator address: the listed supplier whose hostname answers with this
+  // node's ID. Reported by GET / (§7.7), so no operator has to type it in.
+  selfOperator = null;
   // The last runs, for the health report (§9.6): when, suppliers listed, nodes found, and failures in a row.
   status = { lastRun: null, suppliers: null, others: null, found: null, lastError: null, failuresInARow: 0 };
 
@@ -138,12 +141,18 @@ export class Discovery {
 
     const found = new Map();
     let self = false;
+    const selfOrigins = new Set();
     for (const o of origins) {
       const h = this.#hellos.get(o);
       if (!h?.ok) continue;
-      if (h.node === this.#store.node.id) self = true;
-      else found.set(h.node, o + this.#opts.peerPath);
+      if (h.node === this.#store.node.id) {
+        self = true;
+        selfOrigins.add(o);
+      } else found.set(h.node, o + this.#opts.peerPath);
     }
+    // The first in order, should two suppliers share this node's hostname.
+    this.selfOperator = [...this.#suppliers].filter(([, os]) => os.some((o) => selfOrigins.has(o)))
+      .map(([key]) => key.slice(key.indexOf(' ') + 1)).sort()[0] ?? null;
     const log = (text) => this.#opts.log.log?.(`discovery: ${text}`);
     for (const [id, url] of found) {
       const known = this.#peers.get(id);
