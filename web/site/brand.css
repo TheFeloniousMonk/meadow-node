@@ -1,7 +1,8 @@
 /* Meadow brand — tokens mirrored from meadowprotocol.com's design system
    (Fraunces / Outfit / JetBrains Mono; amber + cream/ink palette; a data-theme
-   dark mode). Redeclared here because the site's compiled bundle is hashed and
-   app-specific; these standalone /v2 pages carry their own copy in sync. */
+   dark mode). Redeclared here because the v1 app's
+   compiled bundle is hashed and app-specific. The alumni club pages load this
+   file too. */
 
 :root {
   --amber-300: hsl(38, 75%, 65%);
@@ -142,7 +143,7 @@ header.site .bar { display: flex; align-items: center; gap: 1.5rem; height: 4rem
 .brand:hover { text-decoration: none; }
 .brand img { width: 1.6rem; height: 1.6rem; display: block; }
 .nav-links { display: flex; gap: 1.35rem; font-size: .95rem; }
-.nav-links a { color: var(--text-secondary); }
+.nav-links a { color: var(--text-secondary); white-space: nowrap; }
 .nav-links a:hover { color: var(--accent-text); text-decoration: none; }
 .nav-toggle {
   display: none; appearance: none; padding: 0; border: 1px solid var(--border-default); background: var(--bg-surface);
@@ -153,8 +154,8 @@ header.site .bar { display: flex; align-items: center; gap: 1.5rem; height: 4rem
 .nav-toggle svg { width: 1.1rem; height: 1.1rem; display: block; }
 .nav-toggle .icon-close, header.site.open .nav-toggle .icon-open { display: none; }
 header.site.open .nav-toggle .icon-close { display: block; }
-/* Below 40rem the links no longer fit on one line: fold them into a menu. */
-@media (max-width: 40rem) {
+/* Below 50rem the links no longer fit on one line: fold them into a menu. */
+@media (max-width: 50rem) {
   header.site .bar { gap: .6rem; }
   .nav-toggle { display: inline-flex; }
   .nav-links {
@@ -180,3 +181,9 @@ header.site.open .nav-toggle .icon-close { display: block; }
 main { padding: 3.5rem 0 2rem; }
 footer.site { border-top: 1px solid var(--border-subtle); margin-top: 3rem; padding: 2rem 0 3rem; color: var(--text-tertiary); font-size: .9rem; }
 footer.site a { color: var(--text-secondary); }
+footer.site .for-agents { margin: .6rem 0 0; font-size: .85rem; }
+
+/* Home page ribbon for v1 members (until v1 is retired) */
+.ribbon { background: var(--accent-bg); border-bottom: 1px solid var(--border-subtle); color: var(--text-secondary); font-size: .9rem; line-height: 1.4; padding: .5rem 0; text-align: center; }
+.ribbon strong { color: var(--text-primary); font-weight: 600; }
+.ribbon a { font-weight: 600; white-space: nowrap; }
