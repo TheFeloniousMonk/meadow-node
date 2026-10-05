@@ -12,7 +12,6 @@ export const WATCH = {
   graceMs: 10 * 60_000, // an event held this long before an attestation must be covered by it
   windowMs: 24 * 3600_000, // events older than this before an attestation are not judged
   severalWithinMs: 24 * 3600_000, // "several nodes": at least two answered within this
-  confirmAfterMs: 30 * 60_000, // an own event unconfirmed this long after acceptance is noted
   confirmedKeepMs: 24 * 3600_000,
   unconfirmedKeepMs: 7 * 24 * 3600_000,
   evidenceKeepMs: 30 * 24 * 3600_000,
@@ -110,11 +109,18 @@ export class NodeWatch {
         if (heads.length >= WATCH.maxHeads) continue;
         const room = roomOf(roomId);
         if (!room || heads.some((h) => !room.has(h))) continue;
-        // Others' accepted events only: the agent's own are judged by delivery confirmation.
-        const candidates = (this.#db.prepare(`SELECT id, held_at, event, outcome FROM events
+        // Others' accepted events, from when the app first held them; and the agent's own, from when
+        // another node accepted them (an own event no node has accepted yet is not judged). Every node
+        // is judged the same way, so a gateway that sends this computer's calls to one node for a while
+        // never makes a notice: only a node's own signed heads leaving an event out do (§16.23).
+        const others = (this.#db.prepare(`SELECT id, held_at, event, outcome FROM events
           WHERE agent = ? AND room = ? AND held_at > 0 AND held_at <= ? AND held_at >= ?`)
           .all(agent, roomId, att.ts - WATCH.graceMs, att.ts - WATCH.windowMs) as any[])
           .filter((r) => JSON.parse(r.outcome).outcome === 'accepted' && JSON.parse(r.event).header.author !== agent);
+        const own = this.#db.prepare(`SELECT id, accepted_at AS held_at FROM deliveries
+          WHERE agent = ? AND room = ? AND accepted_by != ? AND accepted_at <= ? AND accepted_at >= ?`)
+          .all(agent, roomId, node, att.ts - WATCH.graceMs, att.ts - WATCH.windowMs) as any[];
+        const candidates = [...others, ...own.filter((d) => room.has(d.id))];
         if (!candidates.length) continue;
         const covered = coveredBy(room, heads, new Set(candidates.map((c) => c.id)));
         if (!covered) continue;
@@ -128,14 +134,8 @@ export class NodeWatch {
   notices(agent: string) {
     const now = this.#now();
     tx(this.#db, () => {
-      if (this.several()) {
-        const late = this.#db.prepare(`SELECT id, accepted_by FROM deliveries WHERE agent = ? AND confirmed_at IS NULL AND noticed = 0 AND accepted_at <= ?`)
-          .all(agent, now - WATCH.confirmAfterMs) as any[];
-        for (const d of late) {
-          this.#problem(agent, 'nodes', `A message this agent sent was accepted by node ${short(d.accepted_by)}, but no other node has shown it after 30 minutes. That node may be lagging or withholding it; the message is not lost while that node keeps it.`);
-          this.#db.prepare('UPDATE deliveries SET noticed = 1 WHERE agent = ? AND id = ?').run(agent, d.id);
-        }
-      }
+      // No notice for a message that is merely unconfirmed: which node answers depends on the
+      // gateway's sessions, and nodes catch up between themselves (§16.23). Only evidence counts.
       // Attestations that left something out: every first one, and every latest one.
       const nodes = this.#db.prepare(`SELECT node, COUNT(DISTINCT event) AS events,
         (SELECT COUNT(*) FROM (SELECT attest_ts AS ts FROM node_misses m WHERE m.agent = n.agent AND m.node = n.node AND m.at >= ?

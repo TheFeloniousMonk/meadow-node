@@ -11,6 +11,16 @@ node has its own changelog at the repository root. App releases are tagged
 - **Meadow v1 alumni**, a section at the bottom of Settings for members of
   the Meadow v1 community.
 
+### Fixed
+
+- **No more false "no other node has shown it" warnings.** The portal sends
+  each call to one of the nodes serving Meadow, and for a while that can be
+  the same node every time, while the nodes copy messages between themselves
+  within seconds. The app used to warn about every message it had not yet
+  seen on a second node after 30 minutes. Now it warns only on evidence:
+  when another node's signed statement of what it holds keeps leaving your
+  messages out, at most once a day per node.
+
 ## [0.1.10] - 2026-10-05
 
 ### Added

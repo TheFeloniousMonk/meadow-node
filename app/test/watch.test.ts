@@ -129,7 +129,7 @@ test('one miss is lag, not a pattern; an event held less than 10 minutes is not 
   assert.deepEqual(nodeProblems(bob), []);
 });
 
-test('delivery: confirmed when another node shows the event; noted when none has after 30 minutes', async () => {
+test('delivery: confirmed when another node shows it; never noted on time alone, however long one node answers', async () => {
   const A = await node(), B = await node();
   const ta = twoNodes(A, B), tb = twoNodes(A, B);
   const alice = agent('Alice', ta), bob = agent('Bob', tb);
@@ -138,23 +138,46 @@ test('delivery: confirmed when another node shows the event; noted when none has
   // Sent to both; node A accepts it, and node B's next answer covers it.
   await alice.core.send(alice.id, roomId, 'everywhere');
   ta.mode = 'B';
-  alice.clock.t = Date.now() + WATCH.confirmAfterMs + 60_000;
+  alice.clock.t = Date.now() + 60 * 60_000;
   await alice.core.sync(alice.id);
   assert.deepEqual(nodeProblems(alice), []);
 
-  // Sent to node A only: B never shows it. Quiet until 30 minutes have passed.
+  // Accepted by node A, and then the gateway sends every call to A for hours (a session): nothing to
+  // judge, so nothing is noted (a tester's Dashboard filled with these, 2026-10-05).
   alice.clock.t = Date.now();
   ta.mode = 'A';
-  await alice.core.send(alice.id, roomId, 'only A has this');
+  await alice.core.send(alice.id, roomId, 'A answers everything for a while');
+  for (const h of [1, 2, 3]) {
+    alice.clock.t = Date.now() + h * 3600_000;
+    await alice.core.sync(alice.id);
+  }
+  assert.ok(alice.core.watch.several(), 'two nodes have answered today');
+  assert.deepEqual(nodeProblems(alice), []);
+  assert.equal(alice.core.watch.evidence(alice.id).length, 0);
+});
+
+test('own messages another node keeps leaving out are noted as a pattern, with signed evidence', async () => {
+  const A = await node(), B = await node();
+  const ta = twoNodes(A, B), tb = twoNodes(A, B);
+  const alice = agent('Alice', ta), bob = agent('Bob', tb);
+  const roomId = await room(alice, bob);
+
+  // Three posts accepted by node A only, 20 minutes before node B's answers.
+  ta.mode = 'A';
+  alice.clock.t = Date.now() - 20 * 60_000;
+  for (const text of ['one', 'two', 'three']) await alice.core.send(alice.id, roomId, text);
+  alice.clock.t = Date.now();
   ta.mode = 'B';
   await alice.core.sync(alice.id);
-  assert.deepEqual(nodeProblems(alice), [], 'not before 30 minutes');
-  alice.clock.t = Date.now() + WATCH.confirmAfterMs + 60_000;
-  await alice.core.sync(alice.id);
+  await tick();
   await alice.core.sync(alice.id);
   const notes = nodeProblems(alice);
-  assert.equal(notes.length, 1, 'once');
-  assert.match(notes[0], new RegExp(`accepted by node ${A.store.node.id.slice(0, 10)}.*no other node has shown it after 30 minutes`));
+  assert.equal(notes.length, 1);
+  assert.match(notes[0], new RegExp(`Node ${B.store.node.id.slice(0, 10)}.*keeps leaving out messages`));
+  const evidence = alice.core.watch.evidence(alice.id);
+  assert.equal(evidence.length, 3);
+  assert.ok(evidence.every((e) => e.node === B.store.node.id && checkAttestation(e.attestation) === null));
+  assert.equal(alice.core.watch.evidence(alice.id, A.store.node.id).length, 0, 'the node that accepted them is not blamed');
 });
 
 test('delivery: a different node serving the event confirms it too', () => {
@@ -168,7 +191,7 @@ test('delivery: a different node serving the event confirms it too', () => {
   // The accepting node serving it again proves nothing; another node serving it does.
   core.watch.observe(a, n1, new Map([[r, new Set([e])]]), undefined, () => null);
   core.watch.observe(a, n2, new Map([[r, new Set([e])]]), undefined, () => null);
-  clock += WATCH.confirmAfterMs + 60_000;
+  clock += 3600_000;
   core.watch.notices(a);
   assert.deepEqual(core.problems(a), []);
 });
