@@ -1,7 +1,7 @@
 // The install kinds, launch paths, and update check (SPEC §16.3).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { UpdateCheck, assetFor, compareVersions, downloadRelease, installKind, latestRelease, launchPath, scoopUpdateScript } from '../src/core/update.ts';
+import { UpdateCheck, assetFor, compareVersions, downloadRelease, installKind, latestRelease, launchPath, scoopUpdateScript, scoopWaitScript } from '../src/core/update.ts';
 
 const scoopExe = 'C:\\Users\\ann\\scoop\\apps\\meadow\\0.1.0\\Meadow.exe';
 
@@ -98,14 +98,38 @@ test('a download is kept only if it matches SHA256SUMS', async () => {
   await assert.rejects(downloadRelease({ version: '0.1.1', name: 'Meadow-mac-x64.zip', dir: dir2, fetchImpl: serve(good) }), /no checksum for/);
 });
 
+const LAUNCH = String.raw`C:\Users\ann\scoop\apps\meadow\current\Meadow.exe`;
+const WAIT = String.raw`C:\Users\ann\AppData\Local\Temp\meadow-update-wait.ps1`;
+
 test('the Scoop update script waits for Meadow to quit, updates, and opens it again', () => {
-  const s = scoopUpdateScript('C:\Users\ann\scoop\apps\meadow\current\Meadow.exe');
-  const lines = s.split('\r\n');
-  assert.ok(lines.indexOf('timeout /t 3 /nobreak >nul') < lines.indexOf('call scoop update meadow'));
+  const lines = scoopUpdateScript(LAUNCH, WAIT).split('\r\n');
+  // The wait script runs before Scoop, and its answer decides what happens (2026-10-04).
+  const wait = lines.indexOf(`powershell -NoProfile -ExecutionPolicy Bypass -File "${WAIT}"`);
+  assert.ok(wait > 0 && wait < lines.indexOf('call scoop update'));
+  assert.ok(lines.indexOf('if errorlevel 3 goto failed') > wait && lines.indexOf('if errorlevel 2 goto declined') > wait);
+  assert.ok(lines.indexOf('if errorlevel 2 goto declined') < lines.indexOf('call scoop update'));
+  assert.ok(lines.includes(':declined') && lines.includes('echo Nothing was changed. Meadow is still installed as it was.'));
+  assert.ok(lines.includes(`start "" "${LAUNCH}"`));
   // Buckets first, or Scoop may call the installed version the latest.
   assert.ok(lines.includes('call scoop update') && lines.indexOf('call scoop update') < lines.indexOf('call scoop update meadow'));
-  assert.ok(lines.includes('start "" "C:\Users\ann\scoop\apps\meadow\current\Meadow.exe"'));
   assert.ok(lines.includes('pause >nul') && lines.includes('echo Press any key to close this window.'), 'a failure stays on screen and says how to close it');
   // Never from Meadow's folder: PowerShell cannot remove its own working folder (2026-10-04).
   assert.ok(lines.includes('cd /d "%TEMP%"') && lines.indexOf('cd /d "%TEMP%"') < lines.indexOf('call scoop update'));
+});
+
+test('the wait script waits for Meadow, then closes what is left only when the person says yes', () => {
+  const s = scoopWaitScript(LAUNCH);
+  // Meadow's whole Scoop folder, any version: what Scoop itself checks.
+  assert.ok(s.includes(String.raw`$root = 'C:\Users\ann\scoop\apps\meadow\'`));
+  assert.ok(s.includes("Name='Meadow.exe'") && s.includes('StartsWith($root'));
+  // Bridges are told apart from the app, and named.
+  assert.ok(s.includes("-match 'meadow-bridge'") && s.includes('Claude Desktop or Claude Code still has Meadow connected.'));
+  // Stop-Process only after the answer.
+  const ask = s.indexOf('Read-Host');
+  assert.ok(ask > 0 && s.indexOf('Stop-Process') > ask && s.indexOf("{ exit 2 }") > ask && s.indexOf("{ exit 2 }") < s.indexOf('Stop-Process'));
+  assert.ok(s.includes("-notmatch '^\\s*[Yy]'"));
+  // ASCII only: Windows PowerShell 5 reads it in the system code page.
+  assert.ok(/^[\x09\x0a\x0d\x20-\x7e]*$/.test(s));
+  // A quote in the path cannot break out of the string.
+  assert.ok(scoopWaitScript(String.raw`C:\Users\o'neil\scoop\apps\meadow\current\Meadow.exe`).includes(String.raw`$root = 'C:\Users\o''neil\scoop\apps\meadow\'`));
 });
