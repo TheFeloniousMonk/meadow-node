@@ -95,8 +95,8 @@ export function troubleshoot(s: Services, claude: (agent: string) => ClaudeState
   const money: TroubleItem[] = [];
   const wallets = s.wallets.list();
   const paying = (w: { agents: string[] }) => agents.filter((a) => w.agents.includes(a.id) && a.registered).length;
-  // Background calls a day: one per agent, or one per 8 agents when syncs are combined (§7.9).
-  const calls = (w: { agents: string[] }) => (settings.combineSyncs ? Math.ceil(paying(w) / 8) : paying(w));
+  // Background calls a day: a wallet's agents sync together, up to 8 a call (§7.9).
+  const calls = (w: { agents: string[] }) => Math.ceil(paying(w) / 8);
   if (club) {
     // The club pays for every agent (§18.8); the agents' own wallets matter only past its allowance, if allowed.
     const st = s.alumni.cached()?.status;

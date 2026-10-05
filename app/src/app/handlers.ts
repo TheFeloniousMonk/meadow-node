@@ -88,7 +88,6 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       capUsd: set ? `$${set.daily_cap_usd}` : null, allowanceLeftUsd: s.alumni.allowanceLeft(),
       messageguard: !!set?.messageguard, ended: !active && st ? st.ended ?? null : null,
       receiveMinutes: set?.receive_interval_min ?? null,
-      combineSyncs: !!set?.combine_syncs,
       held: ((h) => h && { code: h.code, text: h.text, until: h.until })(s.alumni.held()),
       history: st?.history ?? [], fallback: s.alumni.fallback(), checkedAt: c?.at ?? null,
       linking: alumniLinking.busy, linkError: alumniLinking.error,
@@ -360,8 +359,6 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     },
 
     setSettings(changes) {
-      // A boolean from the window stays a boolean (security review I1).
-      if (changes && 'combineSyncs' in changes) changes = { ...changes, combineSyncs: changes.combineSyncs === true };
       const out = s.setSettings(changes);
       env.applySettings?.(out);
       return out;

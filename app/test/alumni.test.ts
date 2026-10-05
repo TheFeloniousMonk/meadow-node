@@ -226,8 +226,6 @@ test("while active the tier sets the receive interval and public-room MessageGua
   await s.alumni.validate(KEY);
   const on = s.effectiveSettings();
   assert.equal(on.syncMinutes, 15);
-  assert.equal(on.combineSyncs, true, "the tier combines agents' syncs");
-  assert.equal(s.settings().combineSyncs, false, "the person's own setting stays off underneath");
   assert.equal(on.guardPublic, true, 'Premium includes MessageGuard for public rooms');
   assert.equal(on.guardPrivate, true, "private rooms stay the person's choice on Premium");
   assert.equal(s.settings().syncMinutes, 60, "the person's own value is kept underneath");

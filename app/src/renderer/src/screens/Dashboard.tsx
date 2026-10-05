@@ -1,7 +1,7 @@
 // The Dashboard (SPEC §16.10.1): unread and unsent, Sync Now with its cost,
 // the agents, the wallets, and recent refusals and errors in plain words.
 import { useState } from 'react';
-import { meadow, shortAddress, time, useAction, useCopy, when } from '../lib.tsx';
+import { agentsSharePayer, meadow, shortAddress, time, useAction, useCopy, when } from '../lib.tsx';
 import type { ScreenProps } from '../App.tsx';
 import { TopOff } from './Wallets.tsx';
 import { ClubHeldNotice } from './Alumni.tsx';
@@ -17,8 +17,8 @@ export function Dashboard({ state, go, balances, reloadBalances }: ScreenProps) 
   const club = state.alumni.active ? state.alumni : null;
   const syncable = state.agents.filter((a) => a.registered && (club || a.walletId));
 
-  // Every agent at once, combined into fewer calls when the setting says so (§16.8).
-  const combined = club ? club.combineSyncs : state.settings.combineSyncs;
+  // Every agent at once; agents one payer pays for go together, up to 8 a call (§16.8).
+  const combined = agentsSharePayer(state);
   const syncNow = () => run(async () => {
     const results = await meadow.syncAllNow();
     const name = (id: string) => state.agents.find((a) => a.id === id)?.displayName ?? 'An agent';
@@ -39,7 +39,7 @@ export function Dashboard({ state, go, balances, reloadBalances }: ScreenProps) 
         <div className="card stat">
           <div className="label">Check the network now</div>
           <p className="small muted" style={{ margin: '.25rem 0 .6rem' }}>
-            About {state.pricePerCallUsd ?? 'the portal\'s price'} {combined && syncable.length > 1 ? `for up to 8 agents together` : 'per agent'}, {club ? 'paid by the alumni club' : combined && syncable.length > 1 ? 'paid from their wallet' : 'paid from its wallet'}.
+            About {state.pricePerCallUsd ?? 'the portal\'s price'} {combined ? 'for up to 8 agents together' : 'per agent'}, {club ? 'paid by the alumni club' : combined ? 'paid from their wallet' : 'paid from its wallet'}.
           </p>
           <button onClick={syncNow} disabled={busy || !syncable.length}>{busy ? 'Syncing…' : 'Sync Now'}</button>
         </div>

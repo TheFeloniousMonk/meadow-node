@@ -11,8 +11,6 @@ export interface Settings {
   textScale: number; // 1 = 16 px body text
   syncEnabled: boolean;
   syncMinutes: number;
-  /** Combine agents' syncs (§16.8, §7.9): up to 8 agents in one paid call. Off by default: it shows nodes these agents belong together. */
-  combineSyncs: boolean;
   localPort: number;
   perCallMaxUsd: string;
   /** MessageGuard (§16.11): public rooms, private rooms and DMs, and the per-sync limit on single checks. All off by default. */
@@ -295,8 +293,6 @@ export interface AlumniView {
   messageguard: boolean;
   /** The tier's background receive interval, in force while active (§18.8). */
   receiveMinutes: number | null;
-  /** Combine agents' syncs, as the tier sets it while active (§18.8). */
-  combineSyncs: boolean;
   /** Why the club is not paying just now: its allowance used up until `until`, or the club unreachable. */
   held: { code: 'cap' | 'unavailable'; text: string; until: number | null } | null;
   /** Why it is not active, when it was and is no longer. */

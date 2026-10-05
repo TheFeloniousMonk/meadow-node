@@ -93,6 +93,18 @@ export const shortAddress = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 export const when = (ms: number | null) => (ms ? new Date(ms).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'never');
 export const time = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+/**
+ * Whether any one payer pays for two or more registered agents: the alumni club for all of them, or
+ * one wallet for its own. Those agents are always checked together, up to 8 in a call (§7.9, §16.8).
+ */
+export function agentsSharePayer(state: AppState): boolean {
+  const agents = state.agents.filter((a) => a.registered);
+  if (state.alumni.active) return agents.length > 1;
+  const per = new Map<string, number>();
+  for (const a of agents) if (a.walletId) per.set(a.walletId, (per.get(a.walletId) ?? 0) + 1);
+  return [...per.values()].some((n) => n > 1);
+}
+
 /** Syncs per day and what they cost, from the live price (§16.8). */
 export function dailySyncCost(minutes: number, price: string | null, combined = false): string | null {
   if (!price) return null;

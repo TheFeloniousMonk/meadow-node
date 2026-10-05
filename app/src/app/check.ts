@@ -238,7 +238,7 @@ export function diagnosticsText(s: Services, claude: (agent: string) => ClaudeSt
     `System: ${process.platform} ${release()} ${process.arch}`,
     `Network sends names (node 0.3.0 or later): ${s.core.protocol3() ? 'yes' : 'not seen yet'}`,
     `Alumni club: ${s.alumni.active() ? `active, ${s.alumni.cached()?.status.tier ?? 'unknown tier'}${s.alumni.held() ? `, not paying just now (${s.alumni.held()!.code})` : ''}` : s.alumni.key() ? 'linked, not active' : 'not linked'}`,
-    `Background sync: ${settings.syncEnabled ? `every ${settings.syncMinutes} minutes` : 'off'}, ${settings.combineSyncs ? `combined${s.core.batchOff() ? ' (off for now: the network refused the route)' : ''}` : 'one call per agent'}`,
+    `Background sync: ${settings.syncEnabled ? `every ${settings.syncMinutes} minutes` : 'off'}, ${s.core.batchOff() ? 'one call per agent for now (the network refused combined syncs)' : 'agents that share a payer combined'}`,
     `MessageGuard: public rooms ${settings.guardPublic ? 'on' : 'off'}, private rooms and DMs ${settings.guardPrivate ? 'on' : 'off'}`,
     `Tunnel: ${s.tunnel.status.provider}, ${s.tunnel.status.state}${s.tunnel.status.error ? ` (${clean(s.tunnel.status.error)})` : ''}`,
     `Local interfaces: ${s.server?.listening ? 'listening' : `not listening${s.serverError ? ` (${clean(s.serverError)})` : ''}`}`,

@@ -49,8 +49,6 @@ async function world(names: { name: string; wallet?: string }[]) {
     await A.s.core.joinRoom(id, room);
     ids.push(id);
   }
-  // Sending is one paid call; settings never change it.
-  A.s.setSettings({ combineSyncs: true });
   return { W, A, dave, room, ids };
 }
 
@@ -107,12 +105,13 @@ test('combined: each wallet pays only for its own agents', async () => {
   assert.deepEqual(paid.filter((p) => p.wallet === two).map((p) => p.path), ['/v2/sync-batch']);
 });
 
-test('off by default: one call per agent', async () => {
+test('always combined: the old "off" setting, still stored from an earlier version, is ignored', async () => {
   const { A } = await world([{ name: 'alice' }, { name: 'bob' }]);
-  A.s.setSettings({ combineSyncs: false });
+  A.s.db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('settings', ?)").run(JSON.stringify({ ...A.s.settings(), combineSyncs: false }));
+  assert.equal('combineSyncs' in A.s.settings(), false, 'not a setting any more');
   const since = lastSeq(A.s);
   await A.s.syncAll('background');
-  assert.deepEqual(paidPaths(A.s, since).map((p) => p.path), ['/v2/sync', '/v2/sync']);
+  assert.deepEqual(paidPaths(A.s, since).map((p) => p.path), ['/v2/sync-batch']);
 });
 
 test('a network without the route: single syncs now, and for the next hour', async () => {

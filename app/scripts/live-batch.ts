@@ -38,7 +38,6 @@ if (!wallet) wallet = s.wallets.import('Test wallet', current.phrase, '0.05').id
 s.wallets.setBudget(wallet, '0.05');
 const agents = s.core.agents().filter((a) => a.registered);
 for (const a of agents) s.wallets.assign(a.id, wallet);
-s.setSettings({ combineSyncs: true });
 console.log(`Agents: ${agents.map((a) => a.handle).join(', ')}; wallet ${current.address}.`);
 
 const since = (s.db.prepare('SELECT COALESCE(MAX(seq), 0) AS n FROM payments').get() as any).n;

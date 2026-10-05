@@ -35,7 +35,7 @@ import { UpdateCheck, type InstallKind } from '../core/update.ts';
 import type { Settings } from '../shared/api.ts';
 
 export const DEFAULT_SETTINGS: Omit<Settings, 'perCallMaxUsd'> = {
-  theme: 'light', textScale: 1, syncEnabled: true, syncMinutes: 15, combineSyncs: false, localPort: 47733,
+  theme: 'light', textScale: 1, syncEnabled: true, syncMinutes: 15, localPort: 47733,
   // Anything that costs money is off until the person turns it on (§16.11).
   guardPublic: false, guardPrivate: false, guardLimit: 10,
   notifications: true,
@@ -372,7 +372,9 @@ export class Services {
 
   settings(): Settings {
     const row: any = this.db.prepare("SELECT value FROM meta WHERE key = 'settings'").get();
-    return { ...DEFAULT_SETTINGS, ...(row ? JSON.parse(row.value) : {}), perCallMaxUsd: this.wallets.perCallMaxUsd() };
+    // combineSyncs was a setting until combined syncs became the only way (§16.8); a stored value is ignored.
+    const { combineSyncs: _, ...stored } = row ? JSON.parse(row.value) : {};
+    return { ...DEFAULT_SETTINGS, ...stored, perCallMaxUsd: this.wallets.perCallMaxUsd() };
   }
 
   /**
@@ -388,7 +390,7 @@ export class Services {
     const s = { ...own, syncMinutes: Number.isSafeInteger(own.syncMinutes) ? Math.min(Math.max(own.syncMinutes, MIN_INTERVAL), MAX_INTERVAL) : 15 };
     const club = this.alumni.settings();
     if (!club) return s;
-    return { ...s, syncMinutes: club.receive_interval_min, combineSyncs: club.combine_syncs, guardPublic: club.messageguard, guardPrivate: club.messageguard && s.guardPrivate };
+    return { ...s, syncMinutes: club.receive_interval_min, guardPublic: club.messageguard, guardPrivate: club.messageguard && s.guardPrivate };
   }
 
   setSettings(changes: Partial<Settings>): Settings {
@@ -486,11 +488,12 @@ export class Services {
     if (cause === 'background' && club && !this.alumni.fallback() && this.alumni.held()?.code === 'cap') return [];
     const agents = this.core.agents().filter((x) => x.registered && (club || this.wallets.walletOf(x.id))).map((x) => x.id);
     const out: { agent: string; ok: boolean; message: string }[] = [];
-    if (!this.effectiveSettings().combineSyncs || this.core.batchOff()) {
+    if (this.core.batchOff()) {
       for (const a of agents) out.push({ agent: a, ...(await withCause(cause, () => this.syncOne(a))) });
       return out;
     }
-    // Combined (§7.9): agents one payer pays for, up to 8 a call. The club pays for every agent;
+    // Combined, always (§7.9, §16.8): agents one payer pays for, up to 8 a call; an agent alone
+    // with its payer gets an ordinary sync (Core.syncMany). The club pays for every agent;
     // otherwise each wallet pays for its own agents, so no wallet pays for another's. With the
     // fallback on, a club refusal makes the first agent's own wallet pay for the call, so then
     // the agents are grouped by their own wallets too (security review A5).
