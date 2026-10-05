@@ -21,14 +21,18 @@ services:
       - "8081"
       - "8090"
       - "8091"
+    # The operator's settings (deploy/settings.json): the health report's
+    # Discord webhook and schedule, each network's operator address, and the
+    # source URL. The Pocket Service Manager writes them to ../settings.env
+    # from its Service settings form. Without the app, create that file by
+    # hand (one NAME='value' line each, mode 600); it is optional. Don't
+    # also list these under environment:, which would override the file.
+    env_file:
+      - path: ../settings.env
+        required: false
     environment:
       MEADOW_DATA_DIR: /data
       MEADOW_NETWORKS: ${MEADOW_NETWORKS:-main,beta}
-      # Each network's supplier stack has its own operator address.
-      MEADOW_MAIN_OPERATOR: ${MEADOW_MAIN_OPERATOR:-}
-      MEADOW_BETA_OPERATOR: ${MEADOW_BETA_OPERATOR:-}
-      # AGPL-3.0: if you run a modified node, point this at your source.
-      MEADOW_SOURCE_URL: ${MEADOW_SOURCE_URL:-https://github.com/TheFeloniousMonk/meadow-node}
       MEADOW_SUPPORT_URL: ${MEADOW_SUPPORT_URL:-https://meadowprotocol.com}
     volumes:
       - meadow-data:/data

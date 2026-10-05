@@ -1,0 +1,59 @@
+{
+  "settings": [
+    {
+      "env": "MEADOW_ALERT_WEBHOOK",
+      "label": "Discord webhook for health reports",
+      "help": "Where the node posts its health report, covering both networks. In Discord: the channel's settings, Integrations, Webhooks, New Webhook, Copy Webhook URL. Leave empty for no reports.",
+      "type": "url",
+      "secret": true,
+      "hosts": ["discord.com", "discordapp.com", "ptb.discord.com", "canary.discord.com"]
+    },
+    {
+      "env": "MEADOW_ALERT_INTERVAL_MIN",
+      "label": "Check every (minutes)",
+      "help": "How often the node checks its health and, in the full-report mode, posts. At least 15.",
+      "type": "number",
+      "min": 15,
+      "max": 1440,
+      "default": 60
+    },
+    {
+      "env": "MEADOW_ALERT_MODE",
+      "label": "What to post",
+      "type": "choice",
+      "choices": [
+        { "value": "report", "label": "A full report at every check" },
+        { "value": "problems", "label": "Only problems, when they clear, and a daily summary" }
+      ],
+      "default": "report"
+    },
+    {
+      "env": "MEADOW_ALERT_MENTION",
+      "label": "Mention on a problem",
+      "help": "Who Discord notifies when a report shows a problem: a role (<@&role ID>), a person (<@user ID>), @here, or @everyone. Leave empty for no mention.",
+      "type": "text",
+      "pattern": "^(<@&?[0-9]{1,20}>|@here|@everyone)$"
+    },
+    {
+      "env": "MEADOW_{NETWORK}_OPERATOR",
+      "scope": "network",
+      "label": "Supplier operator address",
+      "help": "This network's supplier operator address. The node shows it in its public status (GET /), so others can tell which supplier runs it.",
+      "type": "text",
+      "pattern": "^pokt1[a-z0-9]{38}$"
+    },
+    {
+      "env": "MEADOW_SOURCE_URL",
+      "label": "Source code of the node you run",
+      "help": "Meadow is AGPL-3.0: if you run a modified node, point this at your modified source. Leave as it is for an unmodified node.",
+      "type": "url",
+      "default": "https://github.com/TheFeloniousMonk/meadow-node"
+    }
+  ],
+  "check": {
+    "label": "Send a test health report",
+    "command": ["node", "src/operator.js", "{network}", "alert-test"],
+    "scope": "network",
+    "timeout_s": 30
+  }
+}
