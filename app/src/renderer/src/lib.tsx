@@ -108,7 +108,8 @@ export function dailySyncCost(minutes: number, price: string | null, combined = 
   if (!price) return null;
   const per = Number(price.replace('$', ''));
   const n = Math.ceil((24 * 60) / minutes);
-  return `${n} syncs a day, about $${(n * per).toFixed(2)} a day ${combined ? 'for up to 8 agents together' : 'per agent'}`;
+  // At most: a background call is skipped when a sync was just made another way (§16.8).
+  return `at most ${n} syncs a day, about $${(n * per).toFixed(2)} a day ${combined ? 'for up to 8 agents together' : 'per agent'}`;
 }
 
 /** Runs an action and turns a failure into a message for the person. */

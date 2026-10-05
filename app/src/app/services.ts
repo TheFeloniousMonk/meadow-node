@@ -61,6 +61,8 @@ export type Notify = (agent: string, displayName: string, count: number, held: n
 /** Mention notifications (§16.20.3): one per room, at most 5 a sync, and how many more rooms had mentions. */
 export type MentionNote = { rooms: { room: string; title: string; by: string; count: number }[]; more: number };
 export const MENTION_ROOMS_PER_SYNC = 5;
+/** How often background receiving looks for groups that are due (§16.8). */
+export const BACKGROUND_TICK_MS = 60_000;
 
 export class Services {
   readonly db: Db;
@@ -244,7 +246,7 @@ export class Services {
       },
     });
     this.connections = new Connections({ db: this.db, vault: this.vault });
-    this.tools = new ToolHost({ core: this.core, wallets: this.wallets, catalog: this.catalog, guard: guardSettings, diagnostics: this.diagnostics, activity: this.activity, notes: this.notes });
+    this.tools = new ToolHost({ core: this.core, wallets: this.wallets, catalog: this.catalog, guard: guardSettings, diagnostics: this.diagnostics, activity: this.activity, notes: this.notes, freshness: (agent) => this.freshness(agent) });
     this.oauth = new OAuth({ db: this.db, diagnostics: this.diagnostics });
     this.runner = new Runner({ db: this.db, vault: this.vault, host: this.tools });
     // Each change of the tunnel's state is recorded, with its error or address, and so is
@@ -404,27 +406,70 @@ export class Services {
       this.#daily.unref();
     }
     if (!s.syncEnabled) return;
-    this.#timer = setInterval(() => void this.syncAll(), s.syncMinutes * 60_000);
+    // Looks once a minute and syncs only the groups that are due (§16.8): a sync the AI, a write, or
+    // Sync Now just made is never repeated. A tick while the last one still runs is skipped.
+    this.#timer = setInterval(() => {
+      if (this.#background) return;
+      this.#background = true;
+      void this.syncAll('background', { due: true }).finally(() => (this.#background = false));
+    }, BACKGROUND_TICK_MS);
   }
 
-  /** Syncs every agent with a wallet; `cause` is what its payments are recorded as (Â§16.9.4). */
-  async syncAll(cause: 'background' | 'person' = 'background'): Promise<{ agent: string; ok: boolean; message: string }[]> {
-    const agents = this.core.agents().filter((x) => x.registered && this.wallets.walletOf(x.id)).map((x) => x.id);
+  /** A background receive is running. */
+  #background = false;
+
+  /** When background receiving last tried each group (by its first agent), success or not. */
+  #attempted = new Map<string, number>();
+
+  /** The agents that sync together (§7.9): each wallet's registered agents, up to 8 a call. */
+  #syncGroups(): string[][] {
+    const groups = new Map<string, string[]>();
+    for (const a of this.core.agents().filter((x) => x.registered && this.wallets.walletOf(x.id))) {
+      const payer = this.wallets.walletOf(a.id)!;
+      groups.set(payer, [...(groups.get(payer) ?? []), a.id]);
+    }
+    const out: string[][] = [];
+    for (const list of groups.values()) for (let i = 0; i < list.length; i += SYNC.batch) out.push(list.slice(i, i + SYNC.batch));
+    return out;
+  }
+
+  /**
+   * When background receiving next syncs a group: a full interval after the least recently synced
+   * of its agents last synced successfully, by any path, and after its last background try.
+   */
+  #dueAt(group: string[]): number {
+    const oldest = Math.min(...group.map((a) => this.lastSyncOk(a) ?? 0));
+    const tried = Math.max(...group.map((a) => this.#attempted.get(a) ?? 0));
+    return Math.max(oldest, tried) + this.settings().syncMinutes * 60_000;
+  }
+
+  /**
+   * How fresh an agent's view of the network is, for the AI (§16.8): its last successful sync, and
+   * when background receiving will next check (null when it is off).
+   */
+  freshness(agent: string, now = Date.now()): { lastOk: number | null; nextBackground: number | null } {
+    const lastOk = this.lastSyncOk(agent);
+    if (!this.settings().syncEnabled) return { lastOk, nextBackground: null };
+    const group = this.#syncGroups().find((g) => g.includes(agent)) ?? [agent];
+    return { lastOk, nextBackground: Math.max(this.#dueAt(group), now) + BACKGROUND_TICK_MS };
+  }
+
+  /**
+   * Syncs every agent with a wallet; `cause` is what its payments are recorded as (§16.9.4).
+   * `due`: background receiving, which syncs only the groups whose time has come (§16.8).
+   */
+  async syncAll(cause: 'background' | 'person' = 'background', { due = false, now = Date.now() }: { due?: boolean; now?: number } = {}): Promise<{ agent: string; ok: boolean; message: string }[]> {
+    const groups = this.#syncGroups().filter((g) => !due || this.#dueAt(g) <= now);
+    if (due) for (const g of groups) for (const a of g) this.#attempted.set(a, now);
     const out: { agent: string; ok: boolean; message: string }[] = [];
     if (this.core.batchOff()) {
-      for (const a of agents) out.push({ agent: a, ...(await withCause(cause, () => this.syncOne(a))) });
+      for (const a of groups.flat()) out.push({ agent: a, ...(await withCause(cause, () => this.syncOne(a))) });
       return out;
     }
     // Combined, always (§7.9, §16.8): each wallet's agents, up to 8 a call, so no wallet pays for
     // another's. An agent alone on its wallet gets an ordinary sync (Core.syncMany).
-    const groups = new Map<string, string[]>();
-    for (const a of agents) {
-      const payer = this.wallets.walletOf(a)!;
-      groups.set(payer, [...(groups.get(payer) ?? []), a]);
-    }
-    for (const list of groups.values()) {
-      for (let i = 0; i < list.length; i += SYNC.batch) {
-        const chunk = list.slice(i, i + SYNC.batch);
+    {
+      for (const chunk of groups) {
         const results = await withCause(cause, () => this.core.syncMany(chunk)).catch((err) => new Map(chunk.map((a) => [a, err as Error])));
         for (const a of chunk) out.push({ agent: a, ...this.#syncResult(a, results.get(a) ?? new Error('Not synced.')) });
       }

@@ -93,7 +93,7 @@ export function troubleshoot(s: Services, claude: (agent: string) => ClaudeState
   const money: TroubleItem[] = [];
   const wallets = s.wallets.list();
   const paying = (w: { agents: string[] }) => agents.filter((a) => w.agents.includes(a.id) && a.registered).length;
-  // Background calls a day: a wallet's agents sync together, up to 8 a call (Â§7.9).
+  // Background calls a day: a wallet's agents sync together, up to 8 a call (§7.9).
   const calls = (w: { agents: string[] }) => Math.ceil(paying(w) / 8);
   for (const a of agents.filter((x) => !s.wallets.walletOf(x.id))) {
     money.push(item(`nowallet:${a.id}`, 'Wallets', 'bad', `${a.display_name} has no wallet to pay for its calls.`,
