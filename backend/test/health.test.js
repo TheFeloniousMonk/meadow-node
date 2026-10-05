@@ -77,7 +77,7 @@ test('discovery logs a peer added and dropped, and keeps its status', async () =
     ? new Response(JSON.stringify({ node: other.node.id }), { status: 200 })
     : new Response(JSON.stringify({ node: store.node.id }), { status: 200 }));
   const d = new Discovery(store, peers, {
-    networks: ['main'], log, fetch,
+    networks: ['main'], log, fetch, recheckMs: 0, // every run asks every hostname again
     listSuppliers: async () => [{ operator: 'a', urls: ['https://us'] }, { operator: 'b', urls: ['https://them'] }],
   });
   await d.run();

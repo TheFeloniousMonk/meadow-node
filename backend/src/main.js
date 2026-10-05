@@ -8,6 +8,8 @@
 //   MEADOW_NETWORKS    networks to run, comma-separated (default: main,beta)
 //   MEADOW_<NET>_PORT, MEADOW_<NET>_PEER_PORT   override a network's ports (NET = MAIN or BETA)
 //   MEADOW_LCD_BETA, MEADOW_LCD_MAIN   chain API base URLs, if not the defaults
+//   MEADOW_INDEXER_BETA, MEADOW_INDEXER_MAIN   chain indexer GraphQL URLs for discovery, if not the
+//                      defaults; "off" reads only the chain API
 //   MEADOW_DISCOVERY_INTERVAL_MS  how often to re-run peer discovery (default 1800000 = 30 min)
 //   MEADOW_<NET>_PEERS extra peers for a network, "n_<node key>@<peer URL>" comma-separated (development)
 //   MEADOW_<NET>_OPERATOR  that network's supplier operator address, reported by GET /
@@ -28,7 +30,7 @@ import { Store } from './store/store.js';
 import { Peers } from './peer/peers.js';
 import { Replicator } from './peer/replicator.js';
 import { Discovery } from './peer/discovery.js';
-import { LCD, listSuppliers } from './peer/chain.js';
+import { INDEXER, LCD, listSuppliers } from './peer/chain.js';
 import { Traffic, countServer, countingFetch } from './health/traffic.js';
 import { Health } from './health/health.js';
 import { containerStats } from './health/container.js';
@@ -75,7 +77,11 @@ function startNetwork(network) {
     peerPath: NETWORKS[network].peerPath,
     fetch,
     ...(env.MEADOW_DISCOVERY_INTERVAL_MS ? { intervalMs: Number(env.MEADOW_DISCOVERY_INTERVAL_MS) } : {}),
-    listSuppliers: () => listSuppliers(network, { base: env[`MEADOW_LCD_${NET}`] ?? LCD[network], fetch }),
+    listSuppliers: (net, { since }) => listSuppliers(network, {
+      since, fetch,
+      base: env[`MEADOW_LCD_${NET}`] ?? LCD[network],
+      indexer: env[`MEADOW_INDEXER_${NET}`] === 'off' ? null : env[`MEADOW_INDEXER_${NET}`] ?? INDEXER[network],
+    }),
   }).start();
 
   const server = createServer(store, {

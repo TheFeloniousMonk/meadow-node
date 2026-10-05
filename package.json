@@ -14,6 +14,7 @@
     "crypto:build": "docker build --output type=local,dest=crypto/pkg crypto",
     "test:app": "npm --prefix app test",
     "mutate:state": "node conformance/tools/mutate-state.js",
+    "sim": "node backend/sim/simulate.js",
     "mutate:e2e": "node conformance/tools/mutate-e2e.js && node app/test/mutate-e2e.ts"
   },
   "description": "Meadow node: backend, conformance suite, and deployment files. The version lives in backend/package.json."

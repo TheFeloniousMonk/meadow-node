@@ -4,7 +4,7 @@
 // like a client's (§11.4). Peer calls are free, so pacing can be quick.
 
 import { REPLY_LIMITS, ReplyTooLarge, readJson } from './read.js';
-import { signPeer } from './peers.js';
+import { shortId, signPeer } from './peers.js';
 import { ingestFromPeer, isAgentEvent, PEER_LIMITS } from './api.js';
 import { verifyReport } from '../proto/report.js';
 
@@ -17,6 +17,11 @@ export const PUSH_BACKOFF_MS = 1000;
 export const PUSH_BACKOFF_MAX_MS = 5 * 60 * 1000;
 // Incremental anti-entropy (§11.3): a full comparison with each peer at least this often.
 export const FULL_ROUND_MS = 60 * 60 * 1000;
+// Stable anti-entropy partners (§11.3): this many, each kept for half to one and a half times
+// PARTNER_MS, and this share of a round's picks going to a random other peer instead.
+export const AE_PARTNERS = 4;
+export const PARTNER_MS = 3 * 60 * 60 * 1000;
+export const RANDOM_PEER_SHARE = 0.1;
 
 export class Replicator {
   #store;
@@ -29,6 +34,8 @@ export class Replicator {
   #pushing = new Set(); // peers with a push in flight: one at a time, in order
   #backoff = new Map(); // peer ID -> { failures, until } after failed pushes
   #rounds = new Map(); // peer ID -> { marks: { rooms, agents, reports }, fullAt } (incremental anti-entropy)
+  #partners = new Map(); // peer ID -> when its term as an anti-entropy partner ends
+  #turn = 0; // the partner next in line
   #timers = [];
   #unsubscribe = null;
 
@@ -37,6 +44,7 @@ export class Replicator {
     this.#peers = peers;
     this.#opts = {
       fanout: 3, flushMs: 250, antiEntropyMs: 60_000, antiEntropyPeers: 2, timeoutMs: 10_000,
+      aePartners: AE_PARTNERS, partnerMs: PARTNER_MS, randomPeerShare: RANDOM_PEER_SHARE,
       newRoomsPerRound: 20, newAgentsPerRound: 50, fetch: globalThis.fetch, log: console, ...opts,
     };
   }
@@ -66,6 +74,11 @@ export class Replicator {
     return this.#held.size;
   }
 
+  // The current anti-entropy partners' IDs.
+  get partners() {
+    return [...this.#partners.keys()];
+  }
+
   #track(promise) {
     const p = promise.catch((err) => this.#opts.log.warn?.(`replication: ${err.message}`)).finally(() => this.#inflight.delete(p));
     this.#inflight.add(p);
@@ -83,10 +96,14 @@ export class Replicator {
 
   // Gossip: each newly stored item goes to `fanout` random peers other than
   // the one it came from; they do the same, and dedup ends the spread.
-  // Anti-entropy pulls are not passed on: every node runs its own.
+  // Peers waiting after failed pushes are not drawn (§11.3), so the fanout
+  // goes to peers that can take it. Anti-entropy pulls are not passed on:
+  // every node runs its own.
   #enqueue(info) {
     if (info.origin === 'pull') return;
-    const targets = this.#shuffled(this.#peers.active().filter((p) => p.id !== info.origin)).slice(0, this.#opts.fanout);
+    const now = Date.now();
+    const ready = this.#peers.active().filter((p) => p.id !== info.origin && (this.#backoff.get(p.id)?.until ?? 0) <= now);
+    const targets = this.#shuffled(ready).slice(0, this.#opts.fanout);
     for (const peer of targets) {
       const q = this.#queues.get(peer.id) ?? [];
       if (q.length >= QUEUE_CAP) q.shift(); // anti-entropy catches up with what we drop
@@ -193,7 +210,9 @@ export class Replicator {
   }
 
   // A push left events waiting on history: pull it from the peer that sent
-  // them (it has it), and hold whatever still cannot be placed.
+  // them (it has it), and hold whatever still cannot be placed. What this
+  // pulls, and the held events it unblocks, are gossiped on as the sender's
+  // (§11.3): they complete a push, so the push's spread goes on from here.
   resolvePending(peerId, pending) {
     const peer = this.#peers.get(peerId);
     this.hold(pending, peerId);
@@ -203,8 +222,8 @@ export class Replicator {
   async #resolveFrom(peer, pending) {
     const agents = new Set(pending.filter(isAgentEvent).map((ev) => ev.header.author));
     const rooms = new Set(pending.filter((ev) => !isAgentEvent(ev)).map((ev) => ev.header.room));
-    for (const agent of agents) await this.pullChain(peer, agent);
-    for (const room of rooms) await this.pullRoom(peer, room);
+    for (const agent of agents) await this.pullChain(peer, agent, { gossip: true });
+    for (const room of rooms) await this.pullRoom(peer, room, { gossip: true });
     this.#retryHeldNow();
   }
 
@@ -219,11 +238,12 @@ export class Replicator {
   #retryHeldNow(now = Date.now()) {
     for (const [id, h] of this.#held) if (now - h.at > HOLD_MS) this.#held.delete(id);
     if (!this.#held.size) return;
-    // Grouped by the peer each came from, so the events are recorded as its.
+    // Grouped by the peer each came from, so the events are recorded as its,
+    // and gossiped on: they arrived by push (§11.3).
     const byPeer = new Map();
     for (const h of this.#held.values()) byPeer.set(h.from, [...(byPeer.get(h.from) ?? []), h.ev]);
     for (const [from, held] of byPeer) {
-      const res = ingestFromPeer(this.#store, held, { from });
+      const res = ingestFromPeer(this.#store, held, from ? { origin: from } : {});
       const still = new Set(res.pending.map((ev) => ev.id));
       for (const ev of held) if (!still.has(ev.id)) this.#held.delete(ev.id);
     }
@@ -232,20 +252,26 @@ export class Replicator {
   // An agent's chain, page by page, oldest first (§11.2), from this node's own
   // head of it: only the tail is sent. From the start when the peer says our
   // head is not on its chain (a fork), or, a node before 0.6.0, sends nothing.
-  async pullChain(peer, agent) {
+  // `gossip`: the pull completes a push, and what it brings is passed on.
+  async pullChain(peer, agent, { gossip = false } = {}) {
     const own = this.#store.agent(agent)?.head;
-    if (own && await this.#pullChainFrom(peer, agent, own)) return;
-    await this.#pullChainFrom(peer, agent, undefined);
+    if (own && await this.#pullChainFrom(peer, agent, own, gossip)) return;
+    await this.#pullChainFrom(peer, agent, undefined, gossip);
+  }
+
+  // How pulled events are ingested: as the peer's push when gossiped on, else as a pull.
+  #via(peer, gossip) {
+    return { ...(gossip ? { origin: peer.id } : { from: peer.id }), onInvalid: (reason) => this.#peers.penalize(peer.id, 1, reason) };
   }
 
   // false when the pull should start over from the beginning.
-  async #pullChainFrom(peer, agent, start) {
+  async #pullChainFrom(peer, agent, start, gossip) {
     let after = start;
     for (let page = 0; page < 100; page++) {
       const res = await this.#call(peer, '/v2/chain', { agent, ...(after && { after }) });
       const events = Array.isArray(res.events) ? res.events : [];
       if (page === 0 && start && (res.after_unknown === true || (res.after_unknown === undefined && !events.length))) return false;
-      ingestFromPeer(this.#store, events, { from: peer.id, onInvalid: (reason) => this.#peers.penalize(peer.id, 1, reason) });
+      ingestFromPeer(this.#store, events, this.#via(peer, gossip));
       // A page that does not move past the last one ends the pull, whatever `more` says.
       if (!res.more || !events.length || events.at(-1).id === after) return true;
       after = events.at(-1).id;
@@ -254,7 +280,7 @@ export class Replicator {
   }
 
   // Pull a room's events we lack, page by page, from our heads forward.
-  async pullRoom(peer, roomId) {
+  async pullRoom(peer, roomId, { gossip = false } = {}) {
     const key = `${peer.id}|${roomId}`;
     if (this.#busy.has(key)) return;
     this.#busy.add(key);
@@ -262,11 +288,11 @@ export class Replicator {
       for (let pageNo = 0; pageNo < MAX_PULL_PAGES; pageNo++) {
         const heads = this.#store.room(roomId)?.heads() ?? [];
         const res = await this.#call(peer, '/v2/since', { room: roomId, heads });
-        const got = ingestFromPeer(this.#store, res.events, { from: peer.id, onInvalid: (reason) => this.#peers.penalize(peer.id, 1, reason) });
+        const got = ingestFromPeer(this.#store, res.events, this.#via(peer, gossip));
         // Bindings wait on agent chains (§6.6 step 3): fetch those, then retry.
         if (got.pending.length) {
-          for (const agent of new Set(got.pending.map((ev) => ev.header.author))) await this.pullChain(peer, agent);
-          ingestFromPeer(this.#store, got.pending, { from: peer.id });
+          for (const agent of new Set(got.pending.map((ev) => ev.header.author))) await this.pullChain(peer, agent, { gossip });
+          ingestFromPeer(this.#store, got.pending, this.#via(peer, gossip));
         }
         if (!res.more || got.accepted + got.rejected === 0) break;
       }
@@ -298,13 +324,51 @@ export class Replicator {
     return filled;
   }
 
-  // Each round compares with a few random peers.
-  async antiEntropyAll() {
-    const peers = this.#shuffled(this.#peers.active()).slice(0, this.#opts.antiEntropyPeers);
-    for (const p of peers) {
-      await this.antiEntropy(p).catch((err) => this.#opts.log.warn?.(`anti-entropy with ${p.id}: ${err.message}`));
+  // Each round compares with two peers (§11.3): mostly a few stable partners
+  // in turn, so their incremental marks stay fresh, and now and then a random
+  // other peer, for coverage. A partner that fails a round is replaced.
+  async antiEntropyAll(now = Date.now()) {
+    for (const p of this.#roundPeers(now)) {
+      await this.antiEntropy(p, now).catch((err) => {
+        this.#opts.log.warn?.(`anti-entropy with ${shortId(p.id)}: ${err.message}`);
+        if (this.#partners.delete(p.id)) this.#opts.log.log?.(`anti-entropy partner ${shortId(p.id)} replaced after a failed round`);
+      });
     }
     this.#retryHeldNow();
+  }
+
+  // Partners leave when dropped or banned, or (one per round) when their term
+  // is over and another peer can take the place; the places are then refilled
+  // from random active peers, those whose last call did not fail first.
+  #refreshPartners(now) {
+    const active = new Map(this.#peers.active().map((p) => [p.id, p]));
+    for (const id of this.#partners.keys()) if (!active.has(id)) this.#partners.delete(id);
+    const term = () => now + this.#opts.partnerMs * (0.5 + Math.random());
+    const retiring = [...this.#partners].find(([, until]) => until <= now)?.[0];
+    // Popped from the end: peers whose last call failed go to the front.
+    const candidates = this.#shuffled([...active.values()].filter((p) => !this.#partners.has(p.id)))
+      .sort((a, b) => (b.failures > 0) - (a.failures > 0)).map((p) => p.id);
+    if (retiring) {
+      if (candidates.length) this.#partners.delete(retiring);
+      else this.#partners.set(retiring, term());
+    }
+    while (this.#partners.size < this.#opts.aePartners && candidates.length) this.#partners.set(candidates.pop(), term());
+    return active;
+  }
+
+  #roundPeers(now) {
+    const active = this.#refreshPartners(now);
+    const partners = [...this.#partners.keys()];
+    const want = Math.min(this.#opts.antiEntropyPeers, active.size);
+    const picks = new Map();
+    const random = () => this.#shuffled([...active.values()].filter((p) => !this.#partners.has(p.id) && !picks.has(p.id)))[0];
+    for (let tries = 0; picks.size < want && tries < want + partners.length + 2; tries++) {
+      let p = Math.random() < this.#opts.randomPeerShare ? random() : undefined;
+      if (!p && partners.length) p = active.get(partners[this.#turn++ % partners.length]);
+      p ??= random();
+      if (p) picks.set(p.id, p);
+    }
+    return [...picks.values()];
   }
 
   // Compare rooms, agents, and reports with one peer and pull what differs.
