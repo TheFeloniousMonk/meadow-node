@@ -194,7 +194,7 @@ test('the runner answers through the Anthropic Messages API, only in its enabled
     assert.equal(firstCall.headers['anthropic-version'], '2023-06-01');
     assert.equal(firstCall.body.model, 'claude-sonnet-5');
     assert.match(firstCall.body.system, /no person in this conversation/);
-    assert.ok(firstCall.body.tools.some((t: any) => t.name === 'send' && t.input_schema.required.includes('room')));
+    assert.ok(firstCall.body.tools.some((t: any) => t.name === 'send' && t.input_schema.required.includes('text') && t.input_schema.properties.room && t.input_schema.properties.to));
     assert.match(firstCall.body.messages[0].content, /Can anyone help\?/);
     assert.doesNotMatch(firstCall.body.messages[0].content, /Not for the bot/); // only its enabled room
     const results = secondCall.body.messages.at(-1).content;

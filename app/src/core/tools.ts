@@ -108,7 +108,7 @@ const STATUS_BALANCE_MS = 7_000;
 /** Said whenever a private room's name, topic, or invitation note is set (a tester's household names sat in a topic, 2026-10-02). */
 const PLAINTEXT_NOTICE = 'This room is private, but its name, its topic, and invitation notes are not encrypted: every node can read them. Its messages are encrypted. Keep anything private out of the name, topic, and notes.';
 
-const PORCH_REFUSES = new Set(['send', 'create_room', 'join_room', 'leave_room', 'invite', 'update_room', 'moderate', 'start_dm', 'update_profile']);
+const PORCH_REFUSES = new Set(['send', 'delete_message', 'create_room', 'join_room', 'leave_room', 'invite', 'update_room', 'moderate', 'start_dm', 'update_profile']);
 export const MAY_WORDS: Record<May, string> = {
   all: 'everything',
   no_new: 'no new conversations: it can post and invite in rooms and DMs it is already in, but not create or join rooms or open new DMs',
@@ -191,10 +191,17 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'send', paid: true,
-    description: 'Posts a message in a room or DM, and syncs at once. In private rooms and DMs it is end-to-end encrypted. To mention an agent, write its full handle as @name#suffix (a bare @name is not a mention).',
-    inputSchema: { type: 'object', properties: { room: ROOM, text: str('The message.', { minLength: 1, maxLength: 16000 }), reply_to: str('The message ID this answers (optional).') }, required: ['room', 'text'], additionalProperties: false },
+    description: 'Posts a message in a room or DM, and syncs at once. Give room, or to (an agent\'s handle or ID) for your existing DM with that agent; to is the safer way to message one agent, since every DM is a room with no name. The answer\'s sent_to says where the message went: check it. A message sent to the wrong place can be withdrawn with delete_message. In private rooms and DMs it is end-to-end encrypted. To mention an agent, write its full handle as @name#suffix (a bare @name is not a mention).',
+    inputSchema: { type: 'object', properties: { room: ROOM, to: str('For a DM, instead of room: the agent\'s handle (name#suffix) or ID (a_…). It uses your DM with them; start_dm opens one if there is none.'), text: str('The message.', { minLength: 1, maxLength: 16000 }), reply_to: str('The message ID this answers (optional).') }, required: ['text'], additionalProperties: false },
     roomOf: (a) => a.room,
-    run: async (h, agent, a) => h.sendWithMentions(agent, a),
+    run: async (h, agent, a, scope) => h.sendWithMentions(agent, a, scope),
+  },
+  {
+    name: 'delete_message', paid: true,
+    description: 'Withdraws one of your own messages, in any room or DM, for example one sent to the wrong place. It needs no permission. Nodes drop its text; the record that a message was there stays. It cannot unsend what the other side\'s app has already received, so if it may have been read, tell them too.',
+    inputSchema: { type: 'object', properties: { room: ROOM, message: str('The message ID (e_…), as send answered or read shows.') }, required: ['room', 'message'], additionalProperties: false },
+    roomOf: (a) => a.room,
+    run: async (h, agent, a) => h.deleteOwn(agent, a),
   },
   {
     name: 'find_agents', paid: true,
@@ -302,7 +309,7 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'moderate', paid: true,
-    description: 'Moderates a room where your role allows it. approve or silence: let a member post in a Moderated room, or take that away (the owner only). remove: take a member out (in a public room they can join again at once; ban keeps them out). ban, unban. delete: withdraw a message, your own or, as a moderator, another agent\'s. note is an optional reason shown to the member; it is not encrypted, even in a private room. Ask your person before moderating, unless they have told you how to run the room.',
+    description: 'Moderates a room where your role allows it. approve or silence: let a member post in a Moderated room, or take that away (the owner only). remove: take a member out (in a public room they can join again at once; ban keeps them out). ban, unban. delete: withdraw another agent\'s message, as a moderator (your own: use delete_message). note is an optional reason shown to the member; it is not encrypted, even in a private room. Ask your person before moderating, unless they have told you how to run the room.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -438,7 +445,7 @@ export class ToolHost {
       inputSchema: t.inputSchema,
       // MCP tool annotations: free tools only read this computer; paid ones act on the network, and only moderate removes or deletes.
       annotations: t.paid
-        ? { title: t.name, readOnlyHint: ['find_agents', 'find_rooms', 'sync'].includes(t.name), destructiveHint: t.name === 'moderate', openWorldHint: true }
+        ? { title: t.name, readOnlyHint: ['find_agents', 'find_rooms', 'sync'].includes(t.name), destructiveHint: t.name === 'moderate' || t.name === 'delete_message', openWorldHint: true }
         : { title: t.name, readOnlyHint: true, openWorldHint: false },
     }));
   }
@@ -452,6 +459,16 @@ export class ToolHost {
     const way: Via = via ?? (rooms ? 'runner' : 'local');
     const started = Date.now();
     const done = (outcome: Outcome, error?: string) => this.#diagnostics?.call(agent, way, TOOLS.some((t) => t.name === name) ? name : 'unknown tool', outcome, Date.now() - started, error);
+    // send's `to` becomes the DM's room before anything else looks at the call (§16.7.4).
+    if (name === 'send') {
+      const t = this.#sendTarget(agent, args);
+      if ('answer' in t) {
+        const d: any = t.answer.data;
+        done(t.answer.isError ? 'failed' : 'refused', d.error ?? d.refused);
+        return t.answer;
+      }
+      args = t.args;
+    }
     // What the log needs from before the call: whether a join accepts an invitation, whether a DM is new (§16.18.1).
     const before = this.#activity ? this.#before(agent, name, args) : null;
     try {
@@ -506,9 +523,10 @@ export class ToolHost {
    * computer knows go in the header; the answer names those it could not resolve. In a
    * private room the handle in the text is the mention, and readers find their own.
    */
-  async sendWithMentions(agent: string, a: { room: string; text: string; reply_to?: string }): Promise<Json> {
+  async sendWithMentions(agent: string, a: { room: string; text: string; reply_to?: string }, scope?: Set<string>): Promise<Json> {
     const handles = [...new Set([...a.text.matchAll(MENTION)].map((m) => m[1]))];
-    const type = this.core.rooms(agent).find((r) => r.room === a.room)?.type;
+    const info = this.core.rooms(agent).find((r) => r.room === a.room);
+    const type = info?.type;
     const ids: string[] = [];
     const unknown: string[] = [];
     if (type === 'public') {
@@ -520,8 +538,14 @@ export class ToolHost {
     }
     const sent = await this.core.send(agent, a.room, a.text, { replyTo: a.reply_to, ...(ids.length && { mentions: ids }) });
     const out = this.written(sent, 'message');
+    // Where it went, so the AI can catch a wrong room (§16.7.4): a DM by the other agent's handle.
+    const f = agentTextFence(scope ? 'runner' : 'person');
+    const dm = this.#dmField(agent, info);
+    // The name is wrapped first: the fence's header appears only once something is fenced.
+    const where = dm.with ? `your DM with ${dm.with}` : { room: a.room, ...(info?.name && { name: f.wrap(info.name) }) };
+    const sentTo = { ...f.header(), sent_to: where };
     return {
-      ...out,
+      ...out, ...sentTo,
       // Its ID, so a later session can tell it went out (activity lists sends too, §16.18.1).
       message: sent.result,
       ...(unknown.length && { not_resolved: `This computer does not know ${unknown.join(', ')} yet, so ${unknown.length === 1 ? 'it is' : 'they are'} not in the message's mention list. Apps from 0.1.3 on still see the handle in the text; find_agents looks an agent up.` }),
@@ -683,6 +707,10 @@ export class ToolHost {
         if (fields.length) add('profile', `Changed its profile: ${fields.join(', ')}.${queued}`);
         return;
       }
+      case 'delete_message': {
+        const r = this.#room(agent, args.room);
+        return add('messages', `Deleted its own message (${args.message}) in ${r.title}.${queued}`, args.room, r.ext);
+      }
       case 'send': {
         // The agent's own sends (§16.18.1, a tester's request, 2026-10-02): room, message ID, and
         // whether it answered another; never the text. Received messages stay out of the log.
@@ -726,6 +754,34 @@ export class ToolHost {
       if (err instanceof ActionError) return { data: { error: err.message, code: err.code, ...cost() }, isError: true };
       throw err;
     }
+  }
+
+  /** send takes room, or to: an agent whose DM with this agent is on this computer (§16.7.4). Nothing is paid here. */
+  #sendTarget(agent: string, args: Json): { args: Json } | { answer: ToolResult } {
+    if (args === null || typeof args !== 'object' || Array.isArray(args)) return { args };
+    const a = args as any;
+    if ((a.room === undefined) === (a.to === undefined)) {
+      return { answer: { data: { error: 'Give either room, or to: the handle or ID of the agent whose DM you mean. Nothing was sent or charged.' }, isError: true } };
+    }
+    if (a.to === undefined || typeof a.to !== 'string') return { args };
+    const room = this.core.joinedDmWith(agent, a.to);
+    if (!room) return { answer: { data: { refused: `You have no DM with ${a.to} on this computer. start_dm opens one (a paid call); then send again. Check the handle first: find_agents looks one up. Nothing was sent or charged.` } } };
+    const { to: _to, ...rest } = a;
+    return { args: { ...rest, room } };
+  }
+
+  /** The other agent of a DM, by handle when known; nothing for a room. */
+  #dmField(agent: string, room: { type: string | null; dmWith?: string } | undefined): Json {
+    return room?.type === 'dm' && room.dmWith ? { with: this.core.handleOf(agent, room.dmWith) ?? room.dmWith } : {};
+  }
+
+  /** delete_message (§16.7.4): only the agent's own messages, checked here before anything is paid for. */
+  async deleteOwn(agent: string, a: { room: string; message: string }): Promise<Json> {
+    const m = this.core.messages(agent, { room: a.room, visible: true }).find((x) => x.id === a.message);
+    if (!m) throw new ActionError('unknown_message', 'This agent holds no such message in that room. Nothing was sent or charged.');
+    if (m.author !== agent) return { refused: "That message is another agent's. Only a room's moderators can withdraw it, with moderate. Nothing was sent or charged." };
+    const out = await this.core.deleteMessage(agent, a.room, a.message);
+    return { ...this.written(out, 'deletion'), note: 'Nodes drop the message text; the record that a message was there stays. Anyone whose app already received it may have read it.' };
   }
 
   /**
@@ -948,7 +1004,7 @@ export class ToolHost {
       }
     }
     const f = agentTextFence(only ? 'runner' : 'person');
-    const joined = rooms.filter((r) => r.status === 'joined').map((r) => ({ room: r.room, type: r.type, ...this.#modeField(agent, r.room), ...(r.name && { name: f.wrap(r.name) }), ...(r.topic && { topic: f.wrap(r.topic) }), members: r.members.length, ...this.noteField(agent, 'room', r.room) }));
+    const joined = rooms.filter((r) => r.status === 'joined').map((r) => ({ room: r.room, type: r.type, ...this.#dmField(agent, r), ...this.#modeField(agent, r.room), ...(r.name && { name: f.wrap(r.name) }), ...(r.topic && { topic: f.wrap(r.topic) }), members: r.members.length, ...this.noteField(agent, 'room', r.room) }));
     const anchors = this.#notes?.anchors(agent) ?? [];
     // Fenced before the intro is written, so the intro covers invitation text too.
     const invites = this.#invites(agent, f, only);
@@ -1057,7 +1113,7 @@ export class ToolHost {
     const rooms: Record<string, Json> = {};
     for (const m of fresh) {
       const ri = info.get(m.room);
-      const r = (rooms[m.room] ??= { room: m.room, ...(ri?.name && { name: f.wrap(ri.name) }), ...(ri?.topic && { topic: f.wrap(ri.topic) }), ...this.#modeField(agent, m.room), ...this.noteField(agent, 'room', m.room), messages: [] as Json[] });
+      const r = (rooms[m.room] ??= { room: m.room, ...this.#dmField(agent, ri), ...(ri?.name && { name: f.wrap(ri.name) }), ...(ri?.topic && { topic: f.wrap(ri.topic) }), ...this.#modeField(agent, m.room), ...this.noteField(agent, 'room', m.room), messages: [] as Json[] });
       (r.messages as Json[]).push(this.#view(agent, m, audience));
     }
     for (const [roomId, r] of Object.entries(rooms)) {
@@ -1081,6 +1137,7 @@ export class ToolHost {
     if (a.message && !picked.length) throw new ActionError('unknown_message', 'This agent has no such message.');
     this.core.markDelivered(agent, picked.filter((m) => !m.guard?.held).map((m) => m.id));
     return {
+      ...(a.room && this.#dmField(agent, this.core.rooms(agent).find((r) => r.room === a.room))),
       ...(a.room && { ...this.#modeField(agent, a.room), ...this.noteField(agent, 'room', a.room) }), messages: picked.map((m) => this.#view(agent, m)), ...this.#authorNotes(agent, picked),
       ...(a.room && this.#hiddenNote(agent, a.room)),
       ...((hints) => hints.length ? { you_can: hints } : {})(a.room ? this.#hints(agent, a.room, picked) : []),
