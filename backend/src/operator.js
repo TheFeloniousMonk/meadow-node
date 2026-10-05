@@ -12,6 +12,8 @@
 //   dismiss <p_…> [--note …]                     resolve a report with no action
 //   takedowns [--limit N]                        the takedown log, newest first
 //   restore <e_…>                                withdraw a takedown
+//   peers                                        peers and discovery, from the node's latest health snapshot (§9.6)
+//   alert-test                                   post a test health report to MEADOW_ALERT_WEBHOOK (§9.6)
 
 import { DatabaseSync } from 'node:sqlite';
 import { existsSync } from 'node:fs';
@@ -20,6 +22,9 @@ import { pathToFileURL } from 'node:url';
 import { isEventId } from './proto/event.js';
 import { verifyReport } from './proto/report.js';
 import { CONTENT_KINDS, SCHEMA } from './store/store.js';
+import { parseAlertConfig, postWebhook } from './health/alerts.js';
+import { buildPayload } from './health/report.js';
+import { containerStats } from './health/container.js';
 
 export class OperatorError extends Error {}
 
@@ -82,7 +87,29 @@ const getReport = (db, id) => {
   return row;
 };
 
+// The node's latest health snapshot (§9.6), written every 5 minutes and at each alert check.
+function healthSnapshot(db) {
+  const row = db.prepare("SELECT value FROM meta WHERE key = 'health'").get();
+  if (!row) throw new OperatorError('no health snapshot yet: the node writes one a minute after it starts (node 0.6.0 or later)');
+  return JSON.parse(row.value);
+}
+
 const COMMANDS = {
+  peers(db) {
+    const s = healthSnapshot(db);
+    return {
+      snapshot_at: iso(s.at),
+      node: s.node,
+      discovery: { ...s.discovery, last_run: iso(s.discovery.last_run), last_error: s.discovery.last_error && { text: s.discovery.last_error.text, at: iso(s.discovery.last_error.at) } },
+      peers: s.peers.map((p) => ({
+        node: p.id, host: p.host, source: p.source, banned: p.banned, banned_until: iso(p.banned_until),
+        penalty: p.penalty, last_penalty: p.last_penalty && { reason: p.last_penalty.reason, at: iso(p.last_penalty.at) },
+        last_ok: iso(p.last_ok), failures: p.failures, last_error: p.last_error && { text: p.last_error.text, at: iso(p.last_error.at) },
+      })),
+      issues: s.issues,
+    };
+  },
+
   reports(db, { flags }) {
     const rows = db.prepare(`SELECT r.id, r.report, r.reporter, r.received_at FROM reports r
       ${flags.all ? '' : 'WHERE NOT EXISTS (SELECT 1 FROM report_resolutions x WHERE x.id = r.id)'}
@@ -187,9 +214,23 @@ const COMMANDS = {
   },
 };
 
+// alert-test (§9.6): the latest snapshot and the container's figures now, posted as a test report,
+// so a wrong webhook URL shows at once. Async, unlike the other commands.
+export async function alertTest(db, network, { env = process.env, post = null, dataDir = env.MEADOW_DATA_DIR ?? 'data' } = {}) {
+  const config = parseAlertConfig(env);
+  if (!config) throw new OperatorError('MEADOW_ALERT_WEBHOOK is not set in this container');
+  const snap = healthSnapshot(db);
+  const c = containerStats(dataDir, [network]);
+  const { payload } = buildPayload([snap], { ...c, networkInterval: null, networkTotal: null, interval_ms: 0 }, {
+    note: `Test report from the ${network} node (latest snapshot, ${iso(snap.at)}).`,
+  });
+  const res = await (post ?? ((p) => postWebhook(config.webhook, p)))(payload);
+  return res.ok ? { posted: true, status: res.status } : { posted: false, error: res.error };
+}
+
 export function operate(db, command, argv = [], now = Date.now()) {
   const fn = COMMANDS[command];
-  if (!fn) throw new OperatorError(`unknown command "${command}"; use ${Object.keys(COMMANDS).join(', ')}`);
+  if (!fn) throw new OperatorError(`unknown command "${command}"; use ${[...Object.keys(COMMANDS), 'alert-test'].join(', ')}`);
   return fn(db, parseArgs(argv), now);
 }
 
@@ -204,12 +245,12 @@ async function main() {
     if (!existsSync(path)) throw new OperatorError(`no database at ${path}; is the ${network} node running here?`);
     const db = openDatabase(path);
     try {
-      print(operate(db, command, rest));
+      print(command === 'alert-test' ? await alertTest(db, network) : operate(db, command, rest));
     } finally {
       db.close();
     }
   } catch (err) {
-    if (!(err instanceof OperatorError)) throw err;
+    if (!(err instanceof OperatorError) && err.name !== 'AlertConfigError') throw err;
     print({ error: err.message });
     process.exitCode = 1;
   }

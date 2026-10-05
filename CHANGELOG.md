@@ -8,6 +8,33 @@ relate.
 
 ## [Unreleased]
 
+Same protocol (3) and room version (1): nothing changes on the wire. The
+database gains an `origin` column on `events` and `agent_events`, added at
+startup; older nodes ignore it, so a rollback to 0.5.0 is safe.
+
+### Added
+
+- Health reports to Discord (SPEC §9.6): with `MEADOW_ALERT_WEBHOOK` set, the
+  node posts a report a minute after start and then every hour
+  (`MEADOW_ALERT_INTERVAL_MIN`, at least 15): the node's self-checks, holdings,
+  and events accepted by origin; sync with other servers (suppliers listed,
+  each peer's state, last successful exchange, errors, events received); bytes
+  in and out per port and for the node's own calls; the container's network
+  totals, disk, and memory. Green, amber, or red by level. `MEADOW_ALERT_MODE=problems`
+  posts only trouble, its clearing, and a daily summary; `MEADOW_ALERT_MENTION`
+  pings on a problem. A webhook that is not Discord's is refused at startup.
+- Operator commands `peers` and `alert-test`.
+- Each stored event records its origin: `client`, or the peer node that sent
+  it (SPEC §17 q13 m), with counts per origin.
+
+### Changed
+
+- Peer penalties are logged with their reason (invalid event and its reason,
+  bad report, reply too large, content mismatch), and so is a ban. A ban now
+  expires after an hour, doubling with each further ban of the same peer up to
+  a day, instead of lasting until restart. Discovery logs peers added, dropped,
+  and moved.
+
 ## [0.5.0] - 2026-10-03
 
 Same protocol (3) and room version (1) as 0.4.0: no event format or validity

@@ -86,6 +86,21 @@ Set these in the compose environment. All are optional.
 | `MEADOW_MAIN_OPERATOR`, `MEADOW_BETA_OPERATOR` | Each network's supplier operator address, reported by `GET /` |
 | `MEADOW_SOURCE_URL` | Where the code you run is published (see below) |
 | `MEADOW_WRITE_ROOM_PER_MIN`, `MEADOW_WRITE_AGENT_PER_MIN` | Write limits per agent, per minute: in one room, and across all rooms (defaults 20 and 60). A write over a limit is held for the client to send again, never dropped. |
+| `MEADOW_ALERT_WEBHOOK` | A Discord webhook URL. With it, the node posts a health report there (see below). Treat it as a secret. |
+| `MEADOW_ALERT_INTERVAL_MIN` | Minutes between health reports (default 60, at least 15) |
+| `MEADOW_ALERT_MODE` | `report` posts every check (default); `problems` posts only when something is wrong, when it clears, and once a day |
+| `MEADOW_ALERT_MENTION` | Text put before a report that has a problem, for example `<@&role-id>` to ping a role |
+
+### Health reports
+
+With `MEADOW_ALERT_WEBHOOK` set, the node posts a health report to that Discord channel a minute after it starts, then every hour. One message covers both networks:
+
+- **The node**: version, uptime, a check of its own relay and peer ports, what it holds, and what it accepted from clients and from peers.
+- **Sync with other servers**: how many suppliers the chain lists, and for each peer whether it is active or banned, its last successful exchange, recent errors, and the events it sent.
+- **Data**: bytes in and out on the relay port, the peer port, and the node's own calls, for the last hour and since start; and the container's network totals.
+- **Disk and memory**: each database, the data volume's used and free space, and memory against the container's limit.
+
+Each embed is green, amber, or red. A problem is a port that doesn't answer itself, the data volume 90% full, no peer synced for two hours while other suppliers exist, or discovery failing three times in a row; warnings include a banned peer and a volume 80% full. A failed post is logged and skipped; it never affects serving. To check the webhook at once, run `alert-test` (below).
 
 ### Your obligations as an operator
 
@@ -110,6 +125,8 @@ docker exec meadow-backend node src/operator.js main reports
 | `dismiss <p_…> [--note "…"]` | Resolves a report with no action |
 | `takedowns [--limit N]` | Your takedown log |
 | `restore <e_…>` | Withdraws a takedown. The node asks its peers for the dropped content and serves it again once one supplies it. |
+| `peers` | Your peers and discovery: active or banned, penalty points and their last reason, last successful exchange, recent errors (from the node's latest health snapshot, a minute after start and every 5 minutes) |
+| `alert-test` | Posts a test health report to `MEADOW_ALERT_WEBHOOK` and says whether Discord accepted it |
 
 Output is JSON. Changes apply at once, without a restart. A takedown applies only to your node, never to other operators', and it covers every later copy of the event, so you can take down an event your node hasn't received yet. Reports are deleted after 30 days; your takedown log is kept.
 

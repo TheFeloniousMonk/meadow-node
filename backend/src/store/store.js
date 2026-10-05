@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS events (
   reason      TEXT,
   target      TEXT,           -- msg.delete target, so an early deletion is found when its target arrives
   soft_failed INTEGER NOT NULL DEFAULT 0,
-  received_at INTEGER NOT NULL
+  received_at INTEGER NOT NULL,
+  origin      TEXT            -- 'client' (a relay), or the peer node ID it came from (§17 q13 m); null before 0.6
 );
 CREATE INDEX IF NOT EXISTS events_room ON events (room, seq);
 CREATE INDEX IF NOT EXISTS events_target ON events (target) WHERE target IS NOT NULL;
@@ -54,7 +55,8 @@ CREATE TABLE IF NOT EXISTS agent_events (
   depth       INTEGER NOT NULL,
   rotations   INTEGER NOT NULL,
   state       TEXT NOT NULL,     -- JSON agent state after this event
-  received_at INTEGER NOT NULL
+  received_at INTEGER NOT NULL,
+  origin      TEXT               -- as events.origin
 );
 CREATE INDEX IF NOT EXISTS agent_events_agent ON agent_events (agent);
 CREATE TABLE IF NOT EXISTS agents (  -- each agent's best head (§5.4), denormalized for lookup
@@ -117,6 +119,14 @@ CREATE TABLE IF NOT EXISTS directory (  -- listed public rooms (§7.4), rebuilt 
 );
 `;
 
+// Columns added after a database was created (CREATE TABLE IF NOT EXISTS leaves old tables as they are).
+export function migrate(db) {
+  for (const [table, column, type] of [['events', 'origin', 'TEXT'], ['agent_events', 'origin', 'TEXT']]) {
+    const has = db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+    if (!has) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  }
+}
+
 export class Store {
   #db;
   #rooms = new Map();
@@ -141,6 +151,8 @@ export class Store {
   };
   node;
   retention;
+  // Events offered and newly accepted, by origin ('client' or a peer node ID), since start (§17 q13 m, §9.6).
+  ingestCounts = new Map();
 
   constructor(path = ':memory:', retention = {}) {
     this.retention = { ...RETENTION, ...retention };
@@ -148,12 +160,16 @@ export class Store {
     // busy_timeout: the operator command (src/operator.js) writes to the same database while the node runs.
     this.#db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
     this.#db.exec(SCHEMA);
+    migrate(this.#db);
     const db = this.#db;
     this.#q = {
       meta: db.prepare('SELECT value FROM meta WHERE key = ?'),
       setMeta: db.prepare('INSERT INTO meta (key, value) VALUES (?, ?)'),
-      insert: db.prepare(`INSERT INTO events (id, room, event, content, outcome, reason, target, soft_failed, received_at)
-                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+      putMeta: db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value'),
+      counts: db.prepare(`SELECT (SELECT count(*) FROM rooms) AS rooms, (SELECT count(*) FROM agents) AS agents,
+                                 (SELECT count(*) FROM events) + (SELECT count(*) FROM agent_events) AS events`),
+      insert: db.prepare(`INSERT INTO events (id, room, event, content, outcome, reason, target, soft_failed, received_at, origin)
+                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
       insertRoom: db.prepare('INSERT INTO rooms (room, type, dm_with, last_event_at) VALUES (?, ?, ?, ?)'),
       touchRoom: db.prepare('UPDATE rooms SET last_event_at = max(last_event_at, ?) WHERE room = ?'),
       tombstone: db.prepare('SELECT expired_at FROM tombstones WHERE room = ?'),
@@ -164,8 +180,8 @@ export class Store {
       bury: db.prepare('INSERT OR REPLACE INTO tombstones (room, expired_at) VALUES (?, ?)'),
       forget: db.prepare('DELETE FROM tombstones WHERE expired_at < ?'),
       agentEvent: db.prepare('SELECT agent, event, depth, rotations, state FROM agent_events WHERE id = ?'),
-      insertAgentEvent: db.prepare(`INSERT INTO agent_events (id, agent, event, depth, rotations, state, received_at)
-                                    VALUES (?, ?, ?, ?, ?, ?, ?)`),
+      insertAgentEvent: db.prepare(`INSERT INTO agent_events (id, agent, event, depth, rotations, state, received_at, origin)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
       agent: db.prepare('SELECT * FROM agents WHERE agent = ?'),
       upsertAgent: db.prepare(`INSERT INTO agents (agent, head, depth, rotations, suffix, name, search, state, updated_at)
                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -334,11 +350,37 @@ export class Store {
   }
 
   // Process one event from a client or peer. Idempotent. `origin` is the peer
-  // node it came from, if any.
-  ingest(ev, now = Date.now(), origin = null) {
+  // node it came from, if any ('pull' for anti-entropy, which is not gossiped
+  // on); `from` is what is recorded with the event: 'client', or the sending peer.
+  ingest(ev, now = Date.now(), origin = null, from = origin && origin !== 'pull' ? origin : origin ? 'peer' : 'client') {
+    const result = this.#ingest(ev, now, origin, from);
+    const c = this.ingestCounts.get(from) ?? { received: 0, accepted: 0 };
+    c.received++;
+    if (result.stored && result.outcome === 'accepted') c.accepted++;
+    this.ingestCounts.set(from, c);
+    delete result.stored;
+    return result;
+  }
+
+  // Rooms, agents, and events held (§9.6).
+  counts() {
+    const r = this.#q.counts.get();
+    return { rooms: Number(r.rooms), agents: Number(r.agents), events: Number(r.events) };
+  }
+
+  // A small value kept across restarts (the latest health snapshot, §9.6).
+  getMeta(key) {
+    return this.#q.meta.get(key)?.value ?? null;
+  }
+
+  putMeta(key, value) {
+    this.#q.putMeta.run(key, value);
+  }
+
+  #ingest(ev, now, origin, from) {
     const malformed = checkWellFormed(ev);
     if (malformed) return { outcome: 'discarded', reason: malformed };
-    if (AGENT_KINDS.has(ev.header.kind)) return this.#ingestAgent(ev, now, origin);
+    if (AGENT_KINDS.has(ev.header.kind)) return this.#ingestAgent(ev, now, origin, from);
     const isCreate = ev.header.kind === 'room.create';
     const roomId = isCreate ? roomIdOf(ev.id) : ev.header.room;
     if (this.expired(roomId)) return { outcome: 'discarded', reason: 'room_expired' };
@@ -365,7 +407,7 @@ export class Store {
       const takenDown = accepted && CONTENT_KINDS.has(ev.header.kind) && this.#q.takenDown.get(ev.id) !== undefined;
       this.#q.insert.run(ev.id, roomId, JSON.stringify({ header: ev.header, id: ev.id, sig: ev.sig }),
         accepted && !takenDown ? ev.content ?? null : null, result.outcome, result.reason ?? null,
-        ev.header.kind === 'msg.delete' ? ev.header.data.target : null, result.soft_failed ? 1 : 0, now);
+        ev.header.kind === 'msg.delete' ? ev.header.data.target : null, result.soft_failed ? 1 : 0, now, from);
       if (takenDown) this.#q.withhold.run('operator', ev.id);
       else if (accepted && !result.soft_failed && CONTENT_KINDS.has(ev.header.kind) && ev.content === undefined) {
         this.#q.addGap.run(ev.id, roomId, now);
@@ -381,12 +423,12 @@ export class Store {
       throw err;
     }
     this.#emit({ id: ev.id, room: roomId, origin });
-    return result;
+    return { ...result, stored: true };
   }
 
   // Agent events (§5.4): valid given their parent alone, so they are accepted,
   // discarded, or pending on the parent. Nothing invalid is stored.
-  #ingestAgent(ev, now, origin) {
+  #ingestAgent(ev, now, origin, from) {
     if (this.#q.agentEvent.get(ev.id)) return { outcome: 'accepted' };
     const parentId = ev.header.parents[0];
     let parent = null;
@@ -403,7 +445,7 @@ export class Store {
     this.#db.exec('BEGIN');
     try {
       this.#q.insertAgentEvent.run(ev.id, agent, JSON.stringify({ header: ev.header, id: ev.id, sig: ev.sig }),
-        rec.depth, rec.rotations, state, now);
+        rec.depth, rec.rotations, state, now, from);
       const current = this.#q.agent.get(agent);
       if (betterHead({ ...rec, id: ev.id }, current && { depth: current.depth, rotations: current.rotations, id: current.head })) {
         const st = rec.state;
@@ -416,7 +458,7 @@ export class Store {
       throw err;
     }
     this.#emit({ id: ev.id, agent, origin });
-    return { outcome: 'accepted' };
+    return { outcome: 'accepted', stored: true };
   }
 
   // The agent's current record: its best head and the state there, or null if unregistered here.

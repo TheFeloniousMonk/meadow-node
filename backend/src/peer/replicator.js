@@ -18,7 +18,7 @@ export class Replicator {
   #peers;
   #opts;
   #queues = new Map(); // peer ID -> [{ room, id } | { agent, id } | { report }]
-  #held = new Map(); // event ID -> { ev, at }: waiting on history no peer has supplied yet
+  #held = new Map(); // event ID -> { ev, at, from }: waiting on history no peer has supplied yet
   #inflight = new Set();
   #busy = new Set();
   #timers = [];
@@ -87,23 +87,30 @@ export class Replicator {
     }
   }
 
+  // Every call's outcome is noted on the peer, for the health report (§9.6).
   async #call(peer, path, fields) {
-    const res = await this.#opts.fetch(peer.url + path, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(signPeer(this.#store.node, fields)),
-      signal: AbortSignal.timeout(this.#opts.timeoutMs),
-    });
-    let body;
     try {
-      body = await readJson(res, REPLY_LIMITS.peer);
+      const res = await this.#opts.fetch(peer.url + path, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(signPeer(this.#store.node, fields)),
+        signal: AbortSignal.timeout(this.#opts.timeoutMs),
+      });
+      let body;
+      try {
+        body = await readJson(res, REPLY_LIMITS.peer);
+      } catch (err) {
+        // A reply past the limit is a failed call, scored as for a malformed event (§11.2).
+        if (err instanceof ReplyTooLarge) this.#peers.penalize(peer.id, 1, 'reply_too_large');
+        throw err;
+      }
+      if (!res.ok) throw new Error(`${peer.id} ${path}: ${res.status} ${body?.error?.code ?? ''}`);
+      this.#peers.noteOk(peer.id);
+      return body;
     } catch (err) {
-      // A reply past the limit is a failed call, scored as for a malformed event (§11.2).
-      if (err instanceof ReplyTooLarge) this.#peers.penalize(peer.id);
+      this.#peers.noteFail(peer.id, `${path}: ${err.message}`);
       throw err;
     }
-    if (!res.ok) throw new Error(`${peer.id} ${path}: ${res.status} ${body?.error?.code ?? ''}`);
-    return body;
   }
 
   // One peer failing (down, or not yet aware of us) doesn't hold up the
@@ -147,7 +154,7 @@ export class Replicator {
   // them (it has it), and hold whatever still cannot be placed.
   resolvePending(peerId, pending) {
     const peer = this.#peers.get(peerId);
-    this.hold(pending);
+    this.hold(pending, peerId);
     if (peer) this.#track(this.#resolveFrom(peer, pending));
   }
 
@@ -159,21 +166,25 @@ export class Replicator {
     this.#retryHeldNow();
   }
 
-  hold(events) {
+  hold(events, from = null) {
     const now = Date.now();
     for (const ev of events) {
       if (this.#held.size >= HOLD_CAP) this.#held.delete(this.#held.keys().next().value);
-      this.#held.set(ev.id, { ev, at: now });
+      this.#held.set(ev.id, { ev, at: now, from });
     }
   }
 
   #retryHeldNow(now = Date.now()) {
     for (const [id, h] of this.#held) if (now - h.at > HOLD_MS) this.#held.delete(id);
     if (!this.#held.size) return;
-    const held = [...this.#held.values()].map((h) => h.ev);
-    const res = ingestFromPeer(this.#store, held);
-    const still = new Set(res.pending.map((ev) => ev.id));
-    for (const ev of held) if (!still.has(ev.id)) this.#held.delete(ev.id);
+    // Grouped by the peer each came from, so the events are recorded as its.
+    const byPeer = new Map();
+    for (const h of this.#held.values()) byPeer.set(h.from, [...(byPeer.get(h.from) ?? []), h.ev]);
+    for (const [from, held] of byPeer) {
+      const res = ingestFromPeer(this.#store, held, { from });
+      const still = new Set(res.pending.map((ev) => ev.id));
+      for (const ev of held) if (!still.has(ev.id)) this.#held.delete(ev.id);
+    }
   }
 
   // An agent's chain, page by page, oldest first (§11.2).
@@ -182,7 +193,7 @@ export class Replicator {
     for (let page = 0; page < 100; page++) {
       const res = await this.#call(peer, '/v2/chain', { agent, ...(after && { after }) });
       const events = Array.isArray(res.events) ? res.events : [];
-      ingestFromPeer(this.#store, events, { onInvalid: () => this.#peers.penalize(peer.id) });
+      ingestFromPeer(this.#store, events, { from: peer.id, onInvalid: (reason) => this.#peers.penalize(peer.id, 1, reason) });
       // A page that does not move past the last one ends the pull, whatever `more` says.
       if (!res.more || !events.length || events.at(-1).id === after) return;
       after = events.at(-1).id;
@@ -198,11 +209,11 @@ export class Replicator {
       for (let pageNo = 0; pageNo < MAX_PULL_PAGES; pageNo++) {
         const heads = this.#store.room(roomId)?.heads() ?? [];
         const res = await this.#call(peer, '/v2/since', { room: roomId, heads });
-        const got = ingestFromPeer(this.#store, res.events, { onInvalid: () => this.#peers.penalize(peer.id) });
+        const got = ingestFromPeer(this.#store, res.events, { from: peer.id, onInvalid: (reason) => this.#peers.penalize(peer.id, 1, reason) });
         // Bindings wait on agent chains (§6.6 step 3): fetch those, then retry.
         if (got.pending.length) {
           for (const agent of new Set(got.pending.map((ev) => ev.header.author))) await this.pullChain(peer, agent);
-          ingestFromPeer(this.#store, got.pending);
+          ingestFromPeer(this.#store, got.pending, { from: peer.id });
         }
         if (!res.more || got.accepted + got.rejected === 0) break;
       }
@@ -223,7 +234,7 @@ export class Replicator {
       if (!ids.includes(id)) continue;
       const r = this.#store.repairContent(id, content);
       if (r === 'filled') filled++;
-      else if (r === 'mismatch') this.#peers.penalize(peer.id);
+      else if (r === 'mismatch') this.#peers.penalize(peer.id, 1, 'content_mismatch');
     }
     return filled;
   }
@@ -278,7 +289,7 @@ export class Replicator {
         if (this.#store.report(r.id)) continue;
         const v = verifyReport(r.report);
         if (v.id) this.#store.addReport(v.id, r.report, null, now, 'pull');
-        else this.#peers.penalize(peer.id);
+        else this.#peers.penalize(peer.id, 1, 'bad_report');
       }
       if (!res.cursor) break;
       cursor = res.cursor;

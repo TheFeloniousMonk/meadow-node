@@ -43,9 +43,10 @@ export function newRoot(store, ev) {
 }
 
 // Process events from a peer exactly as if a client had sent them (§11.4).
-// `origin` is the sending peer's ID (pushes) or 'pull'; `limits` caps new
-// rooms and agents (pushes); `onInvalid` scores the sender.
-export function ingestFromPeer(store, events, { limits = null, origin = 'pull', onInvalid = () => {} } = {}) {
+// `origin` is the sending peer's ID (pushes) or 'pull' (not gossiped on);
+// `from` is the peer the events came from, recorded with each event (§17 q13 m);
+// `limits` caps new rooms and agents (pushes); `onInvalid(reason)` scores the sender.
+export function ingestFromPeer(store, events, { limits = null, origin = 'pull', from = origin === 'pull' ? null : origin, onInvalid = () => {} } = {}) {
   const out = { accepted: 0, rejected: 0, discarded: 0, limited: [], pending: [] };
   const roots = { room: 0, agent: 0 };
   for (const ev of events) {
@@ -54,7 +55,7 @@ export function ingestFromPeer(store, events, { limits = null, origin = 'pull', 
       out.limited.push(ev.id);
       continue;
     }
-    const r = store.ingest(ev, Date.now(), origin);
+    const r = store.ingest(ev, Date.now(), origin, from ?? 'peer');
     if (r.outcome === 'accepted') {
       out.accepted++;
       if (root) roots[root]++;
@@ -62,7 +63,7 @@ export function ingestFromPeer(store, events, { limits = null, origin = 'pull', 
     else if (r.outcome === 'pending') out.pending.push(ev);
     else {
       out.discarded++;
-      if (!HARMLESS.has(r.reason)) onInvalid();
+      if (!HARMLESS.has(r.reason)) onInvalid(r.reason);
     }
   }
   return out;
@@ -85,13 +86,13 @@ export function peerRoutes(store, peers, replicator) {
       const res = ingestFromPeer(store, events, {
         limits: { room: PEER_LIMITS.newRoomsPerPush, agent: PEER_LIMITS.newAgentsPerPush },
         origin: peerId,
-        onInvalid: () => peers.penalize(peerId),
+        onInvalid: (reason) => peers.penalize(peerId, 1, reason),
       });
       if (res.pending.length) replicator?.resolvePending(peerId, res.pending);
       let reportsNew = 0;
       for (const report of reports) {
         const v = verifyReport(report);
-        if (!v.id) peers.penalize(peerId);
+        if (!v.id) peers.penalize(peerId, 1, 'bad_report');
         else if (store.addReport(v.id, report, null, Date.now(), peerId)) reportsNew++;
       }
       return {
