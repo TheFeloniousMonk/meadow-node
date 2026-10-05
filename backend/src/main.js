@@ -50,14 +50,15 @@ mkdirSync(dataDir, { recursive: true });
 const wanted = (env.MEADOW_NETWORKS ?? 'main,beta').split(',').map((s) => s.trim()).filter(Boolean);
 for (const n of wanted) if (!NETWORKS[n]) throw new Error(`unknown network "${n}" in MEADOW_NETWORKS (use main, beta)`);
 
-// Refused at startup with plain words, before anything listens (SPEC §9.6).
-let alertConfig;
+// A bad alert setting is reported in plain words and the node runs without alerts (SPEC §9.6):
+// alerts are optional, and the settings are changed from a form, so a typo must not stop the node.
+// The operator command's alert-test reports the same problem.
+let alertConfig = null;
 try {
   alertConfig = parseAlertConfig(env);
 } catch (err) {
   if (!(err instanceof AlertConfigError)) throw err;
-  console.error(`meadow-node: ${err.message}`);
-  process.exit(1);
+  console.error(`meadow-node: alerts are off: ${err.message}`);
 }
 const startedAt = Date.now();
 const healths = [];

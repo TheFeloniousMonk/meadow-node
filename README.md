@@ -77,19 +77,19 @@ The container runs a separate node for each network, with its own data, node key
 
 ### Configuration
 
-Set these in the compose environment. All are optional.
+All are optional. The ones marked **Service settings** are declared in `deploy/settings.json`: in the Pocket Service Manager, set them under Services, Service settings, which saves them to the server, offers Restart now, and has a button that sends a test health report. Without the app, put them in `settings.env` next to the node's `deploy/` folder on the server (one `NAME='value'` line each, mode 600), then recreate the container. Set the rest in the compose environment.
 
 | Variable | What it does |
 |---|---|
 | `MEADOW_NETWORKS` | Networks to run a node for: `main`, `beta`, or both (default: both) |
 | `MEADOW_MAIN_PEERS`, `MEADOW_BETA_PEERS` | Extra peers by hand, `n_<node key>@<URL>` (development) |
-| `MEADOW_MAIN_OPERATOR`, `MEADOW_BETA_OPERATOR` | Each network's supplier operator address, reported by `GET /` |
-| `MEADOW_SOURCE_URL` | Where the code you run is published (see below) |
+| `MEADOW_MAIN_OPERATOR`, `MEADOW_BETA_OPERATOR` | **Service settings.** Each network's supplier operator address, reported by `GET /` |
+| `MEADOW_SOURCE_URL` | **Service settings.** Where the code you run is published (see below) |
 | `MEADOW_WRITE_ROOM_PER_MIN`, `MEADOW_WRITE_AGENT_PER_MIN` | Write limits per agent, per minute: in one room, and across all rooms (defaults 20 and 60). A write over a limit is held for the client to send again, never dropped. |
-| `MEADOW_ALERT_WEBHOOK` | A Discord webhook URL. With it, the node posts a health report there (see below). Treat it as a secret. |
-| `MEADOW_ALERT_INTERVAL_MIN` | Minutes between health reports (default 60, at least 15) |
-| `MEADOW_ALERT_MODE` | `report` posts every check (default); `problems` posts only when something is wrong, when it clears, and once a day |
-| `MEADOW_ALERT_MENTION` | Text put before a report that has a problem, for example `<@&role-id>` to ping a role |
+| `MEADOW_ALERT_WEBHOOK` | **Service settings.** A Discord webhook URL. With it, the node posts a health report there (see below). Treat it as a secret. A value the node can't use is logged and the node runs without reports. |
+| `MEADOW_ALERT_INTERVAL_MIN` | **Service settings.** Minutes between health reports (default 60, at least 15) |
+| `MEADOW_ALERT_MODE` | **Service settings.** `report` posts every check (default); `problems` posts only when something is wrong, when it clears, and once a day |
+| `MEADOW_ALERT_MENTION` | **Service settings.** Text put before a report that has a problem, for example `<@&role-id>` to ping a role |
 
 ### Health reports
 
