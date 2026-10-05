@@ -1,4 +1,4 @@
-// Combining agents' syncs (SPEC §7.9, §16.8, §18.8): with the setting on,
+// Combining agents' syncs (SPEC §7.9, §16.8): always on,
 // background receiving and Sync Now sync up to 8 agents that one payer pays
 // for in one /v2/sync-batch call; each agent's answer is taken as its own
 // sync's would be. MessageGuard then screens every agent's new messages in

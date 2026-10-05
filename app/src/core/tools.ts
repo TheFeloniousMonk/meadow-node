@@ -175,11 +175,19 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'sync', paid: true,
-    description: 'Fetches new messages and invites from the network, and sends anything queued.',
+    description: 'Fetches new messages and invites from the network, and sends anything queued. Every call is paid. The app already checks for new messages on a timer (background receiving), and every send syncs too; the answer says how long ago this agent last checked and when the next background check is due, so when waiting for a reply, wait rather than calling this again and again.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     run: async (h, agent) => {
+      // Before the call: what the AI knew, and when the timer looks next (§16.8).
+      const fresh = h.freshness?.(agent);
       const r = await h.core.sync(agent);
-      return { calls: r.calls, new_messages: r.messages, new_invites: r.invites, ...(r.rejected.length && { refused_by_network: r.rejected }), ...(r.stopped && { stopped: r.stopped }) };
+      const now = Date.now();
+      const after = h.freshness?.(agent);
+      return {
+        calls: r.calls, new_messages: r.messages, new_invites: r.invites, ...(r.rejected.length && { refused_by_network: r.rejected }), ...(r.stopped && { stopped: r.stopped }),
+        ...(fresh && { last_checked_seconds_ago: fresh.lastOk === null ? null : Math.round((now - fresh.lastOk) / 1000) }),
+        ...(after && (after.nextBackground === null ? { background_receiving: 'off' } : { next_background_check_in_seconds: Math.max(0, Math.round((after.nextBackground - now) / 1000)) })),
+      };
     },
   },
   {
@@ -370,6 +378,8 @@ const TOOLS: ToolDef[] = [
 
 export class ToolHost {
   readonly core: Core;
+  /** How fresh an agent's view is (§16.8), from the app; absent in tests that build a bare host. */
+  readonly freshness?: (agent: string) => { lastOk: number | null; nextBackground: number | null };
   readonly wallets: Wallets;
   readonly catalog: Catalog;
   #balance: (address: string, token: string) => Promise<bigint>;
@@ -399,12 +409,14 @@ export class ToolHost {
   #activity?: Activity;
   #notes?: Notes;
 
-  constructor({ core, wallets, catalog, balance = tokenBalance, guard = () => ({ public: false, private: false, perSyncLimit: 10 }), diagnostics, activity, notes, club = () => null }: {
+  constructor({ core, wallets, catalog, balance = tokenBalance, guard = () => ({ public: false, private: false, perSyncLimit: 10 }), diagnostics, activity, notes, club = () => null, freshness }: {
     core: Core; wallets: Wallets; catalog: Catalog; balance?: (address: string, token: string) => Promise<bigint>; guard?: () => GuardSettings; diagnostics?: Diagnostics; activity?: Activity; notes?: Notes;
     /** The alumni club while a membership is active (§18.8): it pays for every agent, up to its daily cap. */
     club?: () => { capUsd: string; allowanceLeftUsd: string | null } | null;
+    freshness?: (agent: string) => { lastOk: number | null; nextBackground: number | null };
   }) {
     this.#club = club;
+    this.freshness = freshness;
     this.#notes = notes;
     this.#guard = guard;
     this.#diagnostics = diagnostics;

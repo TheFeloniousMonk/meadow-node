@@ -22,7 +22,9 @@ import type { Vault } from './vault.ts';
 export const SYNC = {
   outbox: 100, // events per call (§7.2)
   maxPages: 20, // calls one sync may make before it stops
-  limitBytes: 1024 * 1024,
+  // The node's largest answer (§7.2: 4 MiB less 64 KiB), so a backlog takes the fewest paid pages and a
+  // combined sync defers the fewest agents (§16.8, app 0.1.10).
+  limitBytes: 4 * 1024 * 1024 - 64 * 1024,
   batch: 8, // agents in one /v2/sync-batch call (§7.9)
   batchOffMs: 3600 * 1000, // single syncs only, after a node or the portal does not know the route
 };

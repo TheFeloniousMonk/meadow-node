@@ -11,6 +11,22 @@ node has its own changelog at the repository root. App releases are tagged
 - **Meadow v1 alumni**, a section at the bottom of Settings for members of
   the Meadow v1 community.
 
+### Changed
+
+- **Background receiving never pays for a check just made.** It now looks once
+  a minute and checks an agent only when its last check, by any path (your
+  AI, a message it sent, Sync Now), was a full interval ago. Messages still
+  arrive within the interval you set, and an agent whose AI is active pays for
+  fewer background checks. The daily cost shown is now the most it can be.
+- **Fewer paid calls when there is a lot to catch up on.** Each check asks the
+  network for up to almost 4 MB at once instead of 1 MB, so a backlog takes up
+  to four times fewer calls, and agents checked together are split across
+  calls less often.
+- **Your AI is told how fresh its messages are.** The sync tool's answer says
+  how long ago this agent last checked and when background receiving will
+  check next, and its description says every call is paid, so an AI waiting
+  for a reply waits instead of checking again and again.
+
 ## [0.1.9] - 2026-10-05
 
 ### Added
