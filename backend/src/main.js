@@ -16,6 +16,10 @@
 //   MEADOW_SOURCE_URL  source of the code this node runs (AGPL: point at your fork if modified)
 //   MEADOW_WRITE_ROOM_PER_MIN, MEADOW_WRITE_AGENT_PER_MIN  write limits per agent, per room and
 //                      overall (SPEC §7.2; defaults 20 and 60)
+//   MEADOW_ALERT_WEBHOOK  a Discord webhook URL for the hourly health report (SPEC §9.6); unset: none
+//   MEADOW_ALERT_INTERVAL_MIN  minutes between reports (default 60, at least 15)
+//   MEADOW_ALERT_MODE  report (post every check, default) or problems (only trouble, its clearing, and daily)
+//   MEADOW_ALERT_MENTION  text put before a report with a problem, for example <@&role-id>
 
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -25,6 +29,10 @@ import { Peers } from './peer/peers.js';
 import { Replicator } from './peer/replicator.js';
 import { Discovery } from './peer/discovery.js';
 import { LCD, listSuppliers } from './peer/chain.js';
+import { Traffic, countServer, countingFetch } from './health/traffic.js';
+import { Health } from './health/health.js';
+import { containerStats } from './health/container.js';
+import { Alerts, AlertConfigError, parseAlertConfig } from './health/alerts.js';
 
 // Fixed per network, so every operator's routes and relayer entries match.
 export const NETWORKS = {
@@ -40,18 +48,34 @@ mkdirSync(dataDir, { recursive: true });
 const wanted = (env.MEADOW_NETWORKS ?? 'main,beta').split(',').map((s) => s.trim()).filter(Boolean);
 for (const n of wanted) if (!NETWORKS[n]) throw new Error(`unknown network "${n}" in MEADOW_NETWORKS (use main, beta)`);
 
+// Refused at startup with plain words, before anything listens (SPEC §9.6).
+let alertConfig;
+try {
+  alertConfig = parseAlertConfig(env);
+} catch (err) {
+  if (!(err instanceof AlertConfigError)) throw err;
+  console.error(`meadow-node: ${err.message}`);
+  process.exit(1);
+}
+const startedAt = Date.now();
+const healths = [];
+
 function startNetwork(network) {
   const NET = network.toUpperCase();
   const port = Number(env[`MEADOW_${NET}_PORT`] ?? NETWORKS[network].port);
   const peerPort = Number(env[`MEADOW_${NET}_PEER_PORT`] ?? NETWORKS[network].peerPort);
   const store = new Store(join(dataDir, `meadow-${network}.db`));
   const peers = new Peers(Peers.parse(env[`MEADOW_${NET}_PEERS`]));
-  const replicator = new Replicator(store, peers).start();
+  // This network's traffic (SPEC §9.6): its two ports, and its own calls to peers and the chain.
+  const traffic = { relay: new Traffic(), peer: new Traffic(), own: new Traffic() };
+  const fetch = countingFetch(globalThis.fetch, traffic.own);
+  const replicator = new Replicator(store, peers, { fetch }).start();
   const discovery = new Discovery(store, peers, {
     networks: [network],
     peerPath: NETWORKS[network].peerPath,
+    fetch,
     ...(env.MEADOW_DISCOVERY_INTERVAL_MS ? { intervalMs: Number(env.MEADOW_DISCOVERY_INTERVAL_MS) } : {}),
-    listSuppliers: () => listSuppliers(network, { base: env[`MEADOW_LCD_${NET}`] ?? LCD[network] }),
+    listSuppliers: () => listSuppliers(network, { base: env[`MEADOW_LCD_${NET}`] ?? LCD[network], fetch }),
   }).start();
 
   const server = createServer(store, {
@@ -66,8 +90,19 @@ function startNetwork(network) {
     },
   });
   const peerServer = createPeerServer(store, peers, replicator);
+  countServer(server, traffic.relay);
+  countServer(peerServer, traffic.peer);
   server.listen(port);
   peerServer.listen(peerPort);
+  const health = new Health({ network, store, peers, discovery, traffic, ports: { relay: port, peer: peerPort }, version: pkg.version, startedAt });
+  healths.push(health);
+  // The latest snapshot, kept for the operator command's peers and alert-test (SPEC §9.5, §9.6):
+  // a minute after start, then every 5 minutes.
+  const snap = () => health.snapshot().catch(() => {});
+  let snapshotter = setTimeout(() => {
+    snap();
+    snapshotter = setInterval(snap, 5 * 60 * 1000);
+  }, 60 * 1000);
   console.log(`meadow-node ${network}: ${store.node.id}, relay port ${port}, peer port ${peerPort} (${NETWORKS[network].peerPath}), ${peers.active().length} configured peer(s)`);
 
   // Retention sweep (SPEC §10): on start, then hourly.
@@ -80,6 +115,8 @@ function startNetwork(network) {
 
   return () => new Promise((resolve) => {
     clearInterval(sweeper);
+    clearTimeout(snapshotter);
+    clearInterval(snapshotter);
     replicator.stop();
     discovery.stop();
     peerServer.close();
@@ -92,6 +129,12 @@ function startNetwork(network) {
 
 const stops = wanted.map(startNetwork);
 
+const alerts = alertConfig && new Alerts({ config: alertConfig, healths, container: () => containerStats(dataDir, wanted) }).start();
+if (alertConfig) console.log(`health reports to the alert webhook every ${alertConfig.intervalMs / 60_000} min (${alertConfig.mode})`);
+
 for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.on(signal, () => Promise.all(stops.map((stop) => stop())).then(() => process.exit(0)));
+  process.on(signal, () => {
+    alerts?.stop();
+    Promise.all(stops.map((stop) => stop())).then(() => process.exit(0));
+  });
 }

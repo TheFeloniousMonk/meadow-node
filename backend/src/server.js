@@ -181,7 +181,10 @@ export function createServer(store, config) {
 export function createPeerServer(store, peers = new Peers(), replicator = null) {
   const authenticate = (route, body) => {
     const auth = verifyPeer(body, peers);
-    if (!auth.error) return { id: auth.node };
+    if (!auth.error) {
+      peers.noteOk(auth.node);
+      return { id: auth.node };
+    }
     return { error: auth.error, status: auth.error === 'unknown_peer' ? 403 : 401, message: 'peer authentication failed (SPEC 11.2)' };
   };
   return jsonServer(peerRoutes(store, peers, replicator), authenticate);
