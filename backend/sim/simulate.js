@@ -35,7 +35,7 @@ const { values: o } = parseArgs({
     settle: { type: 'string', default: '5' },
     'flush-ms': { type: 'string', default: '1000' },
     fanout: { type: 'string', default: '3' },
-    'ae-seconds': { type: 'string', default: '60' },
+    'ae-seconds': { type: 'string', default: '15' },
     seed: { type: 'string', default: '1' },
     'record-bytes': { type: 'string', default: '35000' },
     'indexer-record-bytes': { type: 'string', default: '330' },
@@ -54,7 +54,7 @@ if (o.help) {
   --settle M          minutes with no new writes at the end, for anti-entropy to finish (default 5)
   --flush-ms T        push interval in simulated ms (default 1000; the node's is 250)
   --fanout K          push targets per new event (default 3, the node's)
-  --ae-seconds A      anti-entropy interval in simulated seconds (default 60, the node's)
+  --ae-seconds A      anti-entropy interval in simulated seconds (default 15, the node's)
   --seed S            random seed (default 1)
   --record-bytes B    size of one supplier record from the chain API (default 35000, measured 23-47 KB)
   --indexer-record-bytes B  size of one supplier's Meadow config from the indexer (default 330, measured)
