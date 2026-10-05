@@ -25,13 +25,15 @@ const HARMLESS = new Set(['room_expired', 'unsupported_version', 'unsupported_ro
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 export const isAgentEvent = (ev) => isObject(ev?.header) && AGENT_KINDS.has(ev.header.kind);
 
-function page(body) {
+// A listing page (§11.2). `since` is a mark this node gave earlier; one it can't use lists everything.
+// The first page (no cursor) carries `mark`, this node's position as the listing began.
+function page(store, body) {
   const cursor = body.cursor ?? '';
   const limit = body.limit ?? PEER_LIMITS.page;
   if (typeof cursor !== 'string' || !Number.isSafeInteger(limit) || limit < 1 || limit > PEER_LIMITS.page) {
     throw new RequestError('bad_request', `cursor is a string, limit 1..${PEER_LIMITS.page}`);
   }
-  return { cursor, limit };
+  return { cursor, limit, since: store.parseMark(body.since), mark: cursor === '' ? { mark: store.mark() } : {} };
 }
 
 // Is this event the start of a room or an agent this node has not stored?
@@ -102,9 +104,9 @@ export function peerRoutes(store, peers, replicator) {
     } },
 
     '/v2/rooms': { auth: true, handle: (body) => {
-      const { cursor, limit } = page(body);
-      const rooms = store.listRooms(cursor, limit);
-      return { rooms, ...(rooms.length === limit && { cursor: rooms.at(-1).room }) };
+      const { cursor, limit, since, mark } = page(store, body);
+      const rooms = store.listRooms(cursor, limit, since);
+      return { rooms, ...(rooms.length === limit && { cursor: rooms.at(-1).room }), ...mark };
     } },
 
     '/v2/since': { auth: true, handle: (body) => {
@@ -159,33 +161,39 @@ export function peerRoutes(store, peers, replicator) {
     } },
 
     '/v2/agents': { auth: true, handle: (body) => {
-      const { cursor, limit } = page(body);
-      const agents = store.listAgents(cursor, limit);
-      return { agents, ...(agents.length === limit && { cursor: agents.at(-1).agent }) };
+      const { cursor, limit, since, mark } = page(store, body);
+      const agents = store.listAgents(cursor, limit, since);
+      return { agents, ...(agents.length === limit && { cursor: agents.at(-1).agent }), ...mark };
     } },
 
     // Paged at 2 MiB like /v2/since, so no honest answer outgrows a reader's limit (§11.2).
     '/v2/chain': { auth: true, handle: (body) => {
       if (typeof body.agent !== 'string') throw new RequestError('bad_request', 'agent is an agent ID');
       if (body.after !== undefined && typeof body.after !== 'string') throw new RequestError('bad_request', 'after is an event ID');
-      const chain = store.agentChain(body.agent, PEER_LIMITS.chainWalk);
-      const start = body.after === undefined ? 0 : chain.findIndex((ev) => ev.id === body.after) + 1;
-      if (start === 0 && body.after !== undefined) return { events: [], more: false };
+      // Walks back from the head only as far as `after` (§11.2), so a page costs the tail, not the chain.
+      let tail;
+      if (body.after === undefined) tail = store.agentChain(body.agent, PEER_LIMITS.chainWalk);
+      else {
+        const found = store.agentChainAfter(body.agent, body.after, PEER_LIMITS.chainWalk);
+        if (!found.found) return { events: [], more: false, after_unknown: true };
+        tail = found.events;
+      }
+      const known = body.after === undefined ? {} : { after_unknown: false };
       const events = [];
       let size = 0;
-      for (const ev of chain.slice(start)) {
+      for (const ev of tail) {
         const n = Buffer.byteLength(JSON.stringify(ev), 'utf8') + 1;
-        if (events.length && size + n > PEER_LIMITS.sinceBytes) return { events, more: true };
+        if (events.length && size + n > PEER_LIMITS.sinceBytes) return { events, more: true, ...known };
         events.push(ev);
         size += n;
       }
-      return { events, more: false };
+      return { events, more: false, ...known };
     } },
 
     '/v2/reports': { auth: true, handle: (body) => {
-      const { cursor, limit } = page(body);
-      const reports = store.listReports(cursor, limit);
-      return { reports, ...(reports.length === limit && { cursor: reports.at(-1).id }) };
+      const { cursor, limit, since, mark } = page(store, body);
+      const reports = store.listReports(cursor, limit, since);
+      return { reports, ...(reports.length === limit && { cursor: reports.at(-1).id }), ...mark };
     } },
   };
 }

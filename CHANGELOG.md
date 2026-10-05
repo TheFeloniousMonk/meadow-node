@@ -24,6 +24,10 @@ startup; older nodes ignore it, so a rollback to 0.5.0 is safe.
   posts only trouble, its clearing, and a daily summary; `MEADOW_ALERT_MENTION`
   pings on a problem. A webhook that is not Discord's is refused at startup.
 - Operator commands `peers` and `alert-test`.
+- Early discovery (SPEC §11.1): a correctly signed peer request from a node
+  this node does not know yet runs discovery at once (at most every 5 minutes)
+  instead of waiting up to 30 minutes, so a new supplier is accepted within
+  seconds. A signature alone never makes a peer.
 - Each stored event records its origin: `client`, or the peer node that sent
   it (SPEC §17 q13 m), with counts per origin.
 
@@ -34,6 +38,26 @@ startup; older nodes ignore it, so a rollback to 0.5.0 is safe.
   expires after an hour, doubling with each further ban of the same peer up to
   a day, instead of lasting until restart. Discovery logs peers added, dropped,
   and moved.
+- Push pacing (SPEC §11.3): one push in flight per peer, so batches arrive in
+  order, and after a failed push the peer waits 1 s, doubling to 5 minutes;
+  any successful call ends the wait. A peer refusing at once was pushed to
+  about 4 times a second. Failing and recovered pushes are logged once each.
+- Incremental anti-entropy (SPEC §11.2, §11.3): `/v2/rooms`, `/v2/agents`,
+  and `/v2/reports` take `since` and the first page carries `mark`, so a round
+  lists only what changed since the last one, with a full comparison first
+  and hourly. Older nodes ignore `since` and keep getting full rounds.
+- Agent chains are pulled from this node's own head (`/v2/chain` with
+  `after`), and served by walking back only that far; `after_unknown` says
+  when to start over from the beginning (a fork).
+- Content repair asks for each gap again after 1 minute, doubling to 6 hours,
+  instead of every round. The database gains two columns on `content_gaps`.
+
+### Fixed
+
+- The container's health check probed both relay ports whatever
+  `MEADOW_NETWORKS` said, so a container running only MainNet was reported
+  unhealthy. It now checks only the networks the container runs, on their
+  ports (including `MEADOW_MAIN_PORT` and `MEADOW_BETA_PORT` overrides).
 
 ## [0.5.0] - 2026-10-03
 
