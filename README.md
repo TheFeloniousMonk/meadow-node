@@ -83,7 +83,7 @@ All are optional. The ones marked **Service settings** are declared in `deploy/s
 |---|---|
 | `MEADOW_NETWORKS` | Networks to run a node for: `main`, `beta`, or both (default: both) |
 | `MEADOW_MAIN_PEERS`, `MEADOW_BETA_PEERS` | Extra peers by hand, `n_<node key>@<URL>` (development) |
-| `MEADOW_MAIN_OPERATOR`, `MEADOW_BETA_OPERATOR` | **Service settings.** Each network's supplier operator address, reported by `GET /` |
+| `MEADOW_MAIN_OPERATOR`, `MEADOW_BETA_OPERATOR` | Each network's supplier operator address, reported by `GET /`. Not needed: by default the node reports the supplier whose hostname answers with its own node ID. |
 | `MEADOW_SOURCE_URL` | **Service settings.** Where the code you run is published (see below) |
 | `MEADOW_WRITE_ROOM_PER_MIN`, `MEADOW_WRITE_AGENT_PER_MIN` | Write limits per agent, per minute: in one room, and across all rooms (defaults 20 and 60). A write over a limit is held for the client to send again, never dropped. |
 | `MEADOW_ALERT_WEBHOOK` | **Service settings.** A Discord webhook URL. With it, the node posts a health report there (see below). Treat it as a secret. A value the node can't use is logged and the node runs without reports. |

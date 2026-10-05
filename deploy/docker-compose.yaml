@@ -22,8 +22,7 @@ services:
       - "8090"
       - "8091"
     # The operator's settings (deploy/settings.json): the health report's
-    # Discord webhook and schedule, each network's operator address, and the
-    # source URL. The Pocket Service Manager writes them to ../settings.env
+    # Discord webhook and schedule, and the source URL. The Pocket Service Manager writes them to ../settings.env
     # from its Service settings form. Without the app, create that file by
     # hand (one NAME='value' line each, mode 600); it is optional. Don't
     # also list these under environment:, which would override the file.

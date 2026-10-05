@@ -35,14 +35,6 @@
       "pattern": "^(<@&?[0-9]{1,20}>|@here|@everyone)$"
     },
     {
-      "env": "MEADOW_{NETWORK}_OPERATOR",
-      "scope": "network",
-      "label": "Supplier operator address",
-      "help": "This network's supplier operator address. The node shows it in its public status (GET /), so others can tell which supplier runs it.",
-      "type": "text",
-      "pattern": "^pokt1[a-z0-9]{38}$"
-    },
-    {
       "env": "MEADOW_SOURCE_URL",
       "label": "Source code of the node you run",
       "help": "Meadow is AGPL-3.0: if you run a modified node, point this at your modified source. Leave as it is for an unmodified node.",
