@@ -17,7 +17,7 @@ import { masterKey } from './master-key.ts';
 import { Services, type MentionNote } from '../app/services.ts';
 import { createHandlers } from '../app/handlers.ts';
 import { CHANNELS } from '../shared/api.ts';
-import { bridgeCopyPath, downloadRelease, installKind, launchPath, scoopUpdateScript } from '../core/update.ts';
+import { bridgeCopyPath, downloadRelease, installKind, launchPath, scoopUpdateScript, scoopWaitScript } from '../core/update.ts';
 import { claudeDesktopConfigPath } from '../server/claude-desktop.ts';
 
 const arg = (name: string) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
@@ -248,7 +248,10 @@ else {
         if (!u) return { ok: false, error: 'No update is waiting.' };
         if (u.action === 'scoop') {
           const script = join(app.getPath('temp'), 'meadow-update.cmd');
-          writeFileSync(script, scoopUpdateScript(launchPath(process.execPath, process.env, install)));
+          const wait = join(app.getPath('temp'), 'meadow-update-wait.ps1');
+          const launch = launchPath(process.execPath, process.env, install);
+          writeFileSync(wait, scoopWaitScript(launch));
+          writeFileSync(script, scoopUpdateScript(launch, wait));
           // Verbatim: Node's quoting would escape the window title's quotes as \", which cmd does
           // not understand; `start` then ran "update\" and Windows could not find it (0.1.5).
           // From the temp folder: Meadow's own working folder is Scoop's `current`, which Scoop must remove.
