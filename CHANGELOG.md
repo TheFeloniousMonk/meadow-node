@@ -8,9 +8,16 @@ relate.
 
 ## [Unreleased]
 
-Same protocol (3) and room version (1): nothing changes on the wire. The
-database gains an `origin` column on `events` and `agent_events`, added at
-startup; older nodes ignore it, so a rollback to 0.5.0 is safe.
+## [0.6.0] - 2026-10-05
+
+Same protocol (3) and room version (1): no event format or validity changes,
+and the client API answers as before (`GET /` now fills `operator`). The peer
+API gains optional fields that older nodes ignore, so 0.6.0 and 0.5.0 nodes
+replicate normally. The database gains an `origin` column on `events` and
+`agent_events` and two columns on `content_gaps`, added at startup; older
+nodes ignore them, so a rollback to 0.5.0 is safe. Discovery now reads the
+chain indexer (`data.pocket.network`, `data.beta.pocket.network`), so the
+node needs to reach it over HTTPS; without it, it falls back to the chain API.
 
 ### Added
 
@@ -22,7 +29,12 @@ startup; older nodes ignore it, so a rollback to 0.5.0 is safe.
   in and out per port and for the node's own calls; the container's network
   totals, disk, and memory. Green, amber, or red by level. `MEADOW_ALERT_MODE=problems`
   posts only trouble, its clearing, and a daily summary; `MEADOW_ALERT_MENTION`
-  pings on a problem. A webhook that is not Discord's is refused at startup.
+  pings on a problem. A setting the node can't use is logged and the node
+  runs without reports.
+- `deploy/settings.json`: the health report's settings and the source URL,
+  for the Pocket Service Manager's Service settings form, with a Test button
+  that runs `alert-test`. The compose file reads them from the server's
+  `../settings.env` (optional).
 - Operator commands `peers` and `alert-test`.
 - Early discovery (SPEC §11.1): a correctly signed peer request from a node
   this node does not know yet runs discovery at once (at most every 5 minutes)
@@ -30,6 +42,11 @@ startup; older nodes ignore it, so a rollback to 0.5.0 is safe.
   seconds. A signature alone never makes a peer.
 - Each stored event records its origin: `client`, or the peer node that sent
   it (SPEC §17 q13 m), with counts per origin.
+- `GET /` reports the node's supplier operator address without configuration:
+  the supplier whose hostname answers `/v2/hello` with this node's own ID.
+  `MEADOW_MAIN_OPERATOR` and `MEADOW_BETA_OPERATOR` still override it.
+- `npm run sim`: a replication simulation of many nodes on a simulated network
+  and clock, with the real store, peers, replicator, and discovery.
 
 ### Changed
 
@@ -51,6 +68,22 @@ startup; older nodes ignore it, so a rollback to 0.5.0 is safe.
   when to start over from the beginning (a fork).
 - Content repair asks for each gap again after 1 minute, doubling to 6 hours,
   instead of every round. The database gains two columns on `content_gaps`.
+- Discovery reads the supplier list from the chain indexer: only each
+  supplier's Meadow config (about 300 bytes, against 23 to 47 KB per supplier
+  from the chain API), complete at start and every 6 hours, and only what
+  changed since the last run in between. The chain API is the fallback when
+  the indexer fails or lags. A hostname is asked `/v2/hello` when new or not
+  answering, and otherwise once a day, at most 8 at a time.
+  `MEADOW_INDEXER_MAIN` and `MEADOW_INDEXER_BETA` override the indexer, or
+  `off` uses only the chain API.
+- Anti-entropy runs every 15 seconds instead of every minute, mostly with 4
+  stable partners in turn (each kept for a few hours, replaced at once when it
+  fails or is dropped), with a random peer one time in ten. A round still
+  running makes the next one wait.
+- Gossip skips peers waiting after failed pushes, and history pulled to
+  complete a push is passed on like the push itself.
+- Together, in a 200-node simulation: an event reached every node in 9 s at
+  the median and 16 s at the 95th percentile, against 57 s and 229 s.
 
 ### Fixed
 

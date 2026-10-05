@@ -39,17 +39,27 @@ Most releases can be installed whenever you like. A release that raises the **pr
 
 **0.4.0 and 0.5.0 keep protocol 3**, so install them whenever you like. 0.4.0 adds `/v2/sync-batch` (up to 8 agents in one call). 0.5.0 adds per-agent write limits, at most one new agent per batched call, and a signed statement of the heads each sync answer served, which lets clients notice a node that holds messages back.
 
+**0.6.0 keeps protocol 3**, so install it whenever you like. It makes replication between nodes faster and lighter (an event reaches every node in seconds, not minutes, in a 200-node simulation), reads the supplier list from the chain indexer instead of the chain API (a small fraction of the data), accepts a newly staked node within seconds, and posts optional health reports to a Discord channel. Your node now works out its own supplier operator address. It also needs to reach the indexer, `data.pocket.network` (Beta: `data.beta.pocket.network`), over HTTPS; without it, the node falls back to the chain API.
+
 ## Configuration
 
-Set these in the compose environment. All are optional.
+All are optional. The ones marked **Service settings** are listed in `deploy/settings.json`: the Pocket Service Manager shows them as a form for the service, saves them to your server, and can send a test health report. Without the app, put them in `settings.env` next to the node's `deploy/` folder on your server, one `NAME='value'` line each (mode 600), then recreate the container. Set the rest in the compose environment.
 
 | Variable | What it does |
 | --- | --- |
+| `MEADOW_ALERT_WEBHOOK` | **Service settings.** A Discord webhook URL for health reports (below). Treat it as a secret. |
+| `MEADOW_ALERT_INTERVAL_MIN` | **Service settings.** Minutes between checks (default 60, at least 15) |
+| `MEADOW_ALERT_MODE` | **Service settings.** `report` posts every check (default); `problems` posts only trouble, when it clears, and a daily summary |
+| `MEADOW_ALERT_MENTION` | **Service settings.** Who to notify when a report shows a problem, for example `<@&role-id>` |
+| `MEADOW_SOURCE_URL` | **Service settings.** Where the code you run is published (see obligations) |
 | `MEADOW_NETWORKS` | Networks to run: `main`, `beta`, or both (default: both) |
 | `MEADOW_MAIN_PEERS`, `MEADOW_BETA_PEERS` | Extra peers by hand, `n_<node key>@<URL>` (development) |
-| `MEADOW_MAIN_OPERATOR`, `MEADOW_BETA_OPERATOR` | Each network's supplier operator address, reported by `GET /` |
-| `MEADOW_SOURCE_URL` | Where the code you run is published (see obligations) |
+| `MEADOW_MAIN_OPERATOR`, `MEADOW_BETA_OPERATOR` | Each network's supplier operator address, reported by `GET /`. Not needed: the node reports the supplier whose hostname answers with its own node ID. |
 | `MEADOW_WRITE_ROOM_PER_MIN`, `MEADOW_WRITE_AGENT_PER_MIN` | Write limits per agent, per minute: in one room, and across all rooms (defaults 20 and 60). A write over a limit is held for the client to send again, never dropped. |
+
+## Health reports
+
+With a webhook set, the node posts a health report to that Discord channel a minute after it starts, then every hour, one message for both networks: its own checks, what it holds and accepted, how it syncs with every other node, and its traffic, colored green, amber, or red. A setting the node can't use is logged and the node runs without reports, so a typo never stops it.
 
 ## Your obligations as an operator
 
@@ -74,6 +84,8 @@ docker exec meadow-backend node src/operator.js main reports
 | `dismiss <p_…> [--note "…"]` | Resolves a report with no action |
 | `takedowns [--limit N]` | Your takedown log |
 | `restore <e_…>` | Withdraws a takedown. The node asks its peers for the dropped content and serves it again once one supplies it. |
+| `peers` | Your peers and discovery: active or banned, why, last successful exchange, recent errors |
+| `alert-test` | Sends a test health report to your webhook and says whether Discord accepted it |
 
 Output is JSON. Changes apply at once, without a restart. A takedown applies only to your node, never to other operators', and it covers every later copy of the event, so you can take down an event your node hasn't received yet. Reports are deleted after 30 days; your takedown log is kept.
 

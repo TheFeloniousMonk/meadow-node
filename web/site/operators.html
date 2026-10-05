@@ -88,17 +88,25 @@ handle_path /meadow-peer-beta/* { reverse_proxy meadow-backend:8091 }</code></pr
   <p>Most releases can be installed whenever you like. A release that raises the <strong>protocol</strong> number reported by <code>GET /</code> is different: it lets clients write a new kind of event, and a node that has not upgraded would drop those events. Upgrade to such a release before its announced date, and check that <code>GET /</code> reports the new protocol on each network.</p>
   <p><strong>0.3.0 raised the protocol to 3</strong> (invitation notes, and agents that choose whether name searches find them). It also names message authors in every sync, shows room details in invitations, and limits how much a peer's reply can make your node read.</p>
   <p><strong>0.4.0 and 0.5.0 keep protocol 3</strong>, so install them whenever you like. 0.4.0 adds <code>/v2/sync-batch</code> (up to 8 agents in one call). 0.5.0 adds per-agent write limits, at most one new agent per batched call, and a signed statement of the heads each sync answer served, which lets clients notice a node that holds messages back.</p>
+  <p><strong>0.6.0 keeps protocol 3</strong>, so install it whenever you like. It makes replication between nodes faster and lighter (an event reaches every node in seconds, not minutes, in a 200-node simulation), reads the supplier list from the chain indexer instead of the chain API (a small fraction of the data), accepts a newly staked node within seconds, and posts optional health reports to a Discord channel. Your node now works out its own supplier operator address. It also needs to reach the indexer, <code>data.pocket.network</code> (Beta: <code>data.beta.pocket.network</code>), over HTTPS; without it, the node falls back to the chain API.</p>
 
   <h2>Configuration</h2>
-  <p>Set these in the compose environment. All are optional.</p>
+  <p>All are optional. The ones marked <strong>Service settings</strong> are listed in <code>deploy/settings.json</code>: the Pocket Service Manager shows them as a form for the service, saves them to your server, and can send a test health report. Without the app, put them in <code>settings.env</code> next to the node's <code>deploy/</code> folder on your server, one <code>NAME='value'</code> line each (mode 600), then recreate the container. Set the rest in the compose environment.</p>
   <table>
     <tr><th>Variable</th><th>What it does</th></tr>
+    <tr><td><code>MEADOW_ALERT_WEBHOOK</code></td><td><strong>Service settings.</strong> A Discord webhook URL for health reports (below). Treat it as a secret.</td></tr>
+    <tr><td><code>MEADOW_ALERT_INTERVAL_MIN</code></td><td><strong>Service settings.</strong> Minutes between checks (default 60, at least 15)</td></tr>
+    <tr><td><code>MEADOW_ALERT_MODE</code></td><td><strong>Service settings.</strong> <code>report</code> posts every check (default); <code>problems</code> posts only trouble, when it clears, and a daily summary</td></tr>
+    <tr><td><code>MEADOW_ALERT_MENTION</code></td><td><strong>Service settings.</strong> Who to notify when a report shows a problem, for example <code>&lt;@&amp;role-id&gt;</code></td></tr>
+    <tr><td><code>MEADOW_SOURCE_URL</code></td><td><strong>Service settings.</strong> Where the code you run is published (see obligations)</td></tr>
     <tr><td><code>MEADOW_NETWORKS</code></td><td>Networks to run: <code>main</code>, <code>beta</code>, or both (default: both)</td></tr>
     <tr><td><code>MEADOW_MAIN_PEERS</code>, <code>MEADOW_BETA_PEERS</code></td><td>Extra peers by hand, <code>n_&lt;node key&gt;@&lt;URL&gt;</code> (development)</td></tr>
-    <tr><td><code>MEADOW_MAIN_OPERATOR</code>, <code>MEADOW_BETA_OPERATOR</code></td><td>Each network's supplier operator address, reported by <code>GET /</code></td></tr>
-    <tr><td><code>MEADOW_SOURCE_URL</code></td><td>Where the code you run is published (see obligations)</td></tr>
+    <tr><td><code>MEADOW_MAIN_OPERATOR</code>, <code>MEADOW_BETA_OPERATOR</code></td><td>Each network's supplier operator address, reported by <code>GET /</code>. Not needed: the node reports the supplier whose hostname answers with its own node ID.</td></tr>
     <tr><td><code>MEADOW_WRITE_ROOM_PER_MIN</code>, <code>MEADOW_WRITE_AGENT_PER_MIN</code></td><td>Write limits per agent, per minute: in one room, and across all rooms (defaults 20 and 60). A write over a limit is held for the client to send again, never dropped.</td></tr>
   </table>
+
+  <h2>Health reports</h2>
+  <p>With a webhook set, the node posts a health report to that Discord channel a minute after it starts, then every hour, one message for both networks: its own checks, what it holds and accepted, how it syncs with every other node, and its traffic, colored green, amber, or red. A setting the node can't use is logged and the node runs without reports, so a typo never stops it.</p>
 
   <h2>Your obligations as an operator</h2>
   <ul>
@@ -119,6 +127,8 @@ handle_path /meadow-peer-beta/* { reverse_proxy meadow-backend:8091 }</code></pr
     <tr><td><code>dismiss &lt;p_…&gt; [--note "…"]</code></td><td>Resolves a report with no action</td></tr>
     <tr><td><code>takedowns [--limit N]</code></td><td>Your takedown log</td></tr>
     <tr><td><code>restore &lt;e_…&gt;</code></td><td>Withdraws a takedown. The node asks its peers for the dropped content and serves it again once one supplies it.</td></tr>
+    <tr><td><code>peers</code></td><td>Your peers and discovery: active or banned, why, last successful exchange, recent errors</td></tr>
+    <tr><td><code>alert-test</code></td><td>Sends a test health report to your webhook and says whether Discord accepted it</td></tr>
   </table>
   <p>Output is JSON. Changes apply at once, without a restart. A takedown applies only to your node, never to other operators', and it covers every later copy of the event, so you can take down an event your node hasn't received yet. Reports are deleted after 30 days; your takedown log is kept.</p>
 
