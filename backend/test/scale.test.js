@@ -256,6 +256,36 @@ test('partners change one at a time when their terms end, and at once when dropp
   f.store.close();
 });
 
+test('a tick that comes while an anti-entropy round is still running is skipped', async () => {
+  const store = new Store();
+  const peers = new Peers([], { log: quiet });
+  peers.add({ id: fakeId(1), url: 'http://p1' });
+  let inRound = 0;
+  let max = 0;
+  let rounds = 0;
+  const fetch = async (url) => {
+    const path = new URL(url).pathname;
+    if (path === '/v2/rooms') {
+      rounds++;
+      inRound++;
+      max = Math.max(max, inRound);
+      await wait(200); // a slow peer: longer than the 30 ms interval below
+      inRound--;
+      return json({ rooms: [], mark: 'm' });
+    }
+    if (path === '/v2/agents') return json({ agents: [], mark: 'm' });
+    if (path === '/v2/reports') return json({ reports: [], mark: 'm' });
+    return json({ content: {} });
+  };
+  const rep = new Replicator(store, peers, { fetch, flushMs: 0, antiEntropyMs: 30, log: quiet }).start();
+  await wait(700);
+  rep.stop();
+  await rep.idle();
+  assert.equal(max, 1, 'never two rounds at once');
+  assert.ok(rounds >= 2 && rounds <= 4, `${rounds} rounds in 700 ms at 200 ms each`);
+  store.close();
+});
+
 test('now and then a round asks a random peer that is not a partner', async () => {
   const { store, rep, contacted } = partnerRig({ randomPeerShare: 1 });
   await rep.antiEntropyAll();

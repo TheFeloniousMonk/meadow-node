@@ -36,6 +36,7 @@ export class Replicator {
   #rounds = new Map(); // peer ID -> { marks: { rooms, agents, reports }, fullAt } (incremental anti-entropy)
   #partners = new Map(); // peer ID -> when its term as an anti-entropy partner ends
   #turn = 0; // the partner next in line
+  #round = null; // the anti-entropy round in progress
   #timers = [];
   #unsubscribe = null;
 
@@ -43,7 +44,7 @@ export class Replicator {
     this.#store = store;
     this.#peers = peers;
     this.#opts = {
-      fanout: 3, flushMs: 250, antiEntropyMs: 60_000, antiEntropyPeers: 2, timeoutMs: 10_000,
+      fanout: 3, flushMs: 250, antiEntropyMs: 15_000, antiEntropyPeers: 2, timeoutMs: 10_000,
       aePartners: AE_PARTNERS, partnerMs: PARTNER_MS, randomPeerShare: RANDOM_PEER_SHARE,
       newRoomsPerRound: 20, newAgentsPerRound: 50, fetch: globalThis.fetch, log: console, ...opts,
     };
@@ -54,8 +55,13 @@ export class Replicator {
     const { flushMs, antiEntropyMs } = this.#opts;
     if (flushMs > 0) this.#timers.push(setInterval(() => this.#track(this.flushAll()), flushMs));
     if (antiEntropyMs > 0) {
-      this.#track(this.antiEntropyAll());
-      this.#timers.push(setInterval(() => this.#track(this.antiEntropyAll()), antiEntropyMs));
+      // Every 15 s (§11.3); a tick that comes while a slow round is still running is skipped.
+      const tick = () => {
+        if (this.#round) return;
+        this.#round = this.#track(this.antiEntropyAll()).finally(() => { this.#round = null; });
+      };
+      tick();
+      this.#timers.push(setInterval(tick, antiEntropyMs));
     }
     return this;
   }
