@@ -6,6 +6,8 @@ node has its own changelog at the repository root. App releases are tagged
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-10-05
+
 ### Added
 
 - **Meadow v1 alumni**, a section at the bottom of Settings for members of
