@@ -9,7 +9,7 @@
 //
 //   node backend/sim/simulate.js [--nodes 200] [--minutes 30] [--rooms 50] [--posts-per-min 20]
 //                                [--down 0] [--fail 0.05] [--settle 5] [--flush-ms 1000] [--seed 1]
-//                                [--record-bytes 35000] [--json]
+//                                [--record-bytes 35000] [--indexer-record-bytes 330] [--json]
 //
 // Not a test: it measures. Validation costs about half a millisecond per event per node, so
 // 1,000 nodes with a few hundred events takes minutes.
@@ -38,6 +38,7 @@ const { values: o } = parseArgs({
     'ae-seconds': { type: 'string', default: '60' },
     seed: { type: 'string', default: '1' },
     'record-bytes': { type: 'string', default: '35000' },
+    'indexer-record-bytes': { type: 'string', default: '330' },
     json: { type: 'boolean', default: false },
     help: { type: 'boolean', default: false },
   },
@@ -56,6 +57,7 @@ if (o.help) {
   --ae-seconds A      anti-entropy interval in simulated seconds (default 60, the node's)
   --seed S            random seed (default 1)
   --record-bytes B    size of one supplier record from the chain API (default 35000, measured 23-47 KB)
+  --indexer-record-bytes B  size of one supplier's Meadow config from the indexer (default 330, measured)
   --json              print the result as JSON`);
   process.exit(0);
 }
@@ -70,6 +72,8 @@ const FLUSH_MS = Number(o['flush-ms']);
 const FANOUT = Number(o.fanout);
 const AE_MS = Number(o['ae-seconds']) * 1000;
 const RECORD_BYTES = Number(o['record-bytes']);
+const INDEXER_BYTES = Number(o['indexer-record-bytes']);
+const DISCOVERY_MS = 10 * 60_000; // the node's is 30 min; more often here, to measure runs of changes
 
 // ---- Seeded randomness and a simulated clock, for the node code too ----
 let seed = Number(o.seed) >>> 0 || 1;
@@ -98,7 +102,8 @@ const tally = (path, req, res, failed = false) => {
 };
 const listings = { full: 0, incremental: 0 };
 let pushesToDown = 0;
-let lcdBytes = 0;
+const slotsToDown = new Set(); // "<event> <node>": an event's fanout slot given to a node that is down
+let indexerBytes = 0;
 let discoveryRuns = 0;
 
 // ---- Nodes ----
@@ -143,7 +148,10 @@ const fetchFrom = () => async (url, init = {}) => {
   }
   if (!target || target.down) {
     tally(path, req, 0, true);
-    if (path === '/v2/push') pushesToDown++;
+    if (path === '/v2/push') {
+      pushesToDown++;
+      for (const e of JSON.parse(init.body ?? '{}').events ?? []) slotsToDown.add(`${e.id} ${u.host}`);
+    }
     throw new TypeError('fetch failed', { cause: { code: 'ECONNREFUSED' } });
   }
   const { status, body } = serve(target, path, init.body ?? '{}');
@@ -179,18 +187,26 @@ const failCount = Math.round(N * FAIL);
 const failing = [...live].sort(() => Math.random() - 0.5).slice(0, failCount);
 for (const n of failing) failingSet.add(n);
 
-// Discovery: every node reads the supplier list and says hello to every supplier, as at start.
+// Discovery: every node reads the supplier list from the indexer and says hello to every supplier,
+// as at start; later runs read only what changed (nothing does here) and ask no one again.
 const suppliers = nodes.map((n) => ({ operator: `pokt1sim${n.i}`, urls: [`http://${host(n.i)}`] }));
+const HEIGHT = 1_000_000;
+for (const n of nodes) {
+  n.discovery = new Discovery(n.store, n.peers, {
+    networks: ['main'], peerPath: '/meadow-peer', fetch: fetchFrom(), intervalMs: 0, log: quiet,
+    listSuppliers: async (network, { since }) => {
+      if (since !== null) {
+        indexerBytes += 200;
+        return { suppliers: [], removed: [], height: HEIGHT, full: false };
+      }
+      indexerBytes += 200 + suppliers.length * INDEXER_BYTES;
+      return { suppliers, removed: [], height: HEIGHT, full: true };
+    },
+  });
+}
 async function discoverAll() {
   for (const n of live) {
-    const d = new Discovery(n.store, n.peers, {
-      networks: ['main'], peerPath: '/meadow-peer', fetch: fetchFrom(), intervalMs: 0, log: quiet,
-      listSuppliers: async () => {
-        lcdBytes += suppliers.length * RECORD_BYTES;
-        return suppliers;
-      },
-    });
-    await d.run();
+    await n.discovery.run();
     discoveryRuns++;
   }
 }
@@ -228,7 +244,8 @@ function post() {
 // ---- Run ----
 const t0 = performance.now();
 await discoverAll();
-const discoveryStart = { lcd: lcdBytes, hellos: paths.get('/v2/hello')?.calls ?? 0, nodes: live.length };
+const discoveryStart = { bytes: indexerBytes, hellos: paths.get('/v2/hello')?.calls ?? 0, nodes: live.length };
+const later = { runs: 0, bytes: 0, hellos: 0 };
 const total = MINUTES * 60_000;
 const roomsEvery = Math.max(1, Math.floor((total / 2) / Math.max(ROOMS, 1))); // rooms in the first half
 let postDebt = 0;
@@ -244,6 +261,14 @@ for (let t = 0; t < total; t += FLUSH_MS) {
   while (postDebt >= 1) {
     post();
     postDebt--;
+  }
+  if (t % DISCOVERY_MS === 0 && t > 0) {
+    const b0 = indexerBytes;
+    const h0 = paths.get('/v2/hello')?.calls ?? 0;
+    await discoverAll();
+    later.runs += live.length;
+    later.bytes += indexerBytes - b0;
+    later.hellos += (paths.get('/v2/hello')?.calls ?? 0) - h0;
   }
   for (const n of live) await n.replicator.flushAll(clock);
   if (t % AE_MS === 0 && t > 0) for (const n of live) await n.replicator.antiEntropyAll();
@@ -277,10 +302,13 @@ const result = {
   arrivals: { by_push: via.push, by_pull: via.pull, pull_share: +(via.pull / Math.max(1, via.push + via.pull)).toFixed(3) },
   anti_entropy_listings: { ...listings, full_share: +(listings.full / Math.max(1, listings.full + listings.incremental)).toFixed(3) },
   pushes_aimed_at_down_nodes: pushesToDown,
+  event_slots_given_to_down_nodes: slotsToDown.size,
   discovery: {
-    hellos_per_run_per_node: +(discoveryStart.hellos / discoveryStart.nodes).toFixed(0),
-    chain_api_mb_per_run_per_node: +(discoveryStart.lcd / discoveryStart.nodes / 1e6).toFixed(1),
-    chain_api_gb_per_day_network: +(discoveryStart.lcd * 48 / 1e9).toFixed(1),
+    first_run: { hellos_per_node: +(discoveryStart.hellos / discoveryStart.nodes).toFixed(0), indexer_kb_per_node: +(discoveryStart.bytes / discoveryStart.nodes / 1024).toFixed(1) },
+    later_runs: later.runs ? { runs: later.runs, hellos_per_node: +(later.hellos / later.runs).toFixed(2), indexer_bytes_per_node: Math.round(later.bytes / later.runs) } : null,
+    // A day: one complete listing every 6 hours, a run of changes every 30 minutes otherwise.
+    indexer_mb_per_day_network: +(((discoveryStart.bytes / discoveryStart.nodes) * 4 + 200 * 44) * L / 1e6).toFixed(1), // 4 complete + 44 of changes
+    old_chain_api_gb_per_day_network: +(N * RECORD_BYTES * 48 * L / 1e9).toFixed(1),
   },
   peer_api: byPath,
   wall_seconds: +wall.toFixed(1),
@@ -302,8 +330,9 @@ else {
   console.log(`delivery to every live node: p50 ${r.delivery_seconds.p50} s, p95 ${r.delivery_seconds.p95} s, max ${r.delivery_seconds.max} s`);
   console.log(`arrivals at other nodes: ${r.arrivals.by_push} by push, ${r.arrivals.by_pull} by pull (missing history or anti-entropy; ${(r.arrivals.pull_share * 100).toFixed(1)}%)`);
   console.log(`anti-entropy room listings: ${r.anti_entropy_listings.full} full, ${r.anti_entropy_listings.incremental} incremental (${(r.anti_entropy_listings.full_share * 100).toFixed(1)}% full)`);
-  console.log(`pushes aimed at down nodes: ${r.pushes_aimed_at_down_nodes}`);
-  console.log(`discovery per run: ${r.discovery.hellos_per_run_per_node} hellos and ${r.discovery.chain_api_mb_per_run_per_node} MB from the chain API per node; ${r.discovery.chain_api_gb_per_day_network} GB/day across the network at one run per 30 min`);
+  console.log(`pushes aimed at down nodes: ${r.pushes_aimed_at_down_nodes} attempts (mostly paced retries), carrying ${r.event_slots_given_to_down_nodes} distinct events' fanout slots`);
+  const dl = r.discovery.later_runs;
+  console.log(`discovery: first run ${r.discovery.first_run.hellos_per_node} hellos and ${r.discovery.first_run.indexer_kb_per_node} KB from the indexer per node; later runs ${dl ? `${dl.hellos_per_node} hellos and ${dl.indexer_bytes_per_node} bytes per node` : 'none in this run'}; ${r.discovery.indexer_mb_per_day_network} MB/day across the network (the chain API every 30 min was ${r.discovery.old_chain_api_gb_per_day_network} GB/day)`);
   console.log('peer API, per node per minute:');
   for (const [p, v] of Object.entries(r.peer_api)) console.log(`  ${p.padEnd(13)} ${String(v.calls_per_node_per_min).padStart(7)} calls  ${String(v.kb_per_node_per_min).padStart(8)} KB  (${v.failed} failed of ${v.calls})`);
 }
