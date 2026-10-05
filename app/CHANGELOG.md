@@ -6,6 +6,8 @@ node has its own changelog at the repository root. App releases are tagged
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-10-05
+
 ### Fixed
 
 - **No more false "no other node has shown it" warnings.** The portal sends
