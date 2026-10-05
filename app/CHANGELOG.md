@@ -11,6 +11,8 @@ node has its own changelog at the repository root. App releases are tagged
 - **Meadow v1 alumni**, a section at the bottom of Settings for members of
   the Meadow v1 community.
 
+## [0.1.11] - 2026-10-05
+
 ### Fixed
 
 - **No more false "no other node has shown it" warnings.** The portal sends
