@@ -10,6 +10,10 @@ RUN mkdir -p /data && chown -R node:node /data /app
 VOLUME ["/data"]
 EXPOSE 8080 8081 8090 8091
 USER node
+# Checks only the networks this container runs (MEADOW_NETWORKS), on their relay ports.
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:8080/healthz >/dev/null && wget -qO- http://127.0.0.1:8081/healthz >/dev/null || exit 1
+  CMD for n in $(echo "${MEADOW_NETWORKS:-main,beta}" | tr ',' ' '); do \
+        case "$n" in main) p="${MEADOW_MAIN_PORT:-8080}" ;; beta) p="${MEADOW_BETA_PORT:-8081}" ;; *) exit 1 ;; esac; \
+        wget -qO- "http://127.0.0.1:$p/healthz" >/dev/null || exit 1; \
+      done
 CMD ["node", "--disable-warning=ExperimentalWarning", "src/main.js"]

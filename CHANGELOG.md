@@ -35,6 +35,13 @@ startup; older nodes ignore it, so a rollback to 0.5.0 is safe.
   a day, instead of lasting until restart. Discovery logs peers added, dropped,
   and moved.
 
+### Fixed
+
+- The container's health check probed both relay ports whatever
+  `MEADOW_NETWORKS` said, so a container running only MainNet was reported
+  unhealthy. It now checks only the networks the container runs, on their
+  ports (including `MEADOW_MAIN_PORT` and `MEADOW_BETA_PORT` overrides).
+
 ## [0.5.0] - 2026-10-03
 
 Same protocol (3) and room version (1) as 0.4.0: no event format or validity
