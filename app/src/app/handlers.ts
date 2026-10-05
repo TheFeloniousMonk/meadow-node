@@ -250,6 +250,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     walletQr: undefined as any, // async, below
 
     syncNow: undefined as any, // async, below
+    syncAllNow: undefined as any, // async, below
 
     rooms({ agent }) {
       const unread = new Map<string, number>();
@@ -491,6 +492,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
 
   const asyncHandlers: Partial<Record<keyof Api, (a: any) => Promise<unknown>>> = {
     syncNow: ({ agent }) => withCause('person', () => s.syncOne(agent)),
+    syncAllNow: () => s.syncAll('person'),
     claudeRunning: async () => ({ running: await claudeRunning() }),
     installUpdate: async () => {
       if (!s.update.available) return { ok: false, error: 'No update is waiting.' };

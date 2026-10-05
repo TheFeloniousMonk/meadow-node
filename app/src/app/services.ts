@@ -13,10 +13,10 @@ import { Mover } from '../core/move.ts';
 import { Bridger } from '../core/bridge.ts';
 import { withCause } from '../core/cause.ts';
 import { PortalTransport } from '../core/portal.ts';
-import { Core } from '../core/core.ts';
+import { Core, SYNC, type SyncReport } from '../core/core.ts';
 import { Connections } from '../core/connections.ts';
 import { ToolHost } from '../core/tools.ts';
-import { GUARD_PATH, GUARD_SERVICE, MessageGuard, readScreen } from '../core/guard.ts';
+import { GUARD_PATH, GUARD_SERVICE, MessageGuard, readScreen, type GuardReport } from '../core/guard.ts';
 import { createLocalServer } from '../server/local.ts';
 import { createPublicServer } from '../server/public.ts';
 import { OAuth } from '../core/oauth.ts';
@@ -236,35 +236,11 @@ export class Services {
         if (!this.activity.recent(agent, 'problems', text, 3600_000)) this.activity.add(agent, 'app', 'problems', text);
       },
       onReceived: (agent, what) => this.#received(agent, what),
-      afterSync: async (agent, report) => {
-        this.lastSync.set(agent, Date.now());
-        this.db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(`sync_ok:${agent}`, String(Date.now()));
-        const screened = await this.guard.screenNew(agent);
-        if (screened.stopped) this.db.prepare('INSERT INTO problems (agent, at, kind, text) VALUES (?, ?, ?, ?)').run(agent, Date.now(), 'messageguard', `MessageGuard could not check every new message: ${screened.stopped}`);
-        const mentions = this.#newMentions(agent);
-        if ((report.messages || mentions.rooms.length) && this.settings().notifications) {
-          const a = this.core.agents().find((x) => x.id === agent);
-          const rooms = new Map(this.core.rooms(agent).map((r) => [r.room, r]));
-          // A room with a mention notification is covered by it, whatever its setting.
-          const mentioned = new Set(mentions.rooms.map((m) => m.room));
-          let normal = 0;
-          const priority: { room: string; title: string; count: number }[] = [];
-          for (const [room, n] of Object.entries(report.byRoom ?? {})) {
-            const r = rooms.get(room);
-            if (mentioned.has(room) || r?.notify === 'muted') continue;
-            // An unmuted DM is addressed to the agent: Priority (§16.20.4).
-            if (r?.notify !== 'priority' && r?.type !== 'dm') {
-              normal += n;
-              continue;
-            }
-            const title = r.type === 'dm' ? `DM with ${(r.dmWith && this.core.handleOf(agent, r.dmWith)) ?? 'another agent'}` : r.name ?? 'a room';
-            priority.push({ room, title, count: n });
-          }
-          if (normal || priority.length || screened.held || mentions.rooms.length) this.#notify(agent, a?.display_name ?? 'Your agent', normal, screened.held, priority, mentions);
-        }
-        // The runner acts outside the sync that woke it (the sync holds the agent's lock, and its own writes sync).
-        if (this.runner.config(agent)?.enabled) setTimeout(() => void this.runner.run(agent).finally(() => this.#changed()), 0);
-        this.#changed();
+      afterSync: async (agent, report) => this.#afterSync(agent, report, await this.guard.screenNew(agent)),
+      // After a combined sync, MessageGuard screens every agent's new messages in one check (§16.8, §16.11).
+      afterSyncMany: async (reports) => {
+        const screened = await this.guard.screenMany([...reports.keys()]);
+        for (const [agent, report] of reports) await this.#afterSync(agent, report, screened.get(agent)!);
       },
     });
     this.connections = new Connections({ db: this.db, vault: this.vault });
@@ -287,6 +263,37 @@ export class Services {
       event: (what, detail = '') => this.diagnostics.event('tunnel', what, detail),
     });
     this.update = new UpdateCheck({ version, kind: install });
+  }
+
+  /** After every sync, from any path (background, Sync Now, a tool, a combined sync): record it, report what MessageGuard did, then tell the person. */
+  async #afterSync(agent: string, report: SyncReport, screened: GuardReport) {
+    this.lastSync.set(agent, Date.now());
+    this.db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(`sync_ok:${agent}`, String(Date.now()));
+    if (screened.stopped) this.db.prepare('INSERT INTO problems (agent, at, kind, text) VALUES (?, ?, ?, ?)').run(agent, Date.now(), 'messageguard', `MessageGuard could not check every new message: ${screened.stopped}`);
+    const mentions = this.#newMentions(agent);
+    if ((report.messages || mentions.rooms.length) && this.settings().notifications) {
+      const a = this.core.agents().find((x) => x.id === agent);
+      const rooms = new Map(this.core.rooms(agent).map((r) => [r.room, r]));
+      // A room with a mention notification is covered by it, whatever its setting.
+      const mentioned = new Set(mentions.rooms.map((m) => m.room));
+      let normal = 0;
+      const priority: { room: string; title: string; count: number }[] = [];
+      for (const [room, n] of Object.entries(report.byRoom ?? {})) {
+        const r = rooms.get(room);
+        if (mentioned.has(room) || r?.notify === 'muted') continue;
+        // An unmuted DM is addressed to the agent: Priority (§16.20.4).
+        if (r?.notify !== 'priority' && r?.type !== 'dm') {
+          normal += n;
+          continue;
+        }
+        const title = r.type === 'dm' ? `DM with ${(r.dmWith && this.core.handleOf(agent, r.dmWith)) ?? 'another agent'}` : r.name ?? 'a room';
+        priority.push({ room, title, count: n });
+      }
+      if (normal || priority.length || screened.held || mentions.rooms.length) this.#notify(agent, a?.display_name ?? 'Your agent', normal, screened.held, priority, mentions);
+    }
+    // The runner acts outside the sync that woke it (the sync holds the agent's lock, and its own writes sync).
+    if (this.runner.config(agent)?.enabled) setTimeout(() => void this.runner.run(agent).finally(() => this.#changed()), 0);
+    this.#changed();
   }
 
   /** The agents ChatGPT may act as, by network name: those whose connection is ChatGPT (§16.7.2). */
@@ -342,7 +349,9 @@ export class Services {
 
   settings(): Settings {
     const row: any = this.db.prepare("SELECT value FROM meta WHERE key = 'settings'").get();
-    return { ...DEFAULT_SETTINGS, ...(row ? JSON.parse(row.value) : {}), perCallMaxUsd: this.wallets.perCallMaxUsd() };
+    // combineSyncs was a setting until combined syncs became the only way (§16.8); a stored value is ignored.
+    const { combineSyncs: _, ...stored } = row ? JSON.parse(row.value) : {};
+    return { ...DEFAULT_SETTINGS, ...stored, perCallMaxUsd: this.wallets.perCallMaxUsd() };
   }
 
   setSettings(changes: Partial<Settings>): Settings {
@@ -398,25 +407,48 @@ export class Services {
     this.#timer = setInterval(() => void this.syncAll(), s.syncMinutes * 60_000);
   }
 
-  /** Syncs every agent with a wallet; `cause` is what its payments are recorded as (§16.9.4). */
-  async syncAll(cause: 'background' | 'person' = 'background') {
-    for (const a of this.core.agents().filter((x) => x.registered && this.wallets.walletOf(x.id))) {
-      await withCause(cause, () => this.syncOne(a.id)).catch(() => {});
+  /** Syncs every agent with a wallet; `cause` is what its payments are recorded as (Â§16.9.4). */
+  async syncAll(cause: 'background' | 'person' = 'background'): Promise<{ agent: string; ok: boolean; message: string }[]> {
+    const agents = this.core.agents().filter((x) => x.registered && this.wallets.walletOf(x.id)).map((x) => x.id);
+    const out: { agent: string; ok: boolean; message: string }[] = [];
+    if (this.core.batchOff()) {
+      for (const a of agents) out.push({ agent: a, ...(await withCause(cause, () => this.syncOne(a))) });
+      return out;
     }
+    // Combined, always (§7.9, §16.8): each wallet's agents, up to 8 a call, so no wallet pays for
+    // another's. An agent alone on its wallet gets an ordinary sync (Core.syncMany).
+    const groups = new Map<string, string[]>();
+    for (const a of agents) {
+      const payer = this.wallets.walletOf(a)!;
+      groups.set(payer, [...(groups.get(payer) ?? []), a]);
+    }
+    for (const list of groups.values()) {
+      for (let i = 0; i < list.length; i += SYNC.batch) {
+        const chunk = list.slice(i, i + SYNC.batch);
+        const results = await withCause(cause, () => this.core.syncMany(chunk)).catch((err) => new Map(chunk.map((a) => [a, err as Error])));
+        for (const a of chunk) out.push({ agent: a, ...this.#syncResult(a, results.get(a) ?? new Error('Not synced.')) });
+      }
+    }
+    this.#changed();
+    return out;
   }
 
   async syncOne(agent: string): Promise<{ ok: boolean; message: string }> {
     try {
-      const r = await this.core.sync(agent);
-      this.lastSync.set(agent, Date.now());
-      return { ok: true, message: r.messages ? `${r.messages} new message${r.messages === 1 ? '' : 's'}.` : 'Nothing new.' };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.db.prepare('INSERT INTO problems (agent, at, kind, text) VALUES (?, ?, ?, ?)').run(agent, Date.now(), 'sync', message);
-      return { ok: false, message };
+      return this.#syncResult(agent, await this.core.sync(agent).catch((err) => (err instanceof Error ? err : new Error(String(err)))));
     } finally {
       this.#changed();
     }
+  }
+
+  /** A sync's outcome in the person's words; a failure is kept with the Dashboard's problems. */
+  #syncResult(agent: string, r: SyncReport | Error): { ok: boolean; message: string } {
+    if (r instanceof Error) {
+      this.db.prepare('INSERT INTO problems (agent, at, kind, text) VALUES (?, ?, ?, ?)').run(agent, Date.now(), 'sync', r.message);
+      return { ok: false, message: r.message };
+    }
+    this.lastSync.set(agent, Date.now());
+    return { ok: true, message: r.messages ? `${r.messages} new message${r.messages === 1 ? '' : 's'}.` : 'Nothing new.' };
   }
 
   /** Restart tunnel (§16.17.8): the same as the automatic restart, once, now. */

@@ -137,7 +137,7 @@ test('the activity tool and the window sum the wallet\'s spending by cause, from
   const ah = s.core.agents().find((a) => a.id === aevum)!.handle;
   await s.tools.call(lucero, 'sync', {}, { via: 'claude' });
   await tick();
-  await s.syncAll(); // background receiving, both agents
+  await s.syncAll(); // background receiving: both agents, in one combined call (§7.9)
   await tick();
   await s.tools.call(aevum, 'sync', {}, { via: 'claude' });
   await tick();
@@ -146,19 +146,19 @@ test('the activity tool and the window sum the wallet\'s spending by cause, from
   const sp = r.data.spending;
   assert.equal(sp.period, 'the last 24 hours');
   assert.equal(sp.wallet, 'Everyday');
-  assert.equal(sp.total, '$0.03'); // with both registrations
+  assert.equal(sp.total, '$0.025'); // with both registrations
   assert.deepEqual([...sp.by].sort(), [
     '$0.005 for your own calls, through Claude, 1 call',
     '$0.005 for the app, 1 call', // Lucero's registration, made outside any tool call
     `$0.01 for another agent on this computer, ${ah}, 2 calls`, // its registration and its sync
-    '$0.01 for background receiving (the app checks for new messages on a timer), 2 calls',
+    '$0.005 for background receiving (the app checks for new messages on a timer), 1 call',
   ].sort());
   // since narrows it.
   const later: any = await s.tools.call(lucero, 'activity', { since: new Date(Date.now() + 1000).toISOString() }, { via: 'claude' });
   assert.equal(later.data.spending.total, '$0.00');
   // The person's words in the window, and nothing was added to the log.
   const mine = s.tools.spendingSummary(lucero, 0, 'person')!;
-  assert.equal(mine.calls, 6);
+  assert.equal(mine.calls, 5);
   assert.ok(mine.by.includes(`$0.005 for ${lh}, through Claude, 1 call`), JSON.stringify(mine.by));
   assert.equal((s.db.prepare('SELECT COUNT(*) AS n FROM activity').get() as any).n, logBefore);
   // Payments from before 0.1.5 carry no cause, and are named as such.
@@ -217,7 +217,7 @@ test('every payment records its cause, and results explain the rest of the walle
   assert.equal(first.data.paid_calls, 1);
   assert.equal(first.data.other_spending_since_your_last_call, undefined);
   await tick();
-  await s.syncAll(); // background receiving: one sync per agent on the wallet
+  await s.syncAll(); // background receiving: one combined call for both agents on the wallet (§7.9)
   await tick();
   await s.tools.call(lucero, 'sync', {}, { via: 'claude' });
   await tick();
@@ -225,16 +225,16 @@ test('every payment records its cause, and results explain the rest of the walle
   assert.equal(next.data.cost, '$0.005', 'its own call only');
   assert.equal(next.data.paid_calls, 1);
   const other = next.data.other_spending_since_your_last_call;
-  assert.equal(other.total, '$0.015');
+  assert.equal(other.total, '$0.01');
   assert.deepEqual(other.by.sort(), [
     '$0.005 for another agent on this computer, ' + s.core.agents().find((a) => a.id === lucero)!.handle + ', 1 call',
-    '$0.01 for background receiving (the app checks for new messages on a timer), 2 calls',
+    '$0.005 for background receiving (the app checks for new messages on a timer), 1 call',
   ].sort());
   const causes = (s.db.prepare('SELECT agent, cause FROM payments ORDER BY seq').all() as any[]).filter((p) => p.cause !== 'app').map((p) => `${p.agent === aevum ? 'aevum' : 'lucero'} ${p.cause}`);
-  assert.deepEqual(causes, ['aevum claude:sync', 'aevum background', 'lucero background', 'lucero claude:sync', 'aevum claude:sync']);
+  assert.deepEqual(causes, ['aevum claude:sync', 'aevum background', 'lucero claude:sync', 'aevum claude:sync']);
   const st: any = await s.tools.call(aevum, 'status', {}, { via: 'claude' });
   assert.ok(st.data.wallet.spent_last_24h.by.some((x: string) => /background receiving/.test(x)));
-  assert.equal(s.wallets.paymentsBetween(wallet, 0, Date.now()).length >= 5, true);
+  assert.equal(s.wallets.paymentsBetween(wallet, 0, Date.now()).length >= 4, true);
 });
 
 test('two calls at once each report only their own payment (Nodus, 2026-10-02)', async () => {

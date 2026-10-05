@@ -23,6 +23,8 @@ export const SYNC = {
   outbox: 100, // events per call (§7.2)
   maxPages: 20, // calls one sync may make before it stops
   limitBytes: 1024 * 1024,
+  batch: 8, // agents in one /v2/sync-batch call (§7.9)
+  batchOffMs: 3600 * 1000, // single syncs only, after a node or the portal does not know the route
 };
 
 export interface CoreOptions {
@@ -32,6 +34,11 @@ export interface CoreOptions {
   now?: () => number;
   /** Runs after every sync, inside the agent's lock: MessageGuard screening, notifications (§16.11). */
   afterSync?: (agent: string, report: SyncReport) => Promise<void>;
+  /**
+   * Runs once after a combined sync (§7.9), inside every agent's lock, instead of afterSync for
+   * each: MessageGuard screens all their new messages in one check. Without it, afterSync runs for each.
+   */
+  afterSyncMany?: (reports: Map<string, SyncReport>) => Promise<void>;
   /** Told of every sync that fails, from any path, for the connection check (§16.17.1). */
   onSyncError?: (agent: string, err: unknown) => void;
   /** Told of what the network did to the agent, for the activity log (§16.18.1). */
@@ -192,6 +199,7 @@ export class Core {
   #vault: Vault;
   #transport: Transport;
   #afterSync?: (agent: string, report: SyncReport) => Promise<void>;
+  #afterSyncMany?: (reports: Map<string, SyncReport>) => Promise<void>;
   #onSyncError?: (agent: string, err: unknown) => void;
   #onReceived?: (agent: string, what: Received) => void;
   #now: () => number;
@@ -201,9 +209,10 @@ export class Core {
   /** Watching the nodes (§16.23). */
   readonly watch: NodeWatch;
 
-  constructor({ db, vault, transport, now = Date.now, afterSync, onSyncError, onReceived, writeWaitMs = WRITE_WAIT_MS }: CoreOptions) {
+  constructor({ db, vault, transport, now = Date.now, afterSync, afterSyncMany, onSyncError, onReceived, writeWaitMs = WRITE_WAIT_MS }: CoreOptions) {
     this.#writeWaitMs = writeWaitMs;
     this.#afterSync = afterSync;
+    this.#afterSyncMany = afterSyncMany;
     this.#onReceived = onReceived;
     this.#onSyncError = onSyncError;
     this.#db = db;
@@ -988,18 +997,57 @@ export class Core {
     }
   }
 
+  /** One page's request for an agent (§7.2): its heads, the queued events its setting lets go, and the chains to ask for. */
+  #page(ctx: Ctx): { fields: any; rows: number; total: number; ask: string[]; before: string } {
+    // Events the agent's setting holds back stay queued, unsent (§16.7.5).
+    const sendable = this.#sendable(ctx.id);
+    const rows = sendable.slice(0, SYNC.outbox);
+    const heads = this.#heads(ctx);
+    const fields: any = { heads };
+    if (rows.length) fields.outbox = rows.map((r) => JSON.parse(r.event));
+    // Chains to verify the names nodes gave (§16.8), only where the network takes `agents` (§7.2).
+    const ask = this.protocol3(ctx.id) ? this.#chainsToAsk(ctx) : [];
+    if (ask.length) fields.agents = ask;
+    return { fields, rows: rows.length, total: sendable.length, ask, before: JSON.stringify(heads) };
+  }
+
+  /** Marks the chains a sync asked for as asked (§16.8), once the network answered. */
+  #asked(ctx: Ctx, ask: string[]) {
+    if (!ask.length) return;
+    const mark = this.#db.prepare('UPDATE author_names SET asked_at = ? WHERE agent = ? AND peer = ?');
+    const backfilled = this.#db.prepare(`INSERT INTO name_backfill (agent, peer, asked_at) SELECT ?, ?, ?
+      WHERE NOT EXISTS (SELECT 1 FROM author_names WHERE agent = ? AND peer = ?)
+      ON CONFLICT (agent, peer) DO UPDATE SET asked_at = excluded.asked_at`);
+    tx(this.#db, () => {
+      for (const peer of ask) {
+        mark.run(this.#now(), ctx.id, peer);
+        backfilled.run(ctx.id, peer, this.#now(), ctx.id, peer);
+      }
+    });
+  }
+
+  /**
+   * Takes one sync answer for an agent, single or an entry of a batch, and says whether the agent
+   * needs another page: the node said more, events wait for the next call, or events stayed queued.
+   */
+  async #takePage(ctx: Ctx, data: any, page: { rows: number; total: number; before: string }, report: SyncReport): Promise<boolean> {
+    await this.#ingestSync(ctx, data, report);
+    const waiting = (data.pending ?? []).some((p: any) => p.reason === 'create_limit' || p.reason === 'batch_limit');
+    if (!data.more && !waiting && page.total <= page.rows) return false;
+    // Every page is paid: a page that sent nothing and brought nothing new ends the sync (a node saying "more" forever would drain the budget).
+    if (!page.rows && JSON.stringify(this.#heads(ctx)) === page.before && !(data.invites ?? []).length) {
+      this.#problem(ctx.id, 'sync', 'A node said more was waiting but sent nothing new; the sync stopped to save money.');
+      return false;
+    }
+    return true;
+  }
+
   async #syncPages(ctx: Ctx): Promise<SyncReport> {
     const report: SyncReport = { calls: 0, accepted: [], rejected: [], pending: [], invites: 0, messages: 0 };
     for (let page = 0; page < SYNC.maxPages; page++) {
-      // Events the agent's setting holds back stay queued, unsent (§16.7.5).
-      const sendable = this.#sendable(ctx.id);
-      const rows = sendable.slice(0, SYNC.outbox);
-      const total = sendable.length;
-      const fields: any = { heads: this.#heads(ctx), limit_bytes: SYNC.limitBytes };
-      if (rows.length) fields.outbox = rows.map((r) => JSON.parse(r.event));
-      // Chains to verify the names nodes gave (§16.8), only where the network takes `agents` (§7.2).
-      const ask = this.protocol3(ctx.id) ? this.#chainsToAsk(ctx) : [];
-      if (ask.length) fields.agents = ask;
+      const p = this.#page(ctx);
+      const { fields, ask } = p;
+      fields.limit_bytes = SYNC.limitBytes;
       let res;
       try {
         res = await this.#transport.call('/v2/sync', signRequest(this.#signer(ctx.id), fields), ctx.id);
@@ -1018,36 +1066,132 @@ export class Core {
         break;
       }
       report.calls++;
-      if (ask.length && res.status === 200) {
-        const mark = this.#db.prepare('UPDATE author_names SET asked_at = ? WHERE agent = ? AND peer = ?');
-        const backfilled = this.#db.prepare(`INSERT INTO name_backfill (agent, peer, asked_at) SELECT ?, ?, ?
-          WHERE NOT EXISTS (SELECT 1 FROM author_names WHERE agent = ? AND peer = ?)
-          ON CONFLICT (agent, peer) DO UPDATE SET asked_at = excluded.asked_at`);
-        tx(this.#db, () => {
-          for (const peer of ask) {
-            mark.run(this.#now(), ctx.id, peer);
-            backfilled.run(ctx.id, peer, this.#now(), ctx.id, peer);
-          }
-        });
-      }
+      if (res.status === 200) this.#asked(ctx, ask);
       if (res.status !== 200) {
         const e = res.data?.error;
         throw new ActionError(e?.code ?? 'sync_failed', `The network refused the sync: ${e?.message ?? res.status}.`);
       }
-      const data = res.data;
-      const before = JSON.stringify(this.#heads(ctx));
-      await this.#ingestSync(ctx, data, report);
-      const createLimited = (data.pending ?? []).some((p: any) => p.reason === 'create_limit');
-      if (!data.more && !createLimited && total <= rows.length) break;
-      // Every page is paid: a page that sent nothing and brought nothing new ends the sync (a node saying "more" forever would drain the budget).
-      if (!rows.length && JSON.stringify(this.#heads(ctx)) === before && !(data.invites ?? []).length) {
-        this.#problem(ctx.id, 'sync', 'A node said more was waiting but sent nothing new; the sync stopped to save money.');
-        break;
-      }
+      if (!(await this.#takePage(ctx, res.data, p, report))) break;
     }
     tx(this.#db, () => this.#housekeeping(ctx));
     if (this.#afterSync) await this.#afterSync(ctx.id, report);
     return report;
+  }
+
+  // --- Combined syncs (§7.9, §16.8) ---------------------------------------------------------
+
+  /** Whether combined syncs are off for now: a node or the portal did not know the route. */
+  batchOff(): boolean {
+    return Number(this.#meta('batch_off_until') ?? 0) > this.#now();
+  }
+
+  /**
+   * Syncs up to 8 agents with one paid call per page (§7.9), paid as the first agent: the caller
+   * groups agents that one payer pays for. Each agent's answer is taken exactly as its own sync's
+   * would be, and each fails or succeeds on its own. Runs inside every agent's lock, taken in a
+   * fixed order so two combined syncs never wait on each other. With one agent, or while combined
+   * syncs are off, each agent syncs on its own.
+   */
+  async syncMany(agents: string[]): Promise<Map<string, SyncReport | Error>> {
+    const ids = [...new Set(agents)];
+    if (ids.length > SYNC.batch) throw new ActionError('bad_request', `At most ${SYNC.batch} agents sync in one call.`);
+    const out = new Map<string, SyncReport | Error>();
+    if (ids.length <= 1 || this.batchOff()) {
+      for (const id of ids) out.set(id, await this.sync(id).catch((err) => (err instanceof Error ? err : new Error(String(err)))));
+      return out;
+    }
+    const payer = ids[0];
+    const ordered = [...ids].sort();
+    const locked = ordered.reduceRight<() => Promise<void>>((inner, id) => () => this.#exclusive(id, inner), () => this.#syncBatch(ids.map((id) => this.#load(id)), payer, out));
+    await locked();
+    return out;
+  }
+
+  async #syncBatch(ctxs: Ctx[], payer: string, out: Map<string, SyncReport | Error>): Promise<void> {
+    const reports = new Map(ctxs.map((c) => [c.id, { calls: 0, accepted: [], rejected: [], pending: [], invites: 0, messages: 0 } as SyncReport]));
+    const fail = (ctx: Ctx, err: Error) => {
+      out.set(ctx.id, err);
+      this.#onSyncError?.(ctx.id, err);
+    };
+    let active = ctxs;
+    for (let page = 0; page < SYNC.maxPages && active.length; page++) {
+      const pages = new Map(active.map((c) => [c.id, this.#page(c)]));
+      const body = { syncs: active.map((c) => signRequest(this.#signer(c.id), pages.get(c.id)!.fields)), limit_bytes: SYNC.limitBytes };
+      let res;
+      try {
+        res = await this.#transport.call('/v2/sync-batch', body, payer);
+      } catch (err) {
+        // Nothing was answered: an agent that had no page yet fails; one that had stops where it got to.
+        for (const c of active) {
+          const r = reports.get(c.id)!;
+          if (r.calls === 0) fail(c, err instanceof Error ? err : new Error(String(err)));
+          else r.stopped = err instanceof Error ? err.message : String(err);
+        }
+        active = [];
+        break;
+      }
+      for (const c of active) reports.get(c.id)!.calls++;
+      const e = res.data?.error;
+      // A node before 0.4.0, or a portal that does not offer the route: single syncs for an hour (§7.9).
+      if (res.status === 404 || res.status === 405 || (res.status === 400 && e?.code === 'bad_request' && /sync-batch|\bsyncs\b/.test(e?.message ?? ''))) {
+        this.#setMeta('batch_off_until', String(this.#now() + SYNC.batchOffMs));
+        this.#problem(null, 'sync', 'The network does not take combined syncs yet, so each agent syncs on its own for the next hour.');
+        for (const c of active) {
+          const r = await this.#sync(c).catch((err) => (err instanceof Error ? err : new Error(String(err))));
+          out.set(c.id, r);
+          if (!(r instanceof Error)) reports.delete(c.id);
+        }
+        // Those syncs ran their own housekeeping and afterSync.
+        for (const c of active) if (out.get(c.id) instanceof Error) reports.delete(c.id);
+        active = [];
+        break;
+      }
+      const entries = res.status === 200 && Array.isArray(res.data?.syncs) ? res.data.syncs : null;
+      if (!entries) {
+        for (const c of active) fail(c, new ActionError(e?.code ?? 'sync_failed', `The network refused the sync: ${e?.message ?? res.status}.`));
+        active = [];
+        break;
+      }
+      const byAgent = new Map<string, any>();
+      for (const x of entries) if (x && typeof x === 'object' && typeof x.agent === 'string' && !byAgent.has(x.agent)) byAgent.set(x.agent, x);
+      const next: Ctx[] = [];
+      for (const c of active) {
+        const x = byAgent.get(c.id);
+        if (!x) {
+          fail(c, new ActionError('sync_failed', 'The network answered the combined sync without this agent.'));
+          continue;
+        }
+        // Not reached in this call (the answer's size): nothing of it was processed; it goes again.
+        if (x.deferred === true) {
+          next.push(c);
+          continue;
+        }
+        if (x.failed) {
+          fail(c, new ActionError(typeof x.failed.code === 'string' ? x.failed.code : 'sync_failed', `The network refused the sync: ${String(x.failed.message ?? x.failed.code)}.`));
+          continue;
+        }
+        const p = pages.get(c.id)!;
+        this.#asked(c, p.ask);
+        const { agent: _agent, ...data } = x;
+        try {
+          if (await this.#takePage(c, { ...data, node: res.data.node }, p, reports.get(c.id)!)) next.push(c);
+        } catch (err) {
+          fail(c, err instanceof Error ? err : new Error(String(err)));
+        }
+      }
+      active = next;
+    }
+    const done = new Map<string, SyncReport>();
+    for (const c of ctxs) {
+      const r = reports.get(c.id);
+      if (!r || out.get(c.id) instanceof Error) continue;
+      tx(this.#db, () => this.#housekeeping(c));
+      out.set(c.id, r);
+      done.set(c.id, r);
+    }
+    if (!done.size) return;
+    if (this.#afterSyncMany) await this.#afterSyncMany(done);
+    else for (const [id, r] of done) if (this.#afterSync) await this.#afterSync(id, r);
   }
 
   /** Authors whose chain to ask for (§16.8): no verified chain, or the head moved; each at most once a day. */

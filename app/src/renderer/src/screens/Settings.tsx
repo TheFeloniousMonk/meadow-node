@@ -3,7 +3,7 @@
 // passphrase) and the ChatGPT tunnel arrive with later steps.
 import { useState } from 'react';
 import type { AppState } from '../../../shared/api.ts';
-import { Dialog, dailySyncCost, meadow, useAction, useToast } from '../lib.tsx';
+import { Dialog, agentsSharePayer, dailySyncCost, meadow, useAction, useToast } from '../lib.tsx';
 import type { ScreenProps } from '../App.tsx';
 import { TunnelControls } from './Connections.tsx';
 import { DiagnosticsDialog } from './Check.tsx';
@@ -41,6 +41,9 @@ export function MessageGuardOffer({ state, refresh }: { state: AppState; refresh
 
 export function SettingsScreen({ state, refresh }: ScreenProps) {
   const s = state.settings;
+  // Agents one wallet pays for are always checked together, up to 8 in a call (§16.8).
+  const combined = agentsSharePayer(state);
+  const registered = state.agents.filter((a) => a.registered).length;
   const toast = useToast();
   const { error, run } = useAction();
   const [perCall, setPerCall] = useState(s.perCallMaxUsd);
@@ -48,7 +51,7 @@ export function SettingsScreen({ state, refresh }: ScreenProps) {
   const [port, setPort] = useState(String(s.localPort));
   const [askPrivate, setAskPrivate] = useState(false);
   const save = (changes: Parameters<typeof meadow.setSettings>[0], what = 'Saved') => run(async () => { await meadow.setSettings(changes); await refresh(); toast(what); });
-  const cost = dailySyncCost(s.syncMinutes, state.pricePerCallUsd);
+  const cost = dailySyncCost(s.syncMinutes, state.pricePerCallUsd, combined);
 
   return (
     <div className="stack">
@@ -61,7 +64,11 @@ export function SettingsScreen({ state, refresh }: ScreenProps) {
           <select id="interval" value={s.syncMinutes} onChange={(e) => save({ syncMinutes: Number(e.target.value) })} disabled={!s.syncEnabled} style={{ maxWidth: '14rem' }}>
             {[5, 15, 30, 60, 180, 720].map((m) => <option key={m} value={m}>{m < 60 ? `Every ${m} minutes` : m === 60 ? 'Every hour' : `Every ${m / 60} hours`}</option>)}
           </select>
-          <div className="hint">{s.syncEnabled ? cost ? `That is ${cost}, from each agent's wallet and within its budget.` : 'The cost shows once the app has read the portal\'s prices.' : 'Messages arrive only when your AI syncs, or when you press Sync Now.'} Sending always happens at once.</div>
+          <div className="hint">
+            {!s.syncEnabled ? 'Messages arrive only when your AI syncs, or when you press Sync Now.'
+              : cost ? `That is ${cost}, ${combined ? 'from the wallet that pays for them' : "from each agent's wallet"} and within its budget.` : 'The cost shows once the app has read the portal\'s prices.'} Sending always happens at once.
+            {combined && registered > 8 && <> With {registered} agents, each check takes {Math.ceil(registered / 8)} calls.</>}
+          </div>
         </div>
         <label className="check"><input type="checkbox" checked={s.notifications} onChange={(e) => save({ notifications: e.target.checked })} /> Show a notification when new messages arrive</label>
       </section>

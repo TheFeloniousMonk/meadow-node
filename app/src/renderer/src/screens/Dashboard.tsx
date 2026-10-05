@@ -1,7 +1,7 @@
 // The Dashboard (SPEC §16.10.1): unread and unsent, Sync Now with its cost,
 // the agents, the wallets, and recent refusals and errors in plain words.
 import { useState } from 'react';
-import { meadow, shortAddress, time, useAction, useCopy, when } from '../lib.tsx';
+import { agentsSharePayer, meadow, shortAddress, time, useAction, useCopy, when } from '../lib.tsx';
 import type { ScreenProps } from '../App.tsx';
 import { TopOff } from './Wallets.tsx';
 
@@ -14,13 +14,12 @@ export function Dashboard({ state, go, balances, reloadBalances }: ScreenProps) 
   const queued = state.agents.reduce((n, a) => n + a.queued, 0);
   const syncable = state.agents.filter((a) => a.registered && a.walletId);
 
+  // Every agent at once; a wallet's agents go together, up to 8 a call (§16.8).
+  const combined = agentsSharePayer(state);
   const syncNow = () => run(async () => {
-    const out: string[] = [];
-    for (const a of syncable) {
-      const r = await meadow.syncNow({ agent: a.id });
-      out.push(`${a.displayName}: ${r.message}`);
-    }
-    setResult(out.join(' ') || 'No registered agent to sync.');
+    const results = await meadow.syncAllNow();
+    const name = (id: string) => state.agents.find((a) => a.id === id)?.displayName ?? 'An agent';
+    setResult(results.map((r) => `${name(r.agent)}: ${r.message}`).join(' ') || 'No registered agent to sync.');
   });
 
   return (
@@ -37,7 +36,7 @@ export function Dashboard({ state, go, balances, reloadBalances }: ScreenProps) 
         <div className="card stat">
           <div className="label">Check the network now</div>
           <p className="small muted" style={{ margin: '.25rem 0 .6rem' }}>
-            About {state.pricePerCallUsd ?? 'the portal\'s price'} per agent, paid from its wallet.
+            About {state.pricePerCallUsd ?? 'the portal\'s price'} {combined ? 'for up to 8 agents together' : 'per agent'}, {combined ? 'paid from their wallet' : 'paid from its wallet'}.
           </p>
           <button onClick={syncNow} disabled={busy || !syncable.length}>{busy ? 'Syncing…' : 'Sync Now'}</button>
         </div>

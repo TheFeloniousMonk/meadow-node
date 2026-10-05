@@ -93,13 +93,15 @@ export function troubleshoot(s: Services, claude: (agent: string) => ClaudeState
   const money: TroubleItem[] = [];
   const wallets = s.wallets.list();
   const paying = (w: { agents: string[] }) => agents.filter((a) => w.agents.includes(a.id) && a.registered).length;
+  // Background calls a day: a wallet's agents sync together, up to 8 a call (Â§7.9).
+  const calls = (w: { agents: string[] }) => Math.ceil(paying(w) / 8);
   for (const a of agents.filter((x) => !s.wallets.walletOf(x.id))) {
     money.push(item(`nowallet:${a.id}`, 'Wallets', 'bad', `${a.display_name} has no wallet to pay for its calls.`,
       wallets.length ? { action: { label: 'Choose a wallet', go: 'agents', open: 'chooseWallet', agent: a.id } } : { action: { label: 'Create a wallet', go: 'wallets' } }));
   }
   for (const w of wallets.filter((x) => x.agents.length)) {
     const bal = out.balances.get(w.id);
-    const need = perDay !== null ? perDay * BigInt(paying(w)) : null;
+    const need = perDay !== null ? perDay * BigInt(calls(w)) : null;
     const topOff: TroubleAction = { label: 'Top off', go: 'wallets', open: 'topOff', wallet: w.id };
     if (bal === undefined) money.push(item(`balance:${w.id}`, 'Wallets', 'info', `${w.name}: checking its balance…`));
     else if (bal === null) money.push(item(`balance:${w.id}`, 'Wallets', 'warn', `The app could not read ${w.name}'s balance from Base just now.`, { fix: 'Check this computer\'s internet connection; Check again tries once more.' }));

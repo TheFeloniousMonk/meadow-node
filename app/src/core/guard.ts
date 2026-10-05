@@ -14,6 +14,11 @@
 // would carry an attack through unchecked (security review F4). A batch never
 // checked at all (the budget ran out first) is delivered, marked unchecked:
 // never marked safe.
+//
+// After a combined sync (§7.9) the agents' new messages are screened together
+// (§16.8): one batch for all of them, split at the same size, paid as the
+// first agent. Each agent keeps its own rooms' settings and its own limit of
+// single checks.
 
 import type { Db } from './db.ts';
 import type { Vault } from './vault.ts';
@@ -88,8 +93,11 @@ export class MessageGuard {
 
   /** Screens every new message from others that MessageGuard covers, and not yet screened. */
   async screenNew(agent: string): Promise<GuardReport> {
-    const s = this.#settings();
-    const report: GuardReport = { calls: 0, safe: 0, suspicious: 0, held: 0, unchecked: 0 };
+    return (await this.screenMany([agent])).get(agent)!;
+  }
+
+  /** The messages MessageGuard covers for an agent and has not screened, oldest first, and those kept aside unchecked. */
+  #candidates(agent: string, s: GuardSettings): { rows: any[]; waiting: any[] } {
     // Which rooms: the two toggles by room type, unless the room's own setting says always or never (§16.11).
     const types = [...(s.public ? ['public'] : []), ...(s.private ? ['private', 'dm'] : [])];
     const byType = types.length ? `(r.guard_mode = 'default' AND r.type IN (${types.map(() => '?').join(', ')}))` : '0';
@@ -98,30 +106,53 @@ export class MessageGuard {
         AND (r.guard_mode = 'always' OR ${byType}) ORDER BY m.ts, m.id`).all(agent, agent, ...types) as any[];
     // Kept aside last time because their flagged batch left them unchecked: they go straight to single checks.
     const waiting = this.#db.prepare(`SELECT id, author, ts, body_sealed FROM messages WHERE agent = ? AND guard = 'unchecked' AND held = 1 AND body_sealed IS NOT NULL`).all(agent) as any[];
-    if (!rows.length && !waiting.length) return report;
-    const texts = rows.map((r) => ({ id: r.id as string, author: r.author as string, ts: r.ts as number, text: this.#text(agent, r.id, r.body_sealed) }));
+    return { rows, waiting };
+  }
 
-    const call = async (text: string): Promise<Screen | null | 'refused'> => {
+  /**
+   * Screens the new messages of several agents together (§16.8, §16.11): batched across them, paid as the
+   * first. Each agent's own report; a refusal stops the screening for all of them.
+   */
+  async screenMany(agents: string[]): Promise<Map<string, GuardReport>> {
+    const s = this.#settings();
+    const reports = new Map(agents.map((a) => [a, { calls: 0, safe: 0, suspicious: 0, held: 0, unchecked: 0 } as GuardReport]));
+    const payer = agents[0];
+    type Item = { agent: string; id: string; author: string; ts: number; text: string };
+    const texts: Item[] = [];
+    const flagged: Item[] = [];
+    for (const agent of agents) {
+      const { rows, waiting } = this.#candidates(agent, s);
+      for (const r of rows) texts.push({ agent, id: r.id, author: r.author, ts: r.ts, text: this.#text(agent, r.id, r.body_sealed) });
+      for (const r of waiting) flagged.push({ agent, id: r.id, author: r.author, ts: r.ts, text: this.#text(agent, r.id, r.body_sealed) });
+    }
+    if (!texts.length && !flagged.length) return reports;
+
+    let stopped: string | undefined;
+    // A call is counted for the agents whose messages it carries.
+    const call = async (text: string, items: Item[]): Promise<Screen | null | 'refused'> => {
       try {
-        report.calls++;
-        return await this.#screen(text, agent);
+        const r = await this.#screen(text, payer);
+        for (const a of new Set(items.map((t) => t.agent))) reports.get(a)!.calls++;
+        return r;
       } catch (err) {
-        report.calls--;
         if (err instanceof TransportError) {
-          report.stopped = err.message;
+          stopped = err.message;
+          for (const rep of reports.values()) rep.stopped = err.message;
           return 'refused';
         }
         throw err;
       }
     };
-    const unchecked = (ids: string[], hold = false) => ids.forEach((id) => {
-      this.#set(agent, id, 'unchecked', [], hold);
-      report.unchecked++;
-      if (hold) report.held++;
-    });
+    const verdict = (t: Item, guard: string, matches: Screen['matches'] = [], held = false) => {
+      this.#set(t.agent, t.id, guard, matches, held);
+      const r = reports.get(t.agent)!;
+      if (guard === 'unchecked') r.unchecked++;
+      if (guard === 'safe') r.safe++;
+      if (guard === 'suspicious') r.suspicious++;
+      if (held) r.held++;
+    };
 
     // One call per batch of whole messages, each clearly delimited.
-    type Item = (typeof texts)[number];
     const batches: Item[][] = [];
     for (const t of texts) {
       const last = batches.at(-1);
@@ -129,19 +160,15 @@ export class MessageGuard {
       if (last && size + t.text.length + 60 <= GUARD_BATCH_CHARS) last.push(t);
       else batches.push([t]);
     }
-    const flagged: Item[] = waiting.map((r) => ({ id: r.id, author: r.author, ts: r.ts, text: this.#text(agent, r.id, r.body_sealed) }));
     for (const batch of batches) {
-      if (report.stopped) {
-        unchecked(batch.map((t) => t.id));
+      if (stopped) {
+        batch.forEach((t) => verdict(t, 'unchecked'));
         continue;
       }
       const joined = batch.map((t, i) => `----- Message ${i + 1} of ${batch.length} -----\n${t.text}`).join('\n\n');
-      const r = await call(joined);
-      if (r === 'refused' || r === null) unchecked(batch.map((t) => t.id));
-      else if (r.verdict === 'safe') batch.forEach((t) => {
-        this.#set(agent, t.id, 'safe');
-        report.safe++;
-      });
+      const r = await call(joined, batch);
+      if (r === 'refused' || r === null) batch.forEach((t) => verdict(t, 'unchecked'));
+      else if (r.verdict === 'safe') batch.forEach((t) => verdict(t, 'safe'));
       else flagged.push(...batch);
     }
 
@@ -151,26 +178,22 @@ export class MessageGuard {
     const needSingles: Item[] = [];
     for (let round = 0; needSingles.length < flagged.length; round++) for (const list of byAuthor.values()) if (list[round]) needSingles.push(list[round]);
 
-    // A batch that was not safe: each message on its own, up to the limit.
-    for (const [i, t] of needSingles.entries()) {
-      if (report.stopped || i >= s.perSyncLimit) {
-        unchecked([t.id], true);
+    // A batch that was not safe: each message on its own, up to each agent's limit.
+    const singles = new Map<string, number>();
+    for (const t of needSingles) {
+      const n = singles.get(t.agent) ?? 0;
+      if (stopped || n >= s.perSyncLimit) {
+        verdict(t, 'unchecked', [], true);
         continue;
       }
-      const r = await call(t.text);
-      if (r === 'refused' || r === null) unchecked([t.id], true);
-      else if (r.verdict === 'safe') {
-        this.#set(agent, t.id, 'safe');
-        report.safe++;
-      } else if (r.verdict === 'suspicious') {
-        this.#set(agent, t.id, 'suspicious', r.matches);
-        report.suspicious++;
-      } else {
-        this.#set(agent, t.id, 'malicious', r.matches, true);
-        report.held++;
-      }
+      singles.set(t.agent, n + 1);
+      const r = await call(t.text, [t]);
+      if (r === 'refused' || r === null) verdict(t, 'unchecked', [], true);
+      else if (r.verdict === 'safe') verdict(t, 'safe');
+      else if (r.verdict === 'suspicious') verdict(t, 'suspicious', r.matches);
+      else verdict(t, 'malicious', r.matches, true);
     }
-    return report;
+    return reports;
   }
 
   /**

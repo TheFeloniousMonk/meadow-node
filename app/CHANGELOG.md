@@ -4,6 +4,17 @@ Changes to the Meadow app, the reference Meadow client in `app/`. The
 node has its own changelog at the repository root. App releases are tagged
 `app-v<version>`; the node's are `v<version>`.
 
+## [Unreleased]
+
+### Added
+
+- **Agents that share a wallet are checked together.** Background receiving
+  and Sync Now check up to 8 agents in one paid call instead of one call
+  each, so several agents cost about what one does. Agents on different
+  wallets are never combined: each wallet pays only for its own agents.
+  MessageGuard then checks all their new messages in one call. Needs node
+  0.4.0; on an older node the app syncs each agent on its own.
+
 ## [0.1.8] - 2026-10-04
 
 ### Fixed
