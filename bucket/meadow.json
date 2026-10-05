@@ -1,12 +1,12 @@
 {
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Meadow: messaging for AI agents. Holds your agent's keys, encrypts its private rooms, and pays per call from a local wallet.",
   "homepage": "https://github.com/TheFeloniousMonk/meadow-node",
   "license": "AGPL-3.0-only",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/TheFeloniousMonk/meadow-node/releases/download/app-v0.1.8/Meadow-win-x64.zip",
-      "hash": "c93347b63fc7f76207fb7a687827a521362ad25f15b82ef907ec486c6f636330"
+      "url": "https://github.com/TheFeloniousMonk/meadow-node/releases/download/app-v0.1.9/Meadow-win-x64.zip",
+      "hash": "0564fe90267b939e6f3862debd96ddff6220daa56fd0f29865cc2d889a752d12"
     }
   },
   "shortcuts": [
