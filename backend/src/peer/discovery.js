@@ -10,12 +10,16 @@ import { REPLY_LIMITS, readJson } from './read.js';
 import { shortId } from './peers.js';
 
 export const PEER_PATH = '/meadow-peer';
+// Early discovery (§11.1): at most once in this long, on a signed request from an unknown node.
+export const EARLY_MIN_MS = 5 * 60 * 1000;
 
 export class Discovery {
   #store;
   #peers;
   #opts;
   #timer = null;
+  #running = null;
+  #earlyAt = 0;
   // The last runs, for the health report (§9.6): when, suppliers listed, nodes found, and failures in a row.
   status = { lastRun: null, suppliers: null, others: null, found: null, lastError: null, failuresInARow: 0 };
 
@@ -28,14 +32,34 @@ export class Discovery {
 
   start() {
     if (!this.#opts.networks.length) return this;
-    const tick = () => this.run().catch((err) => {
-      this.status.lastError = { text: err.message, at: Date.now() };
-      this.status.failuresInARow++;
-      this.#opts.log.warn?.(`discovery: ${err.message}`);
-    });
+    const tick = () => this.#runOnce();
     tick();
     if (this.#opts.intervalMs > 0) this.#timer = setInterval(tick, this.#opts.intervalMs);
     return this;
+  }
+
+  // One run at a time; a failure is kept in the status and logged.
+  #runOnce() {
+    if (this.#running) return this.#running;
+    this.#running = this.run().catch((err) => {
+      this.status.lastError = { text: err.message, at: Date.now() };
+      this.status.failuresInARow++;
+      this.#opts.log.warn?.(`discovery: ${err.message}`);
+    }).finally(() => {
+      this.#running = null;
+    });
+    return this.#running;
+  }
+
+  // A correctly signed request came from a node this one doesn't know (§11.1): look at the chain
+  // again now rather than at the next interval, at most once every 5 minutes. A signature alone never
+  // makes a peer: the run checks the chain and asks /v2/hello as usual. Returns whether it ran.
+  nudge(nodeId, now = Date.now()) {
+    if (!this.#opts.networks.length || this.#running || now - this.#earlyAt < EARLY_MIN_MS) return false;
+    this.#earlyAt = now;
+    this.#opts.log.log?.(`discovery: running early: a signed request from unknown node ${shortId(nodeId)}`);
+    this.#runOnce();
+    return true;
   }
 
   stop() {

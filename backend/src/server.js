@@ -178,13 +178,15 @@ export function createServer(store, config) {
 }
 
 // The peer port: peer API (§11.2), requests signed by known peers' node keys.
-export function createPeerServer(store, peers = new Peers(), replicator = null) {
+// opts.onUnknownPeer(nodeId): a valid signature from a node not known yet (early discovery, §11.1).
+export function createPeerServer(store, peers = new Peers(), replicator = null, opts = {}) {
   const authenticate = (route, body) => {
     const auth = verifyPeer(body, peers);
     if (!auth.error) {
       peers.noteOk(auth.node);
       return { id: auth.node };
     }
+    if (auth.signed) opts.onUnknownPeer?.(auth.signed);
     return { error: auth.error, status: auth.error === 'unknown_peer' ? 403 : 401, message: 'peer authentication failed (SPEC 11.2)' };
   };
   return jsonServer(peerRoutes(store, peers, replicator), authenticate);

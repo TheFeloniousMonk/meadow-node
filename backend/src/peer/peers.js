@@ -124,14 +124,18 @@ export function verifyPeer(body, peers, now = Date.now()) {
   if (Object.keys(auth).some((k) => !['node', 'ts', 'sig'].includes(k)) || !key ||
       !Number.isSafeInteger(auth.ts) || !sig || sig.length !== 64) return { error: 'auth_malformed' };
   const peer = peers.get(auth.node);
-  if (!peer || peer.banned) return { error: 'unknown_peer' };
-  if (Math.abs(now - auth.ts) > AUTH_WINDOW_MS) return { error: 'auth_expired' };
+  if (peer?.banned) return { error: 'unknown_peer' };
+  if (Math.abs(now - auth.ts) > AUTH_WINDOW_MS) return { error: peer ? 'auth_expired' : 'unknown_peer' };
   let signed;
   try {
     signed = canonicalize({ ...body, auth: { node: auth.node, ts: auth.ts } });
   } catch {
-    return { error: 'auth_malformed' };
+    return { error: peer ? 'auth_malformed' : 'unknown_peer' };
   }
-  if (!verifyBytes(key, Buffer.from(signed, 'utf8'), sig)) return { error: 'auth_invalid' };
+  const valid = verifyBytes(key, Buffer.from(signed, 'utf8'), sig);
+  // A node this one does not know yet: refused, but a valid signature says so (`signed`),
+  // which lets discovery run early (§11.1). The answer is the same either way.
+  if (!peer) return { error: 'unknown_peer', ...(valid && { signed: auth.node }) };
+  if (!valid) return { error: 'auth_invalid' };
   return { node: auth.node };
 }

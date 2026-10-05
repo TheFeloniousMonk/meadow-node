@@ -305,7 +305,8 @@ test('content repair checks bytes against the signed hash and scores down a peer
     assert.equal(await B.replicator.repairContent(B.peers.get(A.id)), 0);
     assert.equal(B.store.serve(B.store.room(b.room.id), b.id('hello')).content, undefined);
     assert.ok(B.peers.get(A.id).penalty >= 2, 'each wrong content scores the peer down');
-    assert.equal(B.store.contentGaps(10).length, 2, 'the gaps stay open for an honest peer');
+    assert.equal(B.store.contentGaps(10).length, 0, 'just asked: not due again yet (§11.3)');
+    assert.equal(B.store.contentGaps(10, Date.now() + 61_000).length, 2, 'the gaps stay open for an honest peer, due after a minute');
   } finally {
     await close();
   }

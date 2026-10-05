@@ -94,7 +94,9 @@ CREATE INDEX IF NOT EXISTS memberships_agent ON memberships (agent, membership);
 CREATE TABLE IF NOT EXISTS content_gaps (  -- accepted content events held without content that a peer may still have (§11.3)
   id          TEXT PRIMARY KEY,
   room        TEXT NOT NULL,
-  received_at INTEGER NOT NULL
+  received_at INTEGER NOT NULL,
+  asked_at    INTEGER,           -- when a peer was last asked for it (0.6.0)
+  asks        INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS content_gaps_room ON content_gaps (room);
 CREATE TABLE IF NOT EXISTS takedowns (  -- operator takedowns (§9.5), by event ID; applied to every later copy
@@ -121,7 +123,8 @@ CREATE TABLE IF NOT EXISTS directory (  -- listed public rooms (§7.4), rebuilt 
 
 // Columns added after a database was created (CREATE TABLE IF NOT EXISTS leaves old tables as they are).
 export function migrate(db) {
-  for (const [table, column, type] of [['events', 'origin', 'TEXT'], ['agent_events', 'origin', 'TEXT']]) {
+  for (const [table, column, type] of [['events', 'origin', 'TEXT'], ['agent_events', 'origin', 'TEXT'],
+    ['content_gaps', 'asked_at', 'INTEGER'], ['content_gaps', 'asks', 'INTEGER NOT NULL DEFAULT 0']]) {
     const has = db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
     if (!has) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
   }
@@ -201,7 +204,11 @@ export class Store {
       takenDown: db.prepare('SELECT 1 FROM takedowns WHERE event = ?'),
       addGap: db.prepare('INSERT OR IGNORE INTO content_gaps (id, room, received_at) VALUES (?, ?, ?)'),
       closeGap: db.prepare('DELETE FROM content_gaps WHERE id = ?'),
-      gaps: db.prepare('SELECT id FROM content_gaps WHERE received_at >= ? ORDER BY received_at DESC LIMIT ?'),
+      // Due gaps (§11.3): never asked, or asked long enough ago: 1 minute, doubling per ask, at most 6 hours.
+      gaps: db.prepare(`SELECT id FROM content_gaps WHERE received_at >= ?
+                          AND (asked_at IS NULL OR asked_at + min(60000 * (1 << min(asks - 1, 20)), 21600000) <= ?)
+                        ORDER BY received_at DESC LIMIT ?`),
+      askedGap: db.prepare('UPDATE content_gaps SET asked_at = ?, asks = asks + 1 WHERE id = ?'),
       dropGaps: db.prepare('DELETE FROM content_gaps WHERE received_at < ?'),
       dropRoomGaps: db.prepare('DELETE FROM content_gaps WHERE room = ?'),
       // Gaps from before the table existed, and restored takedowns (§9.5), found at startup.
@@ -213,6 +220,17 @@ export class Store {
       peerContent: db.prepare('SELECT content FROM events WHERE id = ?'),
       listRooms: db.prepare('SELECT room, last_event_at FROM rooms WHERE room > ? ORDER BY room LIMIT ?'),
       listAgents: db.prepare('SELECT agent, head FROM agents WHERE agent > ? ORDER BY agent LIMIT ?'),
+      // Incremental listings (§11.2): what changed after a mark, by each table's own position.
+      roomsSince: db.prepare(`SELECT r.room, r.last_event_at FROM rooms r
+                              WHERE r.room IN (SELECT DISTINCT room FROM events WHERE seq > ?) AND r.room > ?
+                              ORDER BY r.room LIMIT ?`),
+      agentsSince: db.prepare(`SELECT agent, head FROM agents
+                               WHERE agent IN (SELECT DISTINCT agent FROM agent_events WHERE rowid > ?) AND agent > ?
+                               ORDER BY agent LIMIT ?`),
+      reportsSince: db.prepare('SELECT id, report FROM reports WHERE rowid > ? AND id > ? ORDER BY id LIMIT ?'),
+      positions: db.prepare(`SELECT (SELECT COALESCE(max(seq), 0) FROM events) AS e,
+                                    (SELECT COALESCE(max(rowid), 0) FROM agent_events) AS a,
+                                    (SELECT COALESCE(max(rowid), 0) FROM reports) AS r`),
       agentEventJson: db.prepare('SELECT event FROM agent_events WHERE id = ?'),
       report: db.prepare('SELECT id FROM reports WHERE id = ?'),
       insertReport: db.prepare('INSERT INTO reports (id, report, reporter, received_at) VALUES (?, ?, ?, ?)'),
@@ -472,6 +490,19 @@ export class Store {
   }
 
   // The events from agent.register to the agent's head.
+  // The chain after `after`, oldest first, walking back from the head only as far as `after`
+  // (§11.2). { events, found }: found is false when `after` is not on this chain.
+  agentChainAfter(agentId, after, limit = 1000) {
+    const tail = [];
+    for (let id = this.#q.agent.get(agentId)?.head; id && tail.length < limit;) {
+      if (id === after) return { events: tail.reverse(), found: true };
+      const ev = JSON.parse(this.#q.agentEvent.get(id).event);
+      tail.push(ev);
+      id = ev.header.parents[0];
+    }
+    return { events: [], found: false };
+  }
+
   agentChain(agentId, limit = 1000) {
     const chain = [];
     for (let id = this.#q.agent.get(agentId)?.head; id && chain.length < limit;) {
@@ -555,7 +586,12 @@ export class Store {
   // Content repair (§11.3): events held without content, newest first, that are
   // still inside the retention window.
   contentGaps(limit, now = Date.now()) {
-    return this.#q.gaps.all(now - this.retention.contentMs, limit).map((r) => r.id);
+    return this.#q.gaps.all(now - this.retention.contentMs, now, limit).map((r) => r.id);
+  }
+
+  // Gaps a peer was just asked for and did not fill: each waits longer before it is due again (§11.3).
+  gapsAsked(ids, now = Date.now()) {
+    for (const id of ids) this.#q.askedGap.run(now, id);
   }
 
   // Fills a gap with content from a peer, after checking it against the signed
@@ -596,10 +632,30 @@ export class Store {
   }
 
   // Rooms in ID order after `cursor`, with heads and last activity.
-  listRooms(cursor, limit) {
-    return this.#q.listRooms.all(cursor, limit).map((r) => ({
-      room: r.room, heads: this.#rooms.get(r.room).heads(), active_at: r.last_event_at,
-    }));
+  // `since`: a position from mark() (§11.2); null lists everything.
+  listRooms(cursor, limit, since = null) {
+    const rows = since ? this.#q.roomsSince.all(since.e, cursor, limit) : this.#q.listRooms.all(cursor, limit);
+    return rows.map((r) => ({ room: r.room, heads: this.#rooms.get(r.room).heads(), active_at: r.last_event_at }));
+  }
+
+  // This node's position in its stored events, agent events, and reports, as an opaque mark (§11.2).
+  // The epoch is random per database, so a mark from another database is never mistaken for one of ours.
+  mark() {
+    let epoch = this.getMeta('change_epoch');
+    if (!epoch) {
+      epoch = b64u(randomBytes(9));
+      this.putMeta('change_epoch', epoch);
+    }
+    const p = this.#q.positions.get();
+    return `${epoch}.${p.e}.${p.a}.${p.r}`;
+  }
+
+  // A mark this node gave, as positions; null for anything else (another node's, or malformed).
+  parseMark(mark) {
+    if (typeof mark !== 'string') return null;
+    const m = /^([A-Za-z0-9_-]{12})\.(\d{1,15})\.(\d{1,15})\.(\d{1,15})$/.exec(mark);
+    if (!m || m[1] !== this.getMeta('change_epoch')) return null;
+    return { e: Number(m[2]), a: Number(m[3]), r: Number(m[4]) };
   }
 
   // Listed public rooms (§7.4) in ID order after `cursor`, optionally matching
@@ -611,8 +667,8 @@ export class Store {
     return rows.map((r) => ({ room: r.room, members: r.members, active_at: r.last_event_at, name: r.name, topic: r.topic }));
   }
 
-  listAgents(cursor, limit) {
-    return this.#q.listAgents.all(cursor, limit);
+  listAgents(cursor, limit, since = null) {
+    return since ? this.#q.agentsSince.all(since.a, cursor, limit) : this.#q.listAgents.all(cursor, limit);
   }
 
   hasReport(id) {
@@ -638,8 +694,9 @@ export class Store {
   }
 
   // Reports in ID order after `cursor`, without reporters, for anti-entropy.
-  listReports(cursor, limit) {
-    return this.#q.listReports.all(cursor, limit).map((r) => ({ id: r.id, report: JSON.parse(r.report) }));
+  listReports(cursor, limit, since = null) {
+    const rows = since ? this.#q.reportsSince.all(since.r, cursor, limit) : this.#q.listReports.all(cursor, limit);
+    return rows.map((r) => ({ id: r.id, report: JSON.parse(r.report) }));
   }
 
   roomsOf(agent) {

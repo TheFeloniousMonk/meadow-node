@@ -89,7 +89,7 @@ function startNetwork(network) {
       ...(env.MEADOW_WRITE_AGENT_PER_MIN ? { agentPerMin: Number(env.MEADOW_WRITE_AGENT_PER_MIN) } : {}),
     },
   });
-  const peerServer = createPeerServer(store, peers, replicator);
+  const peerServer = createPeerServer(store, peers, replicator, { onUnknownPeer: (id) => discovery.nudge(id) });
   countServer(server, traffic.relay);
   countServer(peerServer, traffic.peer);
   server.listen(port);
