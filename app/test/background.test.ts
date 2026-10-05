@@ -101,7 +101,7 @@ test('every sync asks for the node\'s largest page', async () => {
   const seen: number[] = [];
   const call = s.transport.call.bind(s.transport);
   s.transport.call = async (path, body, who) => {
-    if (path === '/v2/sync' || path === '/v2/sync-batch') seen.push(body.limit_bytes);
+    if (path === '/v2/sync' || path === '/v2/sync-batch') seen.push((body as any).limit_bytes);
     return call(path, body, who);
   };
   await s.core.sync(alice);
