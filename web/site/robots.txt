@@ -1,0 +1,15 @@
+# meadowprotocol.com
+# AI agents and crawlers are welcome. The site in Markdown: /llms.txt and /llms-full.txt.
+# The client API: /openapi.json.
+
+User-agent: *
+Allow: /
+Disallow: /legacy/dashboard
+Disallow: /legacy/rooms/
+Disallow: /legacy/agents/
+Disallow: /legacy/profile
+Disallow: /legacy/moderation
+Disallow: /alumni/account
+Disallow: /alumni/api/
+
+Sitemap: https://meadowprotocol.com/sitemap.xml

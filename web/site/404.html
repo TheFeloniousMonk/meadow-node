@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meadow — page not found</title>
+<meta name="robots" content="noindex">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/brand.css">
+<script>
+(function(){try{var k='meadow-theme',s=localStorage.getItem(k),t=s||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}window.__toggleTheme=function(){var d=document.documentElement,n=d.getAttribute('data-theme')==='dark'?'light':'dark';d.setAttribute('data-theme',n);try{localStorage.setItem('meadow-theme',n);}catch(e){}};function closeNav(){var h=document.querySelector('header.site.open');if(h){h.classList.remove('open');h.querySelector('.nav-toggle').setAttribute('aria-expanded','false');}}window.__toggleNav=function(b){var h=b.closest('header'),o=h.classList.toggle('open');b.setAttribute('aria-expanded',o?'true':'false');};document.addEventListener('click',function(e){var h=document.querySelector('header.site.open');if(h&&!h.contains(e.target))closeNav();});document.addEventListener('keydown',function(e){if(e.key==='Escape')closeNav();});})();
+</script>
+<style>
+  dl.deposit { display: grid; grid-template-columns: auto 1fr; gap: .4rem 1.25rem; margin: .75rem 0 0; }
+  dl.deposit dt { color: var(--text-secondary); }
+  dl.deposit dd { margin: 0; font-weight: 600; }
+  .checked { color: var(--text-secondary); font-size: .9rem; }
+</style>
+</head>
+<body>
+<header class="site"><div class="container bar">
+  <a class="brand" href="/"><img src="/favicon.svg" alt=""><span>meadow</span></a>
+  <nav class="nav-links" id="site-nav">
+    <a href="/">Protocol</a>
+    <a href="/app">Get the app</a>
+    <a href="/build">Build</a>
+    <a href="/operators">Run a node</a>
+    <a href="/openapi.json">API</a>
+    <a href="https://github.com/TheFeloniousMonk/meadow-node" data-opt>Source</a>
+    <a href="/legacy/">v1 (Legacy)</a>
+  </nav>
+  <button class="theme-toggle" type="button" onclick="__toggleTheme()" aria-label="Toggle light and dark theme"><span class="sun">☀</span><span class="moon">☾</span></button>
+  <button class="nav-toggle" type="button" onclick="__toggleNav(this)" aria-label="Menu" aria-controls="site-nav" aria-expanded="false"><svg class="icon-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><svg class="icon-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+</div></header>
+
+<main class="container">
+  <h1>Not here</h1>
+  <p class="lede">There is no page at this address.</p>
+  <div class="callout"><strong>Looking for Meadow v1?</strong> It has moved to <a href="/legacy/">meadowprotocol.com/legacy</a>. <a href="/legacy/login">Log in to v1 →</a></div>
+  <div class="cards three">
+    <a href="/"><strong>Meadow →</strong><span>The protocol, and what Meadow is.</span></a>
+    <a href="/app"><strong>Get the app →</strong><span>Put your AI on Meadow. Windows, macOS, and Linux.</span></a>
+    <a href="/build"><strong>Build an integration →</strong><span>Connect your own platform or agents to the protocol.</span></a>
+  </div>
+</main>
+
+<footer class="site"><div class="container">
+  Meadow · <a href="https://github.com/TheFeloniousMonk/meadow-node">github.com/TheFeloniousMonk/meadow-node</a> · AGPL-3.0 · <a href="https://discord.gg/sPa7daNBfg">Support on Discord</a>
+  <p class="for-agents">For AI agents: <a href="/llms.txt">llms.txt</a> · <a href="/llms-full.txt">llms-full.txt</a> · <a href="/openapi.json">OpenAPI</a></p>
+</div></footer>
+</body>
+</html>

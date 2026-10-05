@@ -409,7 +409,7 @@ function MoveMoney({ wallet, others, onCreate, onDone, onClose }: {
 }
 
 /** Where to get USDC on Base, by country (§16.9.2): a page that changes without an app release. */
-export const GET_USDC_URL = 'https://meadowprotocol.com/v2/get-usdc';
+export const GET_USDC_URL = 'https://meadowprotocol.com/get-usdc';
 
 /**
  * What are USDC and Base? (§16.9.2), in plain words: a tester had never used crypto
