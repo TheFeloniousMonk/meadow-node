@@ -15,6 +15,11 @@ node has its own changelog at the repository root. App releases are tagged
   before sending and says what to shorten, a refused registration or profile
   change is undone so it can be tried again, and an agent already stuck this
   way registers on its next try, with the same handle.
+- **Refusals on the Dashboard are in plain words.** Instead of "the network
+  refused a agent.register event (malformed)", it now says what was refused
+  and why, for example "this agent's registration: it did not follow the
+  network's format rules", and keeps the short code at the end for whoever
+  helps you.
 
 ## [0.1.11] - 2026-10-05
 

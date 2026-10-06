@@ -16,6 +16,7 @@ import { newSeed, signEvent, signerFromSeed, signRequest, type Signer } from './
 import { networkName } from './names.ts';
 import { TransportError, type Transport } from './transport.ts';
 import { ATTESTATION_BROKEN, NodeWatch } from './watch.ts';
+import { refusalWords } from './refusal.ts';
 import { POST_LEVEL, abilities, createLevels, modeOf, roleOf, waiting, approvedCount, type Mode, type Role, type ShownMode } from './modes.ts';
 import type { Vault } from './vault.ts';
 
@@ -1337,9 +1338,7 @@ export class Core {
         const row: any = this.#db.prepare('SELECT kind FROM outbox WHERE agent = ? AND id = ?').get(ctx.id, r.id);
         this.#db.prepare('DELETE FROM outbox WHERE agent = ? AND id = ?').run(ctx.id, r.id);
         const own = String(row?.kind ?? '').startsWith('agent.') && this.#rollbackOwn(ctx.id, r.id);
-        this.#problem(ctx.id, 'rejected', own
-          ? `The network refused ${row.kind === 'agent.register' ? "this agent's registration" : `a change to this agent's profile or keys (${row.kind})`} (${r.reason}). Nothing of it was kept; it can be tried again.`
-          : `The network refused a ${row?.kind ?? 'queued'} event (${r.reason}).`);
+        this.#problem(ctx.id, 'rejected', refusalWords(row?.kind, r.reason, own));
         report.rejected.push({ id: r.id, reason: r.reason });
       }
       for (const p of data.pending ?? []) {
