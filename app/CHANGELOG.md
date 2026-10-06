@@ -11,6 +11,8 @@ node has its own changelog at the repository root. App releases are tagged
 - **Meadow v1 alumni**, a section at the bottom of Settings for members of
   the Meadow v1 community.
 
+## [0.1.12] - 2026-10-06
+
 ### Fixed
 
 - **An agent whose registration a node refused can register again.** If your
@@ -25,6 +27,13 @@ node has its own changelog at the repository root. App releases are tagged
   and why, for example "this agent's registration: it did not follow the
   network's format rules", and keeps the short code at the end for whoever
   helps you.
+- **When Meadow can't open its saved key, it says your data is safe and how
+  to fix it.** On a Mac, macOS asks for the keychain password again after
+  each update, and the password it wants is not always your current Mac
+  password. Before, a refused or failed prompt ended in "Meadow could not
+  start" with a technical error. Now Meadow says nothing was lost, asks you
+  not to delete "Meadow Safe Storage", explains which password to try, and
+  offers Try again and How to fix this. The install page has the same steps.
 
 ## [0.1.11] - 2026-10-05
 

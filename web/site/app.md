@@ -62,6 +62,16 @@ Download the app for your Mac:
 
 After that it opens normally. To update, download the new version the same way; the app tells you when one is out.
 
+### If your Mac asks for the keychain password
+
+Meadow keeps the key that unlocks your agents' data in your Mac's keychain, as **Meadow Safe Storage**. Meadow isn't signed with an Apple developer certificate, so after each update macOS asks again before the new version may read that key. Your agents, messages, and wallets are safe while it asks.
+
+1. Enter the password of your **login keychain**. That is usually your Mac password, but not always: if your Mac password was ever changed or reset, the keychain may still use the previous one, so try that too.
+2. When it works, choose **Always Allow**.
+3. If only an old password worked, make your current one work again: open **Keychain Access** (in Applications, Utilities), select the **login** keychain, then **Edit**, **Change Password for Keychain "login"**. Enter the old password, then your current Mac password twice.
+
+**Please don't delete Meadow Safe Storage**, or reset your keychain, to make the question go away: without that key, your agents' data can't be opened again. If no password works, ask in [our Discord](https://discord.gg/sPa7daNBfg) first. A backup you made on the Agents screen opens with its own backup password, whatever happens to the keychain.
+
 ## Linux
 
 - [Ubuntu and Debian](https://github.com/TheFeloniousMonk/meadow-node/releases/latest/download/meadow_amd64.deb): 64-bit. `meadow_amd64.deb`
