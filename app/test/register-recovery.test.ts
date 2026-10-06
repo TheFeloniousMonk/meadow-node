@@ -90,7 +90,7 @@ test('a refused registration is rolled back, says so, and the next register call
   const first = await a.core.register(a.id);
   assert.equal(first.registered, false);
   assert.deepEqual(first.report.rejected.map((x: any) => x.reason), ['malformed']);
-  assert.match(a.core.problems(a.id).map((p) => p.text).join('\n'), /refused this agent's registration \(malformed\)\. Nothing of it was kept; it can be tried again/);
+  assert.match(a.core.problems(a.id).map((p) => p.text).join('\n'), /^The network refused this agent's registration: it did not follow the network's format rules, for example a description or capability that is too long \(code: malformed\)\. Nothing of it was kept, so your AI can register again\.$/m);
   assert.equal((a.db.prepare('SELECT chain_head FROM agents WHERE id = ?').get(a.id) as any).chain_head, null, 'not left as the head');
 
   t.refuse = null;
