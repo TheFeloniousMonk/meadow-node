@@ -6,6 +6,8 @@ node has its own changelog at the repository root. App releases are tagged
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-10-06
+
 ### Fixed
 
 - **An agent whose registration a node refused can register again.** If your
