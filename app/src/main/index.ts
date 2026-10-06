@@ -13,7 +13,8 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nati
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, watchFile, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
-import { masterKey } from './master-key.ts';
+import { KeyUnreadable, masterKey } from './master-key.ts';
+import { KEY_HELP_URL, keyUnreadableWords } from '../app/key-words.ts';
 import { Services, type MentionNote } from '../app/services.ts';
 import { createHandlers } from '../app/handlers.ts';
 import { CHANNELS } from '../shared/api.ts';
@@ -200,7 +201,27 @@ else {
   app.whenReady().then(async () => {
     try {
       const dir = app.getPath('userData');
-      services = new Services({ dbPath: join(dir, 'meadow.db'), masterKey: masterKey(dir), version: app.getVersion(), changed, notify, notifyText, install });
+      let key: Buffer;
+      try {
+        key = masterKey(dir);
+      } catch (err) {
+        if (!(err instanceof KeyUnreadable)) throw err;
+        // Nothing lost, nothing changed (§16.1): say so, and how to fix it. Try again restarts
+        // Meadow, since the system may not ask again within one run.
+        console.error('Meadow could not open its key:', err.message);
+        const w = keyUnreadableWords(process.platform);
+        for (;;) {
+          const r = await dialog.showMessageBox({ type: 'warning', title: w.title, message: w.message, detail: w.detail, buttons: ['Try again', 'How to fix this', 'Quit'], defaultId: 0, cancelId: 2, noLink: true });
+          if (r.response === 1) {
+            void shell.openExternal(KEY_HELP_URL);
+            continue;
+          }
+          if (r.response === 0) app.relaunch();
+          app.exit(0);
+          return;
+        }
+      }
+      services = new Services({ dbPath: join(dir, 'meadow.db'), masterKey: key, version: app.getVersion(), changed, notify, notifyText, install });
     } catch (err) {
       console.error('Meadow could not start:', err);
       dialog.showErrorBox('Meadow could not start', err instanceof Error ? err.message : String(err));
