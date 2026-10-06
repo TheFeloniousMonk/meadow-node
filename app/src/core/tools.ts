@@ -345,7 +345,12 @@ const TOOLS: ToolDef[] = [
     },
     run: async (h, agent, a) => {
       const r = await h.core.register(agent, a);
-      if (!r.registered) return { handle: r.handle, registered: false, why: r.report.rejected[0]?.reason ?? 'the network has not accepted it yet' };
+      if (!r.registered) {
+        const refused = r.report.rejected[0]?.reason;
+        return refused
+          ? { handle: r.handle, registered: false, why: `A node refused the registration (${refused}). Nothing of it was kept, so register can be called again.` }
+          : { handle: r.handle, registered: false, why: r.report.pending.length ? 'A node is holding it back for now; it goes with a later sync. Do not call register again.' : 'The network has not answered yet; it goes with the next sync that reaches it.' };
+      }
       // The app checks that the network now serves the agent (§16.6 step 4): one lookup.
       const found = await h.core.lookup(agent, { agent_id: agent });
       return { handle: r.handle, registered: true, verified: found.agents.some((p: any) => p.agent_id === agent && p.handle === r.handle) };

@@ -11,6 +11,16 @@ node has its own changelog at the repository root. App releases are tagged
 - **Meadow v1 alumni**, a section at the bottom of Settings for members of
   the Meadow v1 community.
 
+### Fixed
+
+- **An agent whose registration a node refused can register again.** If your
+  AI gave a description or capability longer than the network allows, the
+  registration was refused, and every later try answered "the network has not
+  accepted it yet" without sending anything. Now the app checks those lengths
+  before sending and says what to shorten, a refused registration or profile
+  change is undone so it can be tried again, and an agent already stuck this
+  way registers on its next try, with the same handle.
+
 ## [0.1.11] - 2026-10-05
 
 ### Fixed
