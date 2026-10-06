@@ -196,6 +196,22 @@ const clean = (ev: any): MeadowEvent => {
   return out;
 };
 
+/** Why a description or capabilities would be refused by every node (§5.4), in plain words; null when fine. */
+export function profileProblem(p: { description?: unknown; capabilities?: unknown }): string | null {
+  const bytes = (x: string) => Buffer.byteLength(x, 'utf8');
+  if (p.description !== undefined && (typeof p.description !== 'string' || bytes(p.description) > 1024)) return 'The description can be at most 1024 bytes.';
+  if (p.capabilities !== undefined) {
+    const c = p.capabilities;
+    if (!Array.isArray(c) || c.length > 32) return 'There can be at most 32 capabilities.';
+    for (const x of c) {
+      if (typeof x !== 'string' || x.length === 0) return 'Each capability must be a short word or phrase, not empty.';
+      if (bytes(x) > 64) return `The capability "${x.slice(0, 40)}…" is too long: each can be at most 64 bytes.`;
+    }
+    if (new Set(c).size !== c.length) return 'The same capability is listed twice.';
+  }
+  return null;
+}
+
 export class Core {
   #db: Db;
   #vault: Vault;
@@ -206,6 +222,8 @@ export class Core {
   #onReceived?: (agent: string, what: Received) => void;
   #now: () => number;
   #ctx = new Map<string, Ctx>();
+  // Agents whose own chain changed under a loaded context (a refused event rolled back): reloaded next time.
+  #stale = new Set<string>();
   #locks = new Map<string, Promise<unknown>>();
   #writeWaitMs: number;
   /** Watching the nodes (§16.23). */
@@ -262,7 +280,8 @@ export class Core {
 
   #load(agent: string): Ctx {
     let ctx = this.#ctx.get(agent);
-    if (ctx) return ctx;
+    if (ctx && !this.#stale.has(agent)) return ctx;
+    this.#stale.delete(agent);
     const row: any = this.#db.prepare('SELECT id, name FROM agents WHERE id = ?').get(agent);
     if (!row) throw new ActionError('unknown_agent', 'There is no such agent on this computer.');
     const log = new AgentLog();
@@ -328,9 +347,23 @@ export class Core {
    * Resending is safe: the same event is kept until a node accepts it.
    */
   async register(agent: string, profile: { description?: string; capabilities?: string[]; discoverable?: boolean } = {}) {
+    const problem = profileProblem(profile);
+    if (problem) throw new ActionError('bad_request', `${problem} Nothing was sent or charged.`);
     return this.#exclusive(agent, async () => {
+      let row: any = this.#db.prepare('SELECT * FROM agents WHERE id = ?').get(agent);
+      // A registration no node took and nothing queued (a node refused it, before refused events were
+      // rolled back): no node holds it, so it is started again (§16.6; a tester was stuck for days).
+      const queued = this.#db.prepare("SELECT 1 FROM outbox WHERE agent = ? AND kind = 'agent.register'").get(agent);
+      if (row.chain_head && row.registered_at == null && !queued) {
+        tx(this.#db, () => {
+          this.#db.prepare("DELETE FROM outbox WHERE agent = ? AND kind LIKE 'agent.%'").run(agent);
+          this.#db.prepare('DELETE FROM own_chain WHERE agent = ?').run(agent);
+          this.#db.prepare('UPDATE agents SET chain_head = NULL WHERE id = ?').run(agent);
+        });
+        this.#stale.add(agent);
+        row = this.#db.prepare('SELECT * FROM agents WHERE id = ?').get(agent);
+      }
       const ctx = this.#load(agent);
-      const row: any = this.#db.prepare('SELECT * FROM agents WHERE id = ?').get(agent);
       if (!row.chain_head) {
         const data: any = { name: row.name, keys: { curve25519: bundleKey(ctx.crypto.curve25519), fallback: bundleKey(row.fallback) } };
         if (profile.description) data.description = profile.description;
@@ -338,6 +371,7 @@ export class Core {
         // Format 3 only where the network takes it (§15); otherwise it can be turned on after registering.
         if (profile.discoverable === true && this.protocol3(agent)) data.discoverable = true;
         const ev = signEvent(this.#signer(agent), { kind: 'agent.register', parents: [], auth: [], data });
+        if (checkWellFormed(ev) !== null) throw new ActionError('malformed', 'That registration is not valid (check the description and capabilities). Nothing was sent or charged.');
         tx(this.#db, () => {
           this.#appendChain(ctx, ev);
           this.#enqueue(agent, ev);
@@ -347,6 +381,23 @@ export class Core {
       const registered = (this.#db.prepare('SELECT registered_at FROM agents WHERE id = ?').get(agent) as any).registered_at != null;
       return { handle: handleOf(agent, row.name), registered, report };
     });
+  }
+
+  /**
+   * Takes a refused event off the agent's own chain, with every later own event (each built on it, so
+   * no node would ever take them), and points the head back at the event before it: a registration
+   * refused leaves the agent unregistered, so it can register again. True when it was on the chain.
+   */
+  #rollbackOwn(agent: string, id: string): boolean {
+    const at: any = this.#db.prepare('SELECT seq, event FROM own_chain WHERE agent = ? AND id = ?').get(agent, id);
+    if (!at) return false;
+    const later = this.#db.prepare('SELECT id FROM own_chain WHERE agent = ? AND seq >= ?').all(agent, at.seq) as any[];
+    for (const l of later) this.#db.prepare('DELETE FROM outbox WHERE agent = ? AND id = ?').run(agent, l.id);
+    this.#db.prepare('DELETE FROM own_chain WHERE agent = ? AND seq >= ?').run(agent, at.seq);
+    const parent = (JSON.parse(at.event).header.parents ?? [])[0] ?? null;
+    this.#db.prepare('UPDATE agents SET chain_head = ? WHERE id = ?').run(parent, agent);
+    this.#stale.add(agent);
+    return true;
   }
 
   #appendChain(ctx: Ctx, ev: MeadowEvent) {
@@ -1285,7 +1336,10 @@ export class Core {
       for (const r of data.rejected ?? []) {
         const row: any = this.#db.prepare('SELECT kind FROM outbox WHERE agent = ? AND id = ?').get(ctx.id, r.id);
         this.#db.prepare('DELETE FROM outbox WHERE agent = ? AND id = ?').run(ctx.id, r.id);
-        this.#problem(ctx.id, 'rejected', `The network refused a ${row?.kind ?? 'queued'} event (${r.reason}).`);
+        const own = String(row?.kind ?? '').startsWith('agent.') && this.#rollbackOwn(ctx.id, r.id);
+        this.#problem(ctx.id, 'rejected', own
+          ? `The network refused ${row.kind === 'agent.register' ? "this agent's registration" : `a change to this agent's profile or keys (${row.kind})`} (${r.reason}). Nothing of it was kept; it can be tried again.`
+          : `The network refused a ${row?.kind ?? 'queued'} event (${r.reason}).`);
         report.rejected.push({ id: r.id, reason: r.reason });
       }
       for (const p of data.pending ?? []) {
@@ -1717,6 +1771,8 @@ export class Core {
 
   /** Changes the agent's description, capabilities, or invite setting (§5.4, §9.4). The network name stays. */
   async updateProfile(agent: string, changes: { description?: string; capabilities?: string[]; invites?: 'open' | 'shared_rooms' | 'closed'; discoverable?: boolean }) {
+    const problem = profileProblem(changes);
+    if (problem) throw new ActionError('bad_request', `${problem} Nothing was sent or charged.`);
     if (changes.discoverable !== undefined && !this.protocol3(agent)) {
       throw new ActionError('not_supported', 'The network has not taken this setting yet. Try again after the next sync.');
     }
