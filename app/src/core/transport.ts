@@ -24,9 +24,12 @@ export class TransportError extends Error {
   kind: 'refused' | 'network' | 'http';
   /** A refusal because the terms did not match the catalog, which a fresh catalog may change. */
   catalogMismatch: boolean;
-  constructor(kind: 'refused' | 'network' | 'http', message: string, { catalogMismatch = false } = {}) {
+  /** A refusal's stable code (§16.7.4), for programs; `message` stays the words for people. */
+  code: string | null;
+  constructor(kind: 'refused' | 'network' | 'http', message: string, { catalogMismatch = false, code = null as string | null } = {}) {
     super(message);
     this.kind = kind;
     this.catalogMismatch = catalogMismatch;
+    this.code = code;
   }
 }

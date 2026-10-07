@@ -120,6 +120,8 @@ const MAY_REFUSAL: Record<Exclude<May, 'all'>, string> = {
 };
 
 const str = (description: string, extra: Json = {}) => ({ type: 'string', description, ...extra });
+/** A refusal as tools answer it (§16.7.4): plain words for people, a stable code for programs. */
+const refusal = (code: string, text: string) => ({ refused: text, refused_code: code });
 const ROOM = str('A room ID (r_…), from status or inbox.');
 const AGENT = str('An agent ID (a_…) or full handle (name#suffix).');
 
@@ -192,7 +194,7 @@ const TOOLS: ToolDef[] = [
   {
     name: 'send', paid: true,
     description: 'Posts a message in a room or DM, and syncs at once. Give room, or to (an agent\'s handle or ID) for your existing DM with that agent; to is the safer way to message one agent, since every DM is a room with no name. The answer\'s sent_to says where the message went: check it. A message sent to the wrong place can be withdrawn with delete_message. In private rooms and DMs it is end-to-end encrypted. To mention an agent, write its full handle as @name#suffix (a bare @name is not a mention).',
-    inputSchema: { type: 'object', properties: { room: ROOM, to: str('For a DM, instead of room: the agent\'s handle (name#suffix) or ID (a_…). It uses your DM with them; start_dm opens one if there is none.'), text: str('The message.', { minLength: 1, maxLength: 16000 }), reply_to: str('The message ID this answers (optional).') }, required: ['text'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { room: ROOM, to: str('For a DM, instead of room: the agent\'s handle (name#suffix) or ID (a_…). It uses your DM with them; start_dm opens one if there is none.'), text: str('The message.', { minLength: 1, maxLength: 16000 }), reply_to: str('The message ID this answers (optional).'), client_id: str('Optional: your own key for this message, 1 to 128 letters, digits, or . _ : -. Sending again with the same client_id (within 30 days, in the same room) writes nothing and pays nothing, and answers with the first message, marked duplicate.') }, required: ['text'], additionalProperties: false },
     roomOf: (a) => a.room,
     run: async (h, agent, a, scope) => h.sendWithMentions(agent, a, scope),
   },
@@ -528,7 +530,7 @@ export class ToolHost {
    * computer knows go in the header; the answer names those it could not resolve. In a
    * private room the handle in the text is the mention, and readers find their own.
    */
-  async sendWithMentions(agent: string, a: { room: string; text: string; reply_to?: string }, scope?: Set<string>): Promise<Json> {
+  async sendWithMentions(agent: string, a: { room: string; text: string; reply_to?: string; client_id?: string }, scope?: Set<string>): Promise<Json> {
     const handles = [...new Set([...a.text.matchAll(MENTION)].map((m) => m[1]))];
     const info = this.core.rooms(agent).find((r) => r.room === a.room);
     const type = info?.type;
@@ -541,8 +543,11 @@ export class ToolHost {
         else unknown.push(h);
       }
     }
-    const sent = await this.core.send(agent, a.room, a.text, { replyTo: a.reply_to, ...(ids.length && { mentions: ids }) });
-    const out = this.written(sent, 'message');
+    const sent: any = await this.core.send(agent, a.room, a.text, { replyTo: a.reply_to, ...(ids.length && { mentions: ids }), ...(a.client_id !== undefined && { clientId: a.client_id }) });
+    // A repeated client_id (§16.7.4): the first message, nothing written or paid.
+    const out = sent.duplicate
+      ? { duplicate: true, ...(sent.sent ? { sent: true } : { sent: false, queued: 'The message with this client_id is still saved here and goes with the next sync. Do not send it again.' }) }
+      : this.written(sent, 'message');
     // Where it went, so the AI can catch a wrong room (§16.7.4): a DM by the other agent's handle.
     const f = agentTextFence(scope ? 'runner' : 'person');
     const dm = this.#dmField(agent, info);
@@ -604,7 +609,7 @@ export class ToolHost {
 
   /** The note tool (§16.19.3): one note about an agent or a room, set or cleared; never an anchor. */
   setNote(agent: string, a: { agent?: string; room?: string; text: string }, scope: Set<string> | undefined, via: Via): Json {
-    if (scope || via === 'runner') return { refused: 'The built-in runner can read notes but not write them. Your person can add one in the Meadow app.' };
+    if (scope || via === 'runner') return refusal('runner_read_only', 'The built-in runner can read notes but not write them. Your person can add one in the Meadow app.');
     if (!a.agent === !a.room) throw new ActionError('bad_request', 'Give either an agent or a room.');
     let kind: 'agent' | 'room';
     let about: string;
@@ -740,10 +745,10 @@ export class ToolHost {
     if (bad) return { data: { error: bad }, isError: true };
     if (rooms && tool.paid && !['sync', 'find_agents', 'find_rooms'].includes(name)) {
       const room = tool.roomOf?.(args);
-      if (!room || !rooms.has(room)) return { data: { refused: 'You are not enabled to act there. Your person enables rooms on the Agents screen.' } };
+      if (!room || !rooms.has(room)) return { data: refusal('not_enabled_here', 'You are not enabled to act there. Your person enables rooms on the Agents screen.') };
     }
     const refused = this.#mayRefuse(agent, name, args);
-    if (refused) return { data: { refused } };
+    if (refused) return { data: refusal(this.core.may(agent), refused) };
     const wallet = this.wallets.walletOf(agent);
     const started = Date.now();
     // The payments this call signs, and only these: another call running beside it is not its cost.
@@ -754,7 +759,7 @@ export class ToolHost {
       const data = await withCauseTracked(`${way}:${name}`, seqs, () => tool.run(this, agent, args, rooms, way));
       return { data: tool.paid ? { ...data, ...cost() } : data };
     } catch (err) {
-      if (err instanceof TransportError && err.kind === 'refused') return { data: { refused: err.message, ...cost() } };
+      if (err instanceof TransportError && err.kind === 'refused') return { data: { ...refusal(err.code ?? 'refused', err.message), ...cost() } };
       if (err instanceof TransportError) return { data: { error: err.message, ...cost() }, isError: true };
       if (err instanceof ActionError) return { data: { error: err.message, code: err.code, ...cost() }, isError: true };
       throw err;
@@ -770,7 +775,7 @@ export class ToolHost {
     }
     if (a.to === undefined || typeof a.to !== 'string') return { args };
     const room = this.core.joinedDmWith(agent, a.to);
-    if (!room) return { answer: { data: { refused: `You have no DM with ${a.to} on this computer. start_dm opens one (a paid call); then send again. Check the handle first: find_agents looks one up. Nothing was sent or charged.` } } };
+    if (!room) return { answer: { data: refusal('no_dm', `You have no DM with ${a.to} on this computer. start_dm opens one (a paid call); then send again. Check the handle first: find_agents looks one up. Nothing was sent or charged.`) } };
     const { to: _to, ...rest } = a;
     return { args: { ...rest, room } };
   }
@@ -784,7 +789,7 @@ export class ToolHost {
   async deleteOwn(agent: string, a: { room: string; message: string }): Promise<Json> {
     const m = this.core.messages(agent, { room: a.room, visible: true }).find((x) => x.id === a.message);
     if (!m) throw new ActionError('unknown_message', 'This agent holds no such message in that room. Nothing was sent or charged.');
-    if (m.author !== agent) return { refused: "That message is another agent's. Only a room's moderators can withdraw it, with moderate. Nothing was sent or charged." };
+    if (m.author !== agent) return refusal('not_own_message', "That message is another agent's. Only a room's moderators can withdraw it, with moderate. Nothing was sent or charged.");
     const out = await this.core.deleteMessage(agent, a.room, a.message);
     return { ...this.written(out, 'deletion'), note: 'Nodes drop the message text; the record that a message was there stays. Anyone whose app already received it may have read it.' };
   }
@@ -856,13 +861,13 @@ export class ToolHost {
   }
 
   /** The common result of a write: sent, or queued with the reason (never to be sent again by hand). */
-  written(out: { sent: boolean; refused?: string; offline?: string; held?: string }, what: string): Json {
+  written(out: { sent: boolean; refused?: string; refusedCode?: string; offline?: string; held?: string }, what: string): Json {
     if (out.sent) return { sent: true };
     if (out.held) return { sent: false, queued: `The ${what} is saved here: ${heldWords(out.held)}`, why: out.held };
     if (out.offline) {
       return { sent: false, queued: `The network did not answer, so the ${what} is saved here and goes with the next sync, keeping the time it was written. Do not send it again.`, why: out.offline };
     }
-    return { sent: false, queued: `The ${what} is saved and will go with the next sync that can be paid for. Do not send it again.`, refused: out.refused };
+    return { sent: false, queued: `The ${what} is saved and will go with the next sync that can be paid for. Do not send it again.`, refused: out.refused, ...(out.refusedCode && { refused_code: out.refusedCode }) };
   }
 
   // --- Room modes and moderation (§16.24) ---------------------------------------------
@@ -904,7 +909,7 @@ export class ToolHost {
     if (a.note && !['remove', 'ban'].includes(a.action)) throw new ActionError('bad_request', 'A note goes only with remove or ban.');
     const words: Record<string, string> = { approve: 'Only the owner of this room can approve posters.', silence: 'Only the owner of this room can silence posters.', remove: "This agent's role in this room does not allow removing members.", ban: "This agent's role in this room does not allow banning.", unban: "This agent's role in this room does not allow unbanning." };
     const may = { approve: info.can.approve, silence: info.can.approve, remove: info.can.remove, ban: info.can.ban, unban: info.can.ban }[a.action as 'approve'];
-    if (!may) return { refused: `${words[a.action]} Nothing was sent or charged.` };
+    if (!may) return refusal('not_allowed', `${words[a.action]} Nothing was sent or charged.`);
     const who = await this.core.resolveAgent(agent, a.agent);
     const warnings = who.warnings.length ? { warnings: who.warnings } : {};
     if (a.action === 'approve' || a.action === 'silence') {
@@ -1064,11 +1069,11 @@ export class ToolHost {
     // What this computer already knows answers for free: a room it is in, or one it knows to be
     // private or a DM from an invitation (a tester paid for a refusal the app could give, 2026-10-02).
     const known = this.core.rooms(agent).find((r) => r.room === roomId);
-    if (known?.status === 'joined') return { refused: 'You are already in this room: read it with read instead. Nothing was charged.' };
+    if (known?.status === 'joined') return refusal('already_joined', 'You are already in this room: read it with read instead. Nothing was charged.');
     const knownType = known?.type ?? this.core.invites(agent).find((i) => i.room === roomId)?.type;
-    if (knownType && knownType !== 'public') return { refused: 'Only a public room can be read before joining, and this one is not. For a private room, the invitation shows its name and topic. Nothing was charged.' };
+    if (knownType && knownType !== 'public') return refusal('not_public', 'Only a public room can be read before joining, and this one is not. For a private room, the invitation shows its name and topic. Nothing was charged.');
     const { type } = await this.core.preview(agent, roomId);
-    if (type !== 'public') return { refused: 'Only a public room can be read before joining. For a private room, the invitation shows its name and topic.' };
+    if (type !== 'public') return refusal('not_public', 'Only a public room can be read before joining. For a private room, the invitation shows its name and topic.');
     const audience: Audience = only ? 'runner' : 'person';
     const f = agentTextFence(audience);
     const info = this.core.rooms(agent).find((r) => r.room === roomId);
@@ -1133,7 +1138,7 @@ export class ToolHost {
 
   async read(agent: string, a: { room?: string; message?: string; limit?: number }, only?: Set<string>): Promise<Json> {
     if (!a.room === !a.message) throw new ActionError('bad_request', 'Give either room or message.');
-    if (only && a.room && !only.has(a.room)) return { refused: 'You are not enabled to read there. Your person enables rooms on the Agents screen.' };
+    if (only && a.room && !only.has(a.room)) return refusal('not_enabled_here', 'You are not enabled to read there. Your person enables rooms on the Agents screen.');
     const every = this.core.messages(agent, a.room ? { room: a.room, visible: true } : { visible: true }).filter((m) => !only || only.has(m.room));
     // Messages written before this agent was invited are one count, not a page of placeholders (§8.6).
     const before = a.message ? 0 : every.filter((m) => m.preJoin).length;

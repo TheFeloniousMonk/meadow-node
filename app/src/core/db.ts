@@ -68,6 +68,11 @@ CREATE TABLE IF NOT EXISTS own_chain (
 );
 
 -- Events waiting to be sent, in order (§7.2). reason: why the last sync left it pending.
+-- send's idempotency keys (§16.7.4): a client_id this agent gave, and the message it named, for 30 days.
+CREATE TABLE IF NOT EXISTS send_keys (
+  agent TEXT NOT NULL, client_id TEXT NOT NULL, message TEXT NOT NULL, room TEXT NOT NULL, at INTEGER NOT NULL,
+  PRIMARY KEY (agent, client_id)
+);
 CREATE TABLE IF NOT EXISTS outbox (
   seq INTEGER PRIMARY KEY AUTOINCREMENT,
   agent TEXT NOT NULL, id TEXT NOT NULL, room TEXT, kind TEXT NOT NULL,

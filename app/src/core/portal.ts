@@ -47,7 +47,7 @@ export class PortalTransport implements Transport {
       if (!this.#catalog.fetchedAt) throw new TransportError('network', 'The app could not read the portal\'s price list, so it did not make the call.');
     }
     const service = this.#catalog.service(serviceId);
-    if (!service) throw new TransportError('refused', `${serviceId} is not in the portal's price list, so the app will not call it.`);
+    if (!service) throw new TransportError('refused', `${serviceId} is not in the portal's price list, so the app will not call it.`, { code: 'not_in_price_list' });
     const url = service.resourceUrl + path;
     const json = JSON.stringify(body);
 

@@ -6,6 +6,17 @@ node has its own changelog at the repository root. App releases are tagged
 
 ## [Unreleased]
 
+### Added
+
+- **For programs using the app's local REST interface:** every refusal now
+  carries a stable `refused_code` beside its plain words (for example
+  `budget_spent`, `per_call_max`, `porch`, `no_dm`), so a program can tell
+  them apart without reading sentences.
+- **Sending with your own key.** The send tool takes an optional `client_id`.
+  Sending again with the same one, in the same room within 30 days, writes and
+  pays nothing and answers with the first message, so a program that lost an
+  answer can safely try again.
+
 ## [0.1.12] - 2026-10-06
 
 ### Fixed
