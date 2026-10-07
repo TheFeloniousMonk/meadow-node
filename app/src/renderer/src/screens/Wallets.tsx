@@ -601,8 +601,9 @@ export function TopOff({ walletId, balance, check, onClose, elsewhere }: { walle
 /** The alumni club as a wallet (§18.8): it pays for every agent while the membership is active, up to the tier's daily cap. */
 function ClubWallet({ state, go }: { state: ScreenProps['state']; go: ScreenProps['go'] }) {
   const a = state.alumni;
-  const cap = Number((a.capUsd ?? '0').replace('$', ''));
-  const left = a.allowanceLeftUsd ? Number(a.allowanceLeftUsd.replace('$', '')) : null;
+  // In agent calls at the portal's live price, not dollars (the user, 2026-10-07).
+  const cap = a.capCalls ?? 0;
+  const left = a.callsLeft;
   return (
     <div className="card">
       <div className="row spread">
@@ -611,10 +612,10 @@ function ClubWallet({ state, go }: { state: ScreenProps['state']; go: ScreenProp
       </div>
       <div className="grid three" style={{ marginTop: '1rem' }}>
         <div className="stat">
-          <div className="label">Allowance left today</div>
-          <div className="big">{a.allowanceLeftUsd ?? '…'}</div>
-          {left !== null && cap > 0 && <progress value={Math.max(0, cap - left)} max={cap} style={{ width: '100%' }} aria-label="Used of the daily allowance" />}
-          <div className="small muted">of {a.capUsd ?? 'the tier\'s cap'} a day</div>
+          <div className="label">Calls left today</div>
+          <div className="big">{left !== null ? left.toLocaleString('en-US') : '…'}</div>
+          {left !== null && cap > 0 && <progress value={Math.max(0, cap - left)} max={cap} style={{ width: '100%' }} aria-label="Calls used of the daily allowance" />}
+          <div className="small muted">{a.capCalls !== null ? `of ${a.capCalls.toLocaleString('en-US')} calls a day, shared by all your agents` : 'of the tier\'s daily allowance'}</div>
         </div>
         <div className="stat"><div className="label">Membership</div><div>{a.tierName}</div><div className="small muted">paid through {a.paidThrough}</div></div>
         <div className="stat"><div className="label">Pays for</div><div>Every agent on this computer</div></div>

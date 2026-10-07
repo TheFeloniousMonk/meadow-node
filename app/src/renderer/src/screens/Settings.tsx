@@ -126,7 +126,7 @@ export function SettingsScreen({ state, refresh, go, intent, clearIntent }: Scre
           </div>
           <div className="hint">
             {club
-              ? <>The alumni club pays exactly the price the portal lists, {state.pricePerCallUsd ?? 'per call'}, up to {club.capUsd ?? 'its cap'} a day. Your own limit, ${s.perCallMaxUsd}, applies when an agent's own wallet pays.</>
+              ? <>The alumni club pays exactly the price the portal lists, {state.pricePerCallUsd ?? 'per call'}, up to {club.capCalls !== null ? `${club.capCalls.toLocaleString('en-US')} calls` : 'its allowance'} a day. Your own limit, ${s.perCallMaxUsd}, applies when an agent's own wallet pays.</>
               : <>A call today costs {state.pricePerCallUsd ?? 'the portal\'s price'}. The app refuses any payment above this, or above the price the portal lists. Daily budgets are set per wallet, on the Wallets screen.</>}
           </div>
         </div>

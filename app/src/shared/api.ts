@@ -294,6 +294,9 @@ export interface AlumniView {
   changesOn: string | null;
   capUsd: string | null;
   allowanceLeftUsd: string | null;
+  /** The allowance in agent calls, at the portal's live price; null while the price is unknown. */
+  capCalls: number | null;
+  callsLeft: number | null;
   messageguard: boolean;
   /** The tier's background receive interval, in force while active (§18.8). */
   receiveMinutes: number | null;

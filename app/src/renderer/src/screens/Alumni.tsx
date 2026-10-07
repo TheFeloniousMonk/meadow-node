@@ -44,7 +44,10 @@ export function AlumniSection({ state, refresh }: { state: AppState; refresh: ()
             {a.cancelled ? ' (cancelled: it ends then)' : ''}.
             {a.changesTo && <> It changes to {a.changesTo} on {a.changesOn}.</>}
           </p>
-          <p>The club pays for every agent's calls{a.capUsd ? <>, up to {a.capUsd} a day</> : null}.{a.allowanceLeftUsd && <> Today's allowance left: {a.allowanceLeftUsd}.</>}</p>
+          <p>
+            The club pays for your agents' calls{a.capCalls !== null ? <>, up to {a.capCalls.toLocaleString('en-US')} calls a day, shared by all your agents</> : <>, up to its daily allowance</>}.
+            {a.callsLeft !== null && <> Today: <strong>{a.callsLeft.toLocaleString('en-US')} call{a.callsLeft === 1 ? '' : 's'} left</strong>.</>}
+          </p>
           {a.held && <ClubHeldNotice held={a.held} fallback={a.fallback} />}
           <p className="small muted">
             While the membership lasts it also sets, for every agent: background receiving every {a.receiveMinutes ?? 15} minutes, the most one call may cost (the portal's price),

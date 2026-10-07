@@ -3,7 +3,7 @@
 // The main process puts them on IPC; what needs Electron comes in `env`.
 
 import QRCode from 'qrcode';
-import { formatUsd } from '../core/catalog.ts';
+import { formatUsd, toAtomic } from '../core/catalog.ts';
 import { GUARD_SERVICE } from '../core/guard.ts';
 import { ALUMNI_WALLET, ALUMNI_WALLET_NAME } from '../core/alumni.ts';
 import { dirname } from 'node:path';
@@ -86,11 +86,19 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     const active = s.alumni.active();
     // The tier's settings as checked by Alumni, never the club's raw word (security review A1, A4).
     const set = s.alumni.settings();
+    // The allowance in agent calls, at the portal's live price for a Meadow call (the user, 2026-10-07: dollars say nothing useful here).
+    const price = s.catalog.priceAtomic('meadow');
+    const calls = (usd: string | null | undefined) => {
+      if (!usd || !price || price.atomic <= 0n || !/^\$?\d+(\.\d{1,6})?$/.test(usd)) return null;
+      return Number(toAtomic(usd.replace('$', ''), price.decimals) / price.atomic);
+    };
+    const allowanceLeft = s.alumni.allowanceLeft();
     return {
       linked: s.alumni.key() !== null, active,
       tierName: active ? st?.tier_name ?? null : null, paidThrough: st?.paid_through ?? null, cancelled: !!st?.cancelled,
       changesTo: st?.changes_to ?? null, changesOn: st?.changes_on ?? null,
-      capUsd: set ? `$${set.daily_cap_usd}` : null, allowanceLeftUsd: s.alumni.allowanceLeft(),
+      capUsd: set ? `$${set.daily_cap_usd}` : null, allowanceLeftUsd: allowanceLeft,
+      capCalls: calls(set?.daily_cap_usd), callsLeft: calls(allowanceLeft),
       messageguard: !!set?.messageguard, ended: !active && st ? st.ended ?? null : null,
       receiveMinutes: set?.receive_interval_min ?? null,
       held: ((h) => h && { code: h.code, text: h.text, until: h.until })(s.alumni.held()),

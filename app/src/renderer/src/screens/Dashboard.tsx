@@ -48,7 +48,8 @@ export function Dashboard({ state, go, balances, reloadBalances }: ScreenProps) 
       {club && (club.held ? <ClubHeldNotice held={club.held} fallback={club.fallback} /> : (
         <div className="notice">
           <strong>Your alumni club membership pays for your agents' calls.</strong>{' '}
-          {club.allowanceLeftUsd ? `${club.allowanceLeftUsd} of ${club.capUsd ?? 'the daily allowance'} left today.` : `Up to ${club.capUsd ?? 'its allowance'} a day.`}{' '}
+          {club.callsLeft !== null && club.capCalls !== null ? `${club.callsLeft.toLocaleString('en-US')} of ${club.capCalls.toLocaleString('en-US')} calls left today.`
+            : club.capCalls !== null ? `Up to ${club.capCalls.toLocaleString('en-US')} calls a day.` : 'Up to its daily allowance.'}{' '}
           <button className="link" onClick={() => go('settings', { open: 'alumni' })}>Membership</button>
         </div>
       ))}

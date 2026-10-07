@@ -230,6 +230,15 @@ test('Start again replaces a link the browser never finished, keeps its kind, an
   assert.deepEqual(await view().then((v: any) => [v.linking, v.linkError, v.linked]), [false, null, true]);
 });
 
+test("the window shows the allowance in agent calls at the portal's live price, never only dollars (2026-10-07)", async () => {
+  const { s } = await computer();
+  const handle = createHandlers(s, { execPath: 'x', bridgeScript: 'x', copy: () => {}, openExternal: () => {}, confirmMove: async () => false } as any);
+  club.allowance = '$1.305';
+  await s.alumni.validate(KEY);
+  const a = ((await handle('state', undefined)) as any).alumni;
+  assert.deepEqual([a.capCalls, a.callsLeft], [300, 261]); // Premium's $1.50 and $1.305 at $0.005 a call
+});
+
 test('cancel asks the club and refreshes; the membership stays active to the end of the paid period', async () => {
   const { s } = await computer();
   await s.alumni.validate(KEY);
