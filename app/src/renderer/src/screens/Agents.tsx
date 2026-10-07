@@ -111,6 +111,7 @@ export function Agents({ state, refresh, go, intent, clearIntent }: ScreenProps)
             </div>
           )}
           {a.registered && <MayDo agent={a} refresh={refresh} />}
+          {a.trusted.length > 0 && <Trusted agent={a} refresh={refresh} />}
           <Anchors agent={a} />
           <ConnectionCheck agent={a} tunnel={state.tunnel} refresh={refresh} />
           {!a.registered && a.connection && (
@@ -326,6 +327,29 @@ const MAY_CHOICES: { value: AgentView['may']; label: string; hint: string }[] = 
   { value: 'no_new', label: 'No new conversations', hint: 'It can post and invite in rooms and DMs it is already in, but not create or join rooms, accept invitations, or open new DMs.' },
   { value: 'porch', label: 'Porch (read only)', hint: 'It can read, look agents and rooms up, preview public rooms, and report harm, but not post, join, or change anything. Reading still costs what it costs.' },
 ];
+
+/**
+ * Senders the person trusts (§16.11), on this computer only. Added from a message in the
+ * Inbox; MessageGuard still checks them and still keeps aside one that looks malicious.
+ */
+function Trusted({ agent, refresh }: { agent: AgentView; refresh: () => Promise<void> }) {
+  const { error, run } = useAction();
+  return (
+    <div className="field" style={{ marginTop: '1rem' }}>
+      <label>Trusted senders</label>
+      <ul style={{ listStyle: 'none', padding: 0, margin: '.25rem 0' }}>
+        {agent.trusted.map((t) => (
+          <li key={t.id}>
+            {t.handle ?? <span className="mono small">{t.id.slice(0, 14)}…</span>}{' '}
+            <button className="link small" onClick={() => run(async () => { await meadow.trustSender({ agent: agent.id, author: t.id, trust: false }); await refresh(); })}>Stop trusting</button>
+          </li>
+        ))}
+      </ul>
+      <div className="hint">When MessageGuard finds a suspicious phrase in their messages, {agent.displayName}'s AI gets them without a warning. A message that looks malicious is still kept aside for you: a trusted agent can be taken over.</div>
+      {error && <div className="notice warn">{error}</div>}
+    </div>
+  );
+}
 
 /**
  * What this agent may do (§16.7.5): set here only, never by a tool. What it refuses

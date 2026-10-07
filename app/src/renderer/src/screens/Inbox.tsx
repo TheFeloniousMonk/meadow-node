@@ -15,7 +15,7 @@ export function openRoom(agent: string, room: string) {
   pending = { agent, room };
 }
 
-export function Inbox({ state }: ScreenProps) {
+export function Inbox({ state, refresh }: ScreenProps) {
   const [start] = useState(() => {
     const p = pending;
     pending = null;
@@ -171,7 +171,8 @@ export function Inbox({ state }: ScreenProps) {
                   if (author) await meadow.hideAuthor({ agent, room: m.room, author: m.author, hide: true });
                   else await meadow.hideMessage({ agent, message: m.id, hide: true });
                   await reload();
-                }} onNote={() => setNoting({ about: m.author, title: m.authorHandle ?? 'this agent' })} onCheck={() => setChecking(m)} onDecide={async (release) => { await meadow.guardDecide({ agent, message: m.id, release }); await reload(); }} />
+                }} onNote={() => setNoting({ about: m.author, title: m.authorHandle ?? 'this agent' })} onCheck={() => setChecking(m)} onDecide={async (release) => { await meadow.guardDecide({ agent, message: m.id, release }); await reload(); }}
+                  onTrust={async (trust) => { await meadow.trustSender({ agent, author: m.author, trust }); await Promise.all([reload(), refresh()]); }} />
               )}
             </article>
           ))}
@@ -230,13 +231,17 @@ const VERDICT_WORDS: Record<string, string> = {
  * nothing here reads as the message. MessageGuard's verdict, the person's check, and the
  * choices for a message kept aside; later per-message actions go here too.
  */
-function MessageTools({ m, card, me, onCheck, onDecide, onNote, onHide }: { m: MessageView; card: RoomCardView | null; me?: string; onCheck: () => void; onDecide: (release: boolean) => Promise<void>; onNote: () => void; onHide: (author: boolean) => Promise<void> }) {
+function MessageTools({ m, card, me, onCheck, onDecide, onNote, onHide, onTrust }: { m: MessageView; card: RoomCardView | null; me?: string; onCheck: () => void; onDecide: (release: boolean) => Promise<void>; onNote: () => void; onHide: (author: boolean) => Promise<void>; onTrust: (trust: boolean) => Promise<void> }) {
   const g = m.guard;
   const ask = card ? messagePhrases(m, card) : [];
+  // A trusted sender's suspicious verdict is a phrase match, shown without a warning (§16.11).
+  const calm = g?.verdict === 'suspicious' && m.trusted;
   return (
     <div className="tools" role="group" aria-label="Message tools">
       <span className="label">Message tools</span>
-      {g && <span className={`pill ${g.verdict === 'safe' ? 'ok' : g.verdict === 'unchecked' ? 'todo' : 'warn'}`}>{VERDICT_WORDS[g.verdict] ?? g.verdict}</span>}
+      {m.trusted && <span className="pill ok" title="On this computer only. MessageGuard still checks this sender's messages, and still keeps aside one that looks malicious.">Trusted sender</span>}
+      {g && (calm ? <span className="pill todo">MessageGuard: a phrase matched</span>
+        : <span className={`pill ${g.verdict === 'safe' ? 'ok' : g.verdict === 'unchecked' ? 'todo' : 'warn'}`}>{VERDICT_WORDS[g.verdict] ?? g.verdict}</span>)}
       {g && g.matches.length > 0 && <span className="small muted">Matched: {g.matches.join(', ')}</span>}
       {g?.held === 1 && (
         <div className="notice warn" style={{ width: '100%' }}>
@@ -252,6 +257,9 @@ function MessageTools({ m, card, me, onCheck, onDecide, onNote, onHide }: { m: M
       {g?.held === 2 && <span className="pill warn">Kept held</span>}
       {m.text !== undefined && <button className="link small" onClick={onCheck}>Check for prompt injection</button>}
       <button className="link small" onClick={onNote}>Note about this agent</button>
+      {m.trusted
+        ? <button className="link small" onClick={() => onTrust(false)}>Stop trusting</button>
+        : <button className="link small" onClick={() => onTrust(true)} title="On this computer only. A suspicious verdict on this agent's messages then reaches your agent without a warning; one that looks malicious is still kept aside.">Trust this sender</button>}
       <button className="link small" onClick={() => onHide(false)} title="On this computer only: out of this window and away from your agent">Hide</button>
       <button className="link small" onClick={() => onHide(true)} title="Hides this agent's messages in this room, later ones too, on this computer only">Hide this agent here</button>
       {g && g.verdict !== 'unchecked' && <span className="small muted">A filter for known tricks, not a guarantee.</span>}

@@ -289,6 +289,12 @@ CREATE TABLE IF NOT EXISTS hidden_authors (
   agent TEXT NOT NULL, room TEXT NOT NULL, author TEXT NOT NULL, at INTEGER NOT NULL,
   PRIMARY KEY (agent, room, author)
 );
+-- Senders the person trusts (§16.11), by agent ID, on this computer only: MessageGuard
+-- still screens them, and a suspicious verdict reaches the AI without a caution.
+CREATE TABLE IF NOT EXISTS trusted_senders (
+  agent TEXT NOT NULL, author TEXT NOT NULL, at INTEGER NOT NULL,
+  PRIMARY KEY (agent, author)
+);
 CREATE TABLE IF NOT EXISTS hints (
   agent TEXT NOT NULL, key TEXT NOT NULL, at INTEGER NOT NULL,
   PRIMARY KEY (agent, key)
