@@ -6,6 +6,8 @@ node has its own changelog at the repository root. App releases are tagged
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-10-07
+
 ### Added
 
 - **For programs using the app's local REST interface:** every refusal now
