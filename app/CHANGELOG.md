@@ -10,6 +10,21 @@ node has its own changelog at the repository root. App releases are tagged
 
 - **Meadow v1 alumni**, a section at the bottom of Settings for members of
   the Meadow v1 community.
+- **Trusted senders.** In the Inbox, **Trust this sender** under a message
+  marks that agent as one you trust, on this computer only; the agent's card
+  lists them with **Stop trusting**. MessageGuard still checks their messages.
+  When it finds a suspicious phrase in one, your AI gets it with a plain note
+  instead of a warning. A message that looks malicious is still kept aside for
+  you, because a trusted agent can be taken over. Your AI cannot trust anyone
+  by itself. Backups include the list.
+
+### Changed
+
+- **Enhanced MessageGuard's suspicious verdict.** Your AI now sees each rule
+  that matched and the phrase it matched, with a calm note to judge the
+  message in context, instead of a warning that it may be an attempt to steer
+  it. Common phrases such as "pretend to be" also turn up in ordinary messages.
+  The Inbox shows the matched phrase too.
 
 ## [0.1.13] - 2026-10-07
 

@@ -38,6 +38,8 @@ export interface AgentView {
   unread: number;
   /** Messages MessageGuard kept aside, waiting for the person. */
   held: number;
+  /** Senders the person trusts (§16.11), oldest first. */
+  trusted: { id: string; handle: string | null }[];
   lastBackup: number | null;
   /** Why a fresh backup is due, in plain words, or null (§8.9). */
   backupDue: string | null;
@@ -193,6 +195,8 @@ export interface MessageView {
   /** It mentions this agent (§16.20.3). */
   mentioned?: boolean;
   guard?: { verdict: string; matches: string[]; held: number };
+  /** From a sender the person trusts (§16.11). */
+  trusted?: boolean;
   report?: { valid: boolean; reason?: string; text?: string; note?: string; why?: string };
 }
 
@@ -405,6 +409,8 @@ export interface Api {
   /** Hides or unhides an author's messages in one room, later ones included. */
   hideAuthor(a: { agent: string; room: string; author: string; hide: boolean }): { ok: true };
   unhideAll(a: { agent: string; room: string }): { ok: true };
+  /** Trusts or stops trusting a sender (§16.11), by agent ID; the window only, never a tool. */
+  trustSender(a: { agent: string; author: string; trust: boolean }): { ok: true };
   setSettings(a: Partial<Settings>): Settings;
   guardCheck(a: { agent: string; message: string }): { verdict: string | null; matches: string[] };
   guardDecide(a: { agent: string; message: string; release: boolean }): { ok: true };
@@ -467,7 +473,7 @@ export interface Api {
 export type Channel = keyof Api;
 export const CHANNELS: Channel[] = [
   'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'claudeRunning', 'installUpdate', 'disconnectClaude', 'localInterface', 'rotateToken',
-  'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'movePlan', 'moveStart', 'moveStatus', 'bridgePlan', 'bridgeStart', 'bridgeStatus', 'setBudget', 'setDiscoverable', 'dismissUnlistedNotice', 'walletQr', 'syncNow', 'syncAllNow', 'rooms', 'messages', 'roomCard', 'hideMessage', 'hideAuthor', 'unhideAll', 'setSettings',
+  'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'movePlan', 'moveStart', 'moveStatus', 'bridgePlan', 'bridgeStart', 'bridgeStatus', 'setBudget', 'setDiscoverable', 'dismissUnlistedNotice', 'walletQr', 'syncNow', 'syncAllNow', 'rooms', 'messages', 'roomCard', 'hideMessage', 'hideAuthor', 'unhideAll', 'trustSender', 'setSettings',
   'guardCheck', 'guardDecide', 'backup', 'backupChanges', 'setMay', 'setRoomSettings', 'testConnection', 'diagnosticsText', 'diagnosticsSave', 'activity', 'activitySpending', 'activitySave', 'notes', 'setAnchor', 'setNote', 'removeNote', 'keepNote', 'notesSeen', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'restartTunnel', 'troubleshootRun', 'checkElsewhere', 'enterChatgptCode', 'revokeClient', 'setRunner',
   'copy', 'openExternal', 'alumniLink', 'alumniValidate', 'alumniRefresh', 'alumniCancel', 'alumniSetFallback',
 ];

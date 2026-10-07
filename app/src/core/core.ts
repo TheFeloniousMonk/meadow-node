@@ -173,6 +173,8 @@ export interface MessageView {
   mentioned?: true;
   /** Hidden by the person, itself or by its author (§16.24.6). */
   hidden?: true;
+  /** From a sender the person trusts (§16.11). */
+  trusted?: true;
 }
 
 /** Full handles written as mentions in a text (§16.20.2): `@name#suffix`, not run on into a longer word. */
@@ -781,6 +783,18 @@ export class Core {
   hideAuthor(agent: string, roomId: string, author: string, hide: boolean) {
     if (hide) this.#db.prepare('INSERT OR IGNORE INTO hidden_authors (agent, room, author, at) VALUES (?, ?, ?, ?)').run(agent, roomId, author, this.#now());
     else this.#db.prepare('DELETE FROM hidden_authors WHERE agent = ? AND room = ? AND author = ?').run(agent, roomId, author);
+  }
+
+  /** Trusts or stops trusting a sender (§16.11), by agent ID. Only the person, from the window: no tool reaches it. */
+  trustSender(agent: string, author: string, trust: boolean) {
+    if (author === agent) throw new ActionError('bad_request', 'An agent cannot trust itself.');
+    if (trust) this.#db.prepare('INSERT OR IGNORE INTO trusted_senders (agent, author, at) VALUES (?, ?, ?)').run(agent, author, this.#now());
+    else this.#db.prepare('DELETE FROM trusted_senders WHERE agent = ? AND author = ?').run(agent, author);
+  }
+
+  /** The senders an agent's person trusts, oldest first. */
+  trustedSenders(agent: string): string[] {
+    return (this.#db.prepare('SELECT author FROM trusted_senders WHERE agent = ? ORDER BY at').all(agent) as any[]).map((r) => r.author);
   }
 
   /** Unhides everything in a room. */
@@ -1904,7 +1918,8 @@ export class Core {
     // Loading the agent first fills in its own posts from elsewhere (#ownFromElsewhere) before they are listed.
     if (!this.#ctx.has(agent) && this.#db.prepare('SELECT 1 FROM agents WHERE id = ?').get(agent)) this.#load(agent);
     // Hidden by the person (§16.24.6): the message itself, or its author in that room.
-    let sql = `SELECT m.*, (m.hidden = 1 OR EXISTS (SELECT 1 FROM hidden_authors h WHERE h.agent = m.agent AND h.room = m.room AND h.author = m.author)) AS is_hidden
+    let sql = `SELECT m.*, (m.hidden = 1 OR EXISTS (SELECT 1 FROM hidden_authors h WHERE h.agent = m.agent AND h.room = m.room AND h.author = m.author)) AS is_hidden,
+      EXISTS (SELECT 1 FROM trusted_senders t WHERE t.agent = m.agent AND t.author = m.author) AS is_trusted
       FROM messages m WHERE agent = ?`;
     const args: any[] = [agent];
     if (opts.room) {
@@ -1917,7 +1932,7 @@ export class Core {
     if (opts.visible || opts.deliverable) sql += ' AND NOT is_hidden';
     sql += ' ORDER BY ts, id';
     const views = (this.#db.prepare(sql).all(...args) as any[]).map((m) => {
-      const view: MessageView = { id: m.id, room: m.room, author: m.author, ts: m.ts, status: m.status, delivered: !!m.delivered, ...(m.mentioned && { mentioned: true as const }), ...(m.is_hidden && { hidden: true as const }) };
+      const view: MessageView = { id: m.id, room: m.room, author: m.author, ts: m.ts, status: m.status, delivered: !!m.delivered, ...(m.mentioned && { mentioned: true as const }), ...(m.is_hidden && { hidden: true as const }), ...(m.is_trusted && { trusted: true as const }) };
       // Written before the agent was a recipient: never readable, so never unread (a tester's report, 2026-10-02).
       if (m.status === 'missing_key' && this.#preJoin(this.#ctx.get(agent)!, m.room, m.id)) {
         view.preJoin = true;

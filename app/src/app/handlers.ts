@@ -62,6 +62,9 @@ const STATUS_WORDS: Record<string, string> = {
   deleted: 'Deleted.',
 };
 
+/** A MessageGuard match for the window (§16.11): the rule, and the phrase it matched. */
+const matchWords = (m: { label: string; match: string }) => m.match ? `${m.label} (“${m.match.slice(0, 60)}”)` : m.label;
+
 const MAY_NAMES = { all: 'Everything', no_new: 'No new conversations', porch: 'Porch (read only)' } as const;
 const GUARD_NAMES = { default: 'as set in Settings', always: 'always check', never: 'never check' } as const;
 
@@ -158,6 +161,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
             walletId: s.wallets.walletOf(a.id),
             unread: messages.filter((m) => !m.guard?.held).length,
             held: s.core.messages(a.id).filter((m) => m.guard?.held === 1).length,
+            trusted: s.core.trustedSenders(a.id).map((id) => ({ id, handle: s.core.handleOf(a.id, id) })),
             lastBackup: (s.db.prepare('SELECT last_backup_at FROM agents WHERE id = ?').get(a.id) as any)?.last_backup_at ?? null,
             backupDue: nudge(a.id, backupDue(s.db, a.id)),
             mcpUrl: conn?.type === 'chatgpt' && s.tunnel.url ? `${s.tunnel.url}/${a.name}/mcp` : null,
@@ -312,7 +316,8 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
         ts: m.ts, status: m.status, statusWords: m.status === 'shown' ? null : m.preJoin ? STATUS_WORDS.pre_join : STATUS_WORDS[m.status] ?? m.status,
         ...(m.text !== undefined && { text: m.text }), ...(m.reply_to && { replyTo: m.reply_to }),
         unreadByAgent: !m.delivered && m.author !== agent, queued: queued.has(m.id), ...(queued.get(m.id) && { queuedWhy: heldWords(queued.get(m.id)) }), ...(m.mentioned && { mentioned: true }), ...(m.preJoin && { preJoin: true }),
-        ...(m.guard && { guard: { verdict: m.guard.verdict, matches: m.guard.matches.map((x) => x.label), held: m.guard.held } }),
+        ...(m.guard && { guard: { verdict: m.guard.verdict, matches: m.guard.matches.map(matchWords), held: m.guard.held } }),
+        ...(m.trusted && { trusted: true }),
         ...(m.report && { report: m.report.valid ? { valid: true, reason: m.report.reason, text: m.report.text, note: m.report.note } : { valid: false, why: m.report.why } }),
       }));
     },
@@ -349,6 +354,12 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     hideAuthor({ agent, room, author, hide }) {
       s.core.hideAuthor(agent, room, author, hide);
       you(agent, 'settings', `${hide ? 'Hid' : 'Unhid'} the messages of ${s.core.handleOf(agent, author) ?? author} in {room}, on this computer only.`, room);
+      return { ok: true };
+    },
+
+    trustSender({ agent, author, trust }) {
+      s.core.trustSender(agent, author, trust);
+      you(agent, 'settings', `${trust ? 'Trusted' : 'Stopped trusting'} ${s.core.handleOf(agent, author) ?? author} as a sender, on this computer only.`);
       return { ok: true };
     },
 
@@ -593,7 +604,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     },
     guardCheck: async ({ agent, message }) => {
       const r = await s.guard.checkOne(agent, message);
-      return { verdict: r?.verdict ?? null, matches: r?.matches.map((m) => m.label) ?? [] };
+      return { verdict: r?.verdict ?? null, matches: r?.matches.map(matchWords) ?? [] };
     },
     testConnection: async ({ agent }) => testConnection(s, agent),
     // The person's own record (§16.18.3): it keeps room names and handles, never message text or secrets.
