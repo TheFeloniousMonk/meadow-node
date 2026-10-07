@@ -127,6 +127,10 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 button.icon { padding: .4rem .7rem; font-weight: 500; }
 label { display: block; font-weight: 600; margin-bottom: .35rem; }
 .field { margin-bottom: 1rem; }
+/* Distinct sets of text and actions within one card (the alumni section first): twice a paragraph break between them. */
+.group + .group { margin-top: 1.5rem; }
+.group { margin-bottom: 0; }
+.group > :last-child { margin-bottom: 0; }
 .field .hint { color: var(--text-secondary); font-size: .92rem; font-weight: 400; margin-top: .3rem; }
 input[type="text"], input[type="number"], select, textarea {
   font: inherit; font-size: 1rem; width: 100%; max-width: 32rem; padding: .6rem .75rem;

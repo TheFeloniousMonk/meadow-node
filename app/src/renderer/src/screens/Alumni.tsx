@@ -39,7 +39,9 @@ export function AlumniSection({ state, refresh }: { state: AppState; refresh: ()
 
       {a.active ? (
         <>
-          {/* The tier's allowance first, in calls, and how much of it is used (the owner, 2026-10-07). */}
+          {/* The tier's allowance first, in calls, and how much of it is used (the owner, 2026-10-07).
+              Each set of text and actions is a .group, spaced apart by twice a paragraph break. */}
+          <div className="group">
           <div className="stat">
             <div className="label">Your {a.tierName} allowance</div>
             <div className="big">{a.capCalls !== null ? `${a.capCalls.toLocaleString('en-US')} calls a day` : 'Its daily allowance'}</div>
@@ -60,6 +62,9 @@ export function AlumniSection({ state, refresh }: { state: AppState; refresh: ()
           <p className="small muted" style={{ marginTop: '.25rem' }}>
             Off: once the day's allowance is used, paid calls wait until it frees up. On: each agent's own wallet pays past it, within that wallet's own budget. The same applies if the club cannot be reached.
           </p>
+          </div>
+
+          <div className="group">
           <h3>Membership</h3>
           <p>
             <strong>{a.tierName}</strong>, paid through {a.paidThrough}
@@ -89,9 +94,10 @@ export function AlumniSection({ state, refresh }: { state: AppState; refresh: ()
               <button className="secondary" disabled={busy} onClick={() => setCancelling(true)}>Cancel membership</button>
             </div>
           )}
+          </div>
 
           {/* Each action with its own label and what it is for (the owner, 2026-10-07). */}
-          <div className="field" style={{ marginTop: '1.25rem' }}>
+          <div className="field group">
             <label>Membership status</label>
             <div className="row" style={{ gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
               <button className="secondary" disabled={busy} onClick={() => run(async () => { await meadow.alumniRefresh(); await refresh(); })}>Check now</button>
@@ -103,7 +109,7 @@ export function AlumniSection({ state, refresh }: { state: AppState; refresh: ()
             </div>
           </div>
 
-          <div className="field" style={{ marginTop: '1.25rem' }}>
+          <div className="field group">
             <label>Membership key</label>
             <div className="row" style={{ gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
               <button className="secondary" disabled={busy || a.linking} onClick={() => link(true)}>Get a new key</button>
@@ -114,7 +120,7 @@ export function AlumniSection({ state, refresh }: { state: AppState; refresh: ()
               Another computer of yours that uses the membership needs the new key too.
             </div>
           </div>
-          <p className="small muted">
+          <p className="small muted group">
             While the membership lasts it also sets, for every agent: background receiving every {a.receiveMinutes ?? 15} minutes, the most one call may cost (the portal's price),
             and {a.messageguard ? 'MessageGuard for public rooms, on' : 'MessageGuard, off (included in Premium)'}. Those settings show "Set by Alumni status", and go back to yours when it ends.
           </p>
@@ -139,7 +145,7 @@ export function AlumniSection({ state, refresh }: { state: AppState; refresh: ()
       )}
 
       {a.history.length > 0 && (
-        <>
+        <div className="group">
           <h3>Payment history</h3>
           <table>
             <thead><tr><th>Date</th><th>Amount</th><th>Tier</th></tr></thead>
@@ -149,7 +155,7 @@ export function AlumniSection({ state, refresh }: { state: AppState; refresh: ()
               ))}
             </tbody>
           </table>
-        </>
+        </div>
       )}
 
       {cancelling && (
