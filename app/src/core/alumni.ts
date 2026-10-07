@@ -103,10 +103,13 @@ export class Alumni {
   #changed: () => void;
   /** Closes the browser link waiting now, if any. */
   #link: (() => void) | null = null;
+  /** Whether the membership may apply at all: false only in a development run with Alumni testing off. */
+  #enabled: () => boolean;
 
-  constructor({ db, vault, catalog, fetchImpl = fetch, now = Date.now, base = CLUB_URL, changed = () => {} }: {
-    db: Db; vault: Vault; catalog: Catalog; fetchImpl?: typeof fetch; now?: () => number; base?: string; changed?: () => void;
+  constructor({ db, vault, catalog, fetchImpl = fetch, now = Date.now, base = CLUB_URL, changed = () => {}, enabled = () => true }: {
+    db: Db; vault: Vault; catalog: Catalog; fetchImpl?: typeof fetch; now?: () => number; base?: string; changed?: () => void; enabled?: () => boolean;
   }) {
+    this.#enabled = enabled;
     this.#db = db;
     this.#vault = vault;
     this.#catalog = catalog;
@@ -145,6 +148,8 @@ export class Alumni {
 
   /** Whether the membership is active, from the last answer: the payer is the real gate, so a stale answer can never spend more. */
   active(): boolean {
+    // A development run with Alumni testing off behaves as a non-member; the key stays for when it is on again.
+    if (!this.#enabled()) return false;
     const c = this.cached();
     if (!c?.status.active || !this.key()) return false;
     // The paid period ends at the date the club gave, plus the club's own billing grace (3 days).
@@ -246,6 +251,7 @@ export class Alumni {
 
   /** Whether the daily check is due (§18.8: on start, once a day, after validating or cancelling). */
   due(): boolean {
+    if (!this.#enabled()) return false;
     const c = this.cached();
     return !!this.key() && (!c || this.#now() - c.at > DAY_MS);
   }

@@ -213,6 +213,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
         catalogError: s.catalog.fetchedAt ? null : 'The app has not read the portal\'s price list yet.',
         troubleshoot: troubleshoot(s, claudeState),
         alumni: alumniView(),
+        devAlumniTesting: s.devAlumniToggle ? s.alumniTesting() : null,
       };
     },
 
@@ -548,6 +549,10 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     alumniValidate: undefined as any, // async, below
     alumniRefresh: undefined as any, // async, below
     alumniCancel: undefined as any, // async, below
+    setAlumniTesting({ on }) {
+      s.setAlumniTesting(!!on);
+      return { ok: true };
+    },
     alumniOpenAccount() {
       env.openExternal(s.alumni.accountUrl());
       return { opened: true };

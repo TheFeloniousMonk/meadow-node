@@ -43,6 +43,8 @@ const services = new Services({
   changed: () => version++,
   catalog: new Catalog({ url: portal.catalogUrl }),
   ...(club && { alumniUrl: club.url }),
+  // --dev-toggle: as a development run of the app, with Settings → Developer and Enable Alumni testing (off).
+  ...(process.argv.includes('--dev-toggle') && { devAlumniToggle: true }),
 });
 await services.catalog.refresh();
 if (club) await services.alumni.validate(club.key);

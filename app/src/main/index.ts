@@ -221,7 +221,7 @@ else {
           return;
         }
       }
-      services = new Services({ dbPath: join(dir, 'meadow.db'), masterKey: key, version: app.getVersion(), changed, notify, notifyText, install });
+      services = new Services({ dbPath: join(dir, 'meadow.db'), masterKey: key, version: app.getVersion(), changed, notify, notifyText, install, devAlumniToggle: dev });
     } catch (err) {
       console.error('Meadow could not start:', err);
       dialog.showErrorBox('Meadow could not start', err instanceof Error ? err.message : String(err));

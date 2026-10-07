@@ -89,7 +89,7 @@ after(async () => {
   club.server.close();
 });
 
-async function computer(opts: { withWallet?: boolean } = {}) {
+async function computer(opts: { withWallet?: boolean; devAlumniToggle?: boolean } = {}) {
   club.active = true;
   club.tier = 'premium';
   club.allowance = null;
@@ -98,7 +98,7 @@ async function computer(opts: { withWallet?: boolean } = {}) {
   club.tamper = false;
   const catalog = new Catalog({ url: portal.catalogUrl });
   await catalog.refresh();
-  const s = new Services({ dbPath: ':memory:', masterKey: randomBytes(32), version: 'test', changed: () => {}, catalog, alumniUrl: club.url });
+  const s = new Services({ dbPath: ':memory:', masterKey: randomBytes(32), version: 'test', changed: () => {}, catalog, alumniUrl: club.url, ...(opts.devAlumniToggle && { devAlumniToggle: true }) });
   const { id } = s.core.createAgent('lolly');
   s.connections.set(id, 'claude', 'lolly');
   let wallet: string | null = null;
@@ -249,6 +249,33 @@ test("the window shows the allowance in agent calls at the portal's live price, 
   await s.refreshAlumni();
   assert.deepEqual(((await handle('state', undefined)) as any).alumni.options, []);
   club.cancelled = false;
+});
+
+test("a development run's Enable Alumni testing: off, a non-member (own wallet pays, key kept); on, the membership applies; a release has no switch (2026-10-07)", async () => {
+  const dev = await computer({ devAlumniToggle: true });
+  const handle = createHandlers(dev.s, { execPath: 'x', bridgeScript: 'x', copy: () => {}, openExternal: () => {}, confirmMove: async () => false } as any);
+  const state = async () => (await handle('state', undefined)) as any;
+  assert.equal((await state()).devAlumniTesting, false, 'off by default in a development run');
+  await dev.s.alumni.validate(KEY);
+  assert.equal(dev.s.alumni.key(), KEY, 'the key is kept');
+  assert.equal(dev.s.alumni.active(), false);
+  assert.equal(dev.s.alumni.due(), false);
+  assert.equal(await dev.s.refreshAlumni(), null, 'no call to the club while off');
+  await dev.s.core.register(dev.agent);
+  assert.equal(payments(dev.s).at(-1)!.wallet, dev.wallet, 'the own wallet pays');
+  await handle('setAlumniTesting', { on: true });
+  assert.equal((await state()).devAlumniTesting, true);
+  assert.equal(dev.s.alumni.active(), true);
+  await dev.s.transport.call('/v2/rooms', {}, dev.agent);
+  assert.equal(payments(dev.s).at(-1)!.wallet, 'alumni', 'the club pays');
+  await handle('setAlumniTesting', { on: false });
+  assert.equal(dev.s.alumni.active(), false);
+
+  const release = await computer();
+  assert.equal(((await createHandlers(release.s, { execPath: 'x', bridgeScript: 'x', copy: () => {}, openExternal: () => {}, confirmMove: async () => false } as any)('state', undefined)) as any).devAlumniTesting, null);
+  assert.throws(() => release.s.setAlumniTesting(true), /development run/);
+  await release.s.alumni.validate(KEY);
+  assert.equal(release.s.alumni.active(), true, 'a release is never gated');
 });
 
 test('cancel asks the club and refreshes; the membership stays active to the end of the paid period', async () => {

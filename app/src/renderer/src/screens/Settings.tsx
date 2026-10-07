@@ -193,7 +193,9 @@ export function SettingsScreen({ state, refresh, go, intent, clearIntent }: Scre
         <p className="small muted" style={{ margin: 0 }}>Your keys, wallets, and messages stay on this computer.</p>
       </section>
 
-      <AlumniSection state={state} refresh={refresh} />
+      {/* In a development run with Alumni testing off, the app is a non-member and the section is hidden. */}
+      {state.devAlumniTesting !== false && <AlumniSection state={state} refresh={refresh} />}
+      {state.devAlumniTesting !== null && <DeveloperSection state={state} refresh={refresh} />}
 
       {askPrivate && (
         <Dialog title="Check private messages too?" onClose={() => setAskPrivate(false)}>
@@ -206,5 +208,30 @@ export function SettingsScreen({ state, refresh, go, intent, clearIntent }: Scre
         </Dialog>
       )}
     </div>
+  );
+}
+
+/**
+ * Developer (a development run only, never in a release): Enable Alumni testing (the owner, 2026-10-07).
+ * Off, the app is a non-member: the club pays for nothing, its settings do not apply, and the alumni
+ * section is hidden. The membership key stays, so turning it on again picks up where it was.
+ */
+function DeveloperSection({ state, refresh }: { state: AppState; refresh: () => Promise<void> }) {
+  const { busy, error, run } = useAction();
+  return (
+    <section className="card">
+      <h2>Developer</h2>
+      <p className="small muted">Shown only in a development run of the app, never in a release.</p>
+      <label className="check">
+        <input type="checkbox" checked={!!state.devAlumniTesting} disabled={busy}
+          onChange={(e) => run(async () => { await meadow.setAlumniTesting({ on: e.target.checked }); await refresh(); })} />
+        Enable Alumni testing
+      </label>
+      <p className="small muted" style={{ marginTop: '.25rem' }}>
+        Off: this app behaves as a non-member. The alumni club pays for nothing, its settings do not apply, and the Meadow v1 alumni section is hidden.
+        A membership key already on this computer stays, so turning this on again picks up where it was. On: the alumni section and membership work as in a release.
+      </p>
+      {error && <div className="notice warn">{error}</div>}
+    </section>
   );
 }

@@ -279,6 +279,8 @@ export interface AppState {
   troubleshoot: TroubleshootView;
   /** The Meadow v1 alumni club (SPEC §18.8). */
   alumni: AlumniView;
+  /** A development run only (null in a release): whether Alumni testing is on (Settings → Developer). */
+  devAlumniTesting: boolean | null;
 }
 
 /** The alumni membership on this computer, from the club's last answer (§18.8). */
@@ -479,6 +481,8 @@ export interface Api {
   alumniCancel(): { ok: true; runsUntil: string | null } | { ok: false; error: string };
   /** Opens the club's account page in the browser, where an upgrade or other change is made with PayPal. */
   alumniOpenAccount(): { opened: true };
+  /** A development run only: Enable Alumni testing (Settings → Developer). */
+  setAlumniTesting(a: { on: boolean }): { ok: true };
   alumniSetFallback(a: { on: boolean }): { ok: true };
 }
 
@@ -487,7 +491,7 @@ export const CHANNELS: Channel[] = [
   'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'claudeRunning', 'installUpdate', 'disconnectClaude', 'localInterface', 'rotateToken',
   'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'movePlan', 'moveStart', 'moveStatus', 'bridgePlan', 'bridgeStart', 'bridgeStatus', 'setBudget', 'setDiscoverable', 'dismissUnlistedNotice', 'walletQr', 'syncNow', 'syncAllNow', 'rooms', 'messages', 'roomCard', 'hideMessage', 'hideAuthor', 'unhideAll', 'trustSender', 'setSettings',
   'guardCheck', 'guardDecide', 'backup', 'backupChanges', 'setMay', 'setRoomSettings', 'testConnection', 'diagnosticsText', 'diagnosticsSave', 'activity', 'activitySpending', 'activitySave', 'notes', 'setAnchor', 'setNote', 'removeNote', 'keepNote', 'notesSeen', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'restartTunnel', 'troubleshootRun', 'checkElsewhere', 'enterChatgptCode', 'revokeClient', 'setRunner',
-  'copy', 'openExternal', 'alumniLink', 'alumniValidate', 'alumniRefresh', 'alumniCancel', 'alumniOpenAccount', 'alumniSetFallback',
+  'copy', 'openExternal', 'alumniLink', 'alumniValidate', 'alumniRefresh', 'alumniCancel', 'alumniOpenAccount', 'setAlumniTesting', 'alumniSetFallback',
 ];
 
 /** Links the window may open in the browser. */

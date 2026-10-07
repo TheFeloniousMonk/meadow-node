@@ -200,13 +200,16 @@ export class Services {
 
   readonly version: string;
 
-  constructor({ dbPath, masterKey, version, changed, catalog = new Catalog(), notify = () => {}, notifyText = () => {}, install = 'dev', alumniUrl }: {
+  constructor({ dbPath, masterKey, version, changed, catalog = new Catalog(), notify = () => {}, notifyText = () => {}, install = 'dev', alumniUrl, devAlumniToggle }: {
     dbPath: string; masterKey: Uint8Array; version: string; changed: () => void; catalog?: Catalog; notify?: Notify;
     /** A plain system notification (a deposit arrived, §16.9.2). */
     notifyText?: (title: string, body: string) => void; install?: InstallKind;
     /** The alumni club's address (tests use a stand-in). */
     alumniUrl?: string;
+    /** A development run (Electron, not packaged): the membership applies only with Alumni testing on. Never set in a release. */
+    devAlumniToggle?: boolean;
   }) {
+    this.devAlumniToggle = !!devAlumniToggle;
     this.#notify = notify;
     this.#notifyText = notifyText;
     this.#changed = changed;
@@ -218,7 +221,10 @@ export class Services {
     this.mover = new Mover({ wallets: this.wallets, db: this.db });
     this.bridger = new Bridger({ wallets: this.wallets, db: this.db, mover: this.mover });
     // A membership starting or ending changes the receive interval in force (§18.8).
-    this.alumni = new Alumni({ db: this.db, vault: this.vault, catalog: this.catalog, changed: () => { this.#reschedule(); this.#changed(); }, ...(alumniUrl && { base: alumniUrl }) });
+    this.alumni = new Alumni({
+      db: this.db, vault: this.vault, catalog: this.catalog, changed: () => { this.#reschedule(); this.#changed(); }, ...(alumniUrl && { base: alumniUrl }),
+      enabled: () => this.alumniTesting(),
+    });
     // While a membership is active the club signs; at its cap, or when it cannot be reached, the
     // agent's own wallet pays only if the person turned the fallback on (§18.8).
     const payer: Payer = async (req) => {
@@ -472,7 +478,25 @@ export class Services {
   }
 
   /** Asks the alumni club for the membership's status, and tells the person when it ends (§18.8). */
+  /** A development run's switch for the membership (the owner, 2026-10-07): set only from Settings → Developer. */
+  readonly devAlumniToggle: boolean;
+
+  /** Whether the alumni membership may apply: always in a release; in a development run, only with Alumni testing on (off by default). */
+  alumniTesting(): boolean {
+    return !this.devAlumniToggle || (this.db.prepare('SELECT value FROM meta WHERE key = ?').get('dev_alumni_testing') as any)?.value === '1';
+  }
+
+  setAlumniTesting(on: boolean) {
+    if (!this.devAlumniToggle) throw new Error('Alumni testing exists only in a development run.');
+    this.db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run('dev_alumni_testing', on ? '1' : '0');
+    // The membership's settings (receive interval, MessageGuard) start or stop applying.
+    this.#reschedule();
+    this.#changed();
+    if (on) void this.refreshAlumni().catch(() => {});
+  }
+
   async refreshAlumni(): Promise<ClubStatus | null> {
+    if (!this.alumniTesting()) return null;
     const was = this.alumni.active();
     const status = await this.alumni.refresh();
     if (was && !this.alumni.active()) {
