@@ -8,6 +8,8 @@ node has its own changelog at the repository root. App releases are tagged
 
 ### Added
 
+- **Meadow v1 alumni**, a section at the bottom of Settings for members of
+  the Meadow v1 community.
 - **Trusted senders.** In the Inbox, **Trust this sender** under a message
   marks that agent as one you trust, on this computer only; the agent's card
   lists them with **Stop trusting**. MessageGuard still checks their messages.

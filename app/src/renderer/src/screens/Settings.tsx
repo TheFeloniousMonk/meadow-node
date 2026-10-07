@@ -1,12 +1,13 @@
 // Settings (SPEC §16.14): sync, spending, MessageGuard, connections, the app
 // (notifications, start at login, look), and about. Security (an app
 // passphrase) and the ChatGPT tunnel arrive with later steps.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { AppState } from '../../../shared/api.ts';
-import { Dialog, agentsSharePayer, dailySyncCost, meadow, useAction, useToast } from '../lib.tsx';
+import { ClubSet, Dialog, InfoTip, agentsSharePayer, dailySyncCost, meadow, useAction, useToast } from '../lib.tsx';
 import type { ScreenProps } from '../App.tsx';
 import { TunnelControls } from './Connections.tsx';
 import { DiagnosticsDialog } from './Check.tsx';
+import { AlumniSection } from './Alumni.tsx';
 
 const SOURCE = 'https://github.com/TheFeloniousMonk/meadow-node';
 
@@ -24,7 +25,8 @@ export function guardCost(state: AppState): string {
 /** The plain explanation of MessageGuard (§16.5), with its cost and an on switch: used by the checklist and Settings. */
 export function MessageGuardOffer({ state, refresh }: { state: AppState; refresh?: () => Promise<void> }) {
   const { busy, run } = useAction();
-  if (state.settings.guardPublic) return null;
+  // While an alumni membership is active the club decides it (§18.8): included, or not on this tier.
+  if (state.settings.guardPublic || state.alumni.active) return null;
   return (
     <div className="card">
       <h3>MessageGuard <span className="pill todo">Recommended</span> <span className="small muted">optional</span></h3>
@@ -39,11 +41,21 @@ export function MessageGuardOffer({ state, refresh }: { state: AppState; refresh
   );
 }
 
-export function SettingsScreen({ state, refresh }: ScreenProps) {
+export function SettingsScreen({ state, refresh, go, intent, clearIntent }: ScreenProps) {
   const s = state.settings;
-  // Agents one wallet pays for are always checked together, up to 8 in a call (§16.8).
+  // While an alumni membership is active, some settings are the club's (§18.8): shown fixed and greyed.
+  const club = state.alumni.active ? state.alumni : null;
+  const minutes = club?.receiveMinutes ?? s.syncMinutes;
+  // Agents one payer pays for are always checked together, up to 8 in a call (§16.8).
   const combined = agentsSharePayer(state);
   const registered = state.agents.filter((a) => a.registered).length;
+  // Arriving from "Set by Alumni status": show the membership.
+  useEffect(() => {
+    if (intent?.open !== 'alumni') return;
+    // After this render has painted, so the section is in place.
+    setTimeout(() => document.getElementById('alumni')?.scrollIntoView({ block: 'start' }), 0);
+    clearIntent?.();
+  }, [intent]);
   const toast = useToast();
   const { error, run } = useAction();
   const [perCall, setPerCall] = useState(s.perCallMaxUsd);
@@ -51,7 +63,7 @@ export function SettingsScreen({ state, refresh }: ScreenProps) {
   const [port, setPort] = useState(String(s.localPort));
   const [askPrivate, setAskPrivate] = useState(false);
   const save = (changes: Parameters<typeof meadow.setSettings>[0], what = 'Saved') => run(async () => { await meadow.setSettings(changes); await refresh(); toast(what); });
-  const cost = dailySyncCost(s.syncMinutes, state.pricePerCallUsd, combined);
+  const cost = dailySyncCost(minutes, state.pricePerCallUsd, combined);
 
   return (
     <div className="stack">
@@ -60,27 +72,40 @@ export function SettingsScreen({ state, refresh }: ScreenProps) {
         <h2>Receiving messages</h2>
         <label className="check"><input type="checkbox" checked={s.syncEnabled} onChange={(e) => save({ syncEnabled: e.target.checked })} /> Check the network for new messages in the background</label>
         <div className="field" style={{ marginTop: '1rem' }}>
-          <label htmlFor="interval">How often</label>
-          <select id="interval" value={s.syncMinutes} onChange={(e) => save({ syncMinutes: Number(e.target.value) })} disabled={!s.syncEnabled} style={{ maxWidth: '14rem' }}>
-            {[5, 15, 30, 60, 180, 720].map((m) => <option key={m} value={m}>{m < 60 ? `Every ${m} minutes` : m === 60 ? 'Every hour' : `Every ${m / 60} hours`}</option>)}
+          <label htmlFor="interval">How often{club && <ClubSet go={go} />}</label>
+          <select id="interval" className={club ? 'club-fixed' : undefined} value={minutes} onChange={(e) => save({ syncMinutes: Number(e.target.value) })} disabled={!s.syncEnabled || !!club} style={{ maxWidth: '14rem' }}>
+            {[...new Set([5, 15, 30, 60, 180, 720, minutes])].sort((a, b) => a - b).map((m) => <option key={m} value={m}>{m < 60 ? `Every ${m} minutes` : m === 60 ? 'Every hour' : `Every ${m / 60} hours`}</option>)}
           </select>
           <div className="hint">
             {!s.syncEnabled ? 'Messages arrive only when your AI syncs, or when you press Sync Now.'
-              : cost ? `That is ${cost}, ${combined ? 'from the wallet that pays for them' : "from each agent's wallet"} and within its budget.` : 'The cost shows once the app has read the portal\'s prices.'} Sending always happens at once.
-            {combined && registered > 8 && <> With {registered} agents, each check takes {Math.ceil(registered / 8)} calls.</>}
+              : club ? 'Paid by the alumni club, within its daily allowance.'
+                : cost ? `That is ${cost}, ${combined ? 'from the wallet that pays for them' : "from each agent's wallet"} and within its budget.` : 'The cost shows once the app has read the portal\'s prices.'} Sending always happens at once.
+            {combined && registered > 8 && <> With {registered} agents, each check takes {Math.ceil(registered / 8)} calls{club ? ', so the club allowance goes sooner' : ''}.</>}
           </div>
         </div>
         <label className="check"><input type="checkbox" checked={s.notifications} onChange={(e) => save({ notifications: e.target.checked })} /> Show a notification when new messages arrive</label>
       </section>
 
       <section className="card">
-        <h2>MessageGuard <span className="pill todo">Recommended</span></h2>
-        <p className="muted">Checks new messages for prompt injection before your AI sees them: {guardCost(state)}. A filter for known tricks, not a guarantee.</p>
-        <label className="check"><input type="checkbox" checked={s.guardPublic} onChange={(e) => save({ guardPublic: e.target.checked })} /> Check messages in public rooms</label>
-        <label className="check" style={{ marginTop: '.5rem' }}>
-          <input type="checkbox" checked={s.guardPrivate} onChange={(e) => (e.target.checked ? setAskPrivate(true) : save({ guardPrivate: false }))} /> Also check private rooms and direct messages
+        {club?.messageguard && <div className="eyebrow">Included with alumni membership <InfoTip text="Your alumni club membership pays for MessageGuard in public rooms, and turns it on while the membership lasts." /></div>}
+        <h2>MessageGuard {!club && <span className="pill todo">Recommended</span>}</h2>
+        <p className="muted">
+          Checks new messages for prompt injection before your AI sees them{club?.messageguard ? '' : <>: {guardCost(state)}</>}. A filter for known tricks, not a guarantee.
+          {club && !club.messageguard && <> Not part of your {club.tierName} membership: <strong>included in Premium</strong>.</>}
+        </p>
+        <label className={`check${club ? ' club-fixed' : ''}`}>
+          <input type="checkbox" checked={club ? club.messageguard : s.guardPublic} disabled={!!club} onChange={(e) => save({ guardPublic: e.target.checked })} /> Check messages in public rooms
         </label>
-        <div className="hint" style={{ marginLeft: '1.8rem' }}>This sends their decrypted text to the checking service, which end-to-end encryption otherwise prevents.</div>
+        {club && <div style={{ marginLeft: '1.8rem' }}><ClubSet go={go} /></div>}
+        <label className={`check${club && !club.messageguard ? ' club-fixed' : ''}`} style={{ marginTop: '.5rem' }}>
+          <input type="checkbox" checked={club && !club.messageguard ? false : s.guardPrivate} disabled={!!club && !club.messageguard}
+            onChange={(e) => (e.target.checked ? setAskPrivate(true) : save({ guardPrivate: false }))} /> Also check private rooms and direct messages
+        </label>
+        <div className="hint" style={{ marginLeft: '1.8rem' }}>
+          This sends their decrypted text to the checking service, which end-to-end encryption otherwise prevents.
+          {club?.messageguard && ' It stays your choice; the club pays for it when it is on.'}
+          {club && !club.messageguard && <> <ClubSet go={go} /></>}
+        </div>
         <div className="field" style={{ marginTop: '1rem' }}>
           <label htmlFor="limit">Most single checks per sync</label>
           <select id="limit" value={s.guardLimit} onChange={(e) => save({ guardLimit: Number(e.target.value) })} style={{ maxWidth: '10rem' }}>
@@ -93,12 +118,17 @@ export function SettingsScreen({ state, refresh }: ScreenProps) {
       <section className="card">
         <h2>Spending</h2>
         <div className="field">
-          <label htmlFor="percall">The most one call may cost, in US dollars</label>
+          <label htmlFor="percall">The most one call may cost, in US dollars{club && <ClubSet go={go} />}</label>
           <div className="row">
-            <input id="percall" type="text" inputMode="decimal" value={perCall} onChange={(e) => setPerCall(e.target.value.trim())} style={{ maxWidth: '10rem' }} />
-            <button className="secondary" disabled={!/^\d+(\.\d{1,6})?$/.test(perCall)} onClick={() => save({ perCallMaxUsd: perCall })}>Save</button>
+            <input id="percall" type="text" inputMode="decimal" className={club ? 'club-fixed' : undefined} disabled={!!club}
+              value={club ? (state.pricePerCallUsd ?? '').replace('$', '') : perCall} onChange={(e) => setPerCall(e.target.value.trim())} style={{ maxWidth: '10rem' }} />
+            {!club && <button className="secondary" disabled={!/^\d+(\.\d{1,6})?$/.test(perCall)} onClick={() => save({ perCallMaxUsd: perCall })}>Save</button>}
           </div>
-          <div className="hint">A call today costs {state.pricePerCallUsd ?? 'the portal\'s price'}. The app refuses any payment above this, or above the price the portal lists. Daily budgets are set per wallet, on the Wallets screen.</div>
+          <div className="hint">
+            {club
+              ? <>The alumni club pays exactly the price the portal lists, {state.pricePerCallUsd ?? 'per call'}, up to {club.capCalls !== null ? `${club.capCalls.toLocaleString('en-US')} calls` : 'its allowance'} a day. Your own limit, ${s.perCallMaxUsd}, applies when an agent's own wallet pays.</>
+              : <>A call today costs {state.pricePerCallUsd ?? 'the portal\'s price'}. The app refuses any payment above this, or above the price the portal lists. Daily budgets are set per wallet, on the Wallets screen.</>}
+          </div>
         </div>
       </section>
 
@@ -163,6 +193,10 @@ export function SettingsScreen({ state, refresh }: ScreenProps) {
         <p className="small muted" style={{ margin: 0 }}>Your keys, wallets, and messages stay on this computer.</p>
       </section>
 
+      {/* In a development run with Alumni testing off, the app is a non-member and the section is hidden. */}
+      {state.devAlumniTesting !== false && <AlumniSection state={state} refresh={refresh} />}
+      {state.devAlumniTesting !== null && <DeveloperSection state={state} refresh={refresh} />}
+
       {askPrivate && (
         <Dialog title="Check private messages too?" onClose={() => setAskPrivate(false)}>
           <p>Private rooms and direct messages are end-to-end encrypted: no one but their members can read them, not even the network.</p>
@@ -174,5 +208,30 @@ export function SettingsScreen({ state, refresh }: ScreenProps) {
         </Dialog>
       )}
     </div>
+  );
+}
+
+/**
+ * Developer (a development run only, never in a release): Enable Alumni testing (the owner, 2026-10-07).
+ * Off, the app is a non-member: the club pays for nothing, its settings do not apply, and the alumni
+ * section is hidden. The membership key stays, so turning it on again picks up where it was.
+ */
+function DeveloperSection({ state, refresh }: { state: AppState; refresh: () => Promise<void> }) {
+  const { busy, error, run } = useAction();
+  return (
+    <section className="card">
+      <h2>Developer</h2>
+      <p className="small muted">Shown only in a development run of the app, never in a release.</p>
+      <label className="check">
+        <input type="checkbox" checked={!!state.devAlumniTesting} disabled={busy}
+          onChange={(e) => run(async () => { await meadow.setAlumniTesting({ on: e.target.checked }); await refresh(); })} />
+        Enable Alumni testing
+      </label>
+      <p className="small muted" style={{ marginTop: '.25rem' }}>
+        Off: this app behaves as a non-member. The alumni club pays for nothing, its settings do not apply, and the Meadow v1 alumni section is hidden.
+        A membership key already on this computer stays, so turning this on again picks up where it was. On: the alumni section and membership work as in a release.
+      </p>
+      {error && <div className="notice warn">{error}</div>}
+    </section>
   );
 }

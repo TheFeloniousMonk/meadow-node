@@ -49,14 +49,16 @@ const fromStep = (st: CheckStep, action?: TroubleAction): TroubleItem =>
 /** What one background sync a day costs per agent, from the live price: syncs × price. */
 function dailySync(s: Services): bigint | null {
   const price = s.catalog.priceAtomic('meadow');
-  const st = s.settings();
+  const st = s.effectiveSettings();
   if (!price) return null;
   return st.syncEnabled ? BigInt(Math.ceil((24 * 60) / st.syncMinutes)) * price.atomic : 0n;
 }
 
 export function troubleshoot(s: Services, claude: (agent: string) => ClaudeState): TroubleshootView {
   const out = s.outside;
-  const settings = s.settings();
+  // In force: the alumni club's overrides while a membership is active (§18.8).
+  const settings = s.effectiveSettings();
+  const club = s.alumni.active();
   const agents = s.core.agents();
   const price = s.catalog.priceAtomic('meadow');
   const perDay = dailySync(s);
@@ -95,11 +97,28 @@ export function troubleshoot(s: Services, claude: (agent: string) => ClaudeState
   const paying = (w: { agents: string[] }) => agents.filter((a) => w.agents.includes(a.id) && a.registered).length;
   // Background calls a day: a wallet's agents sync together, up to 8 a call (§7.9).
   const calls = (w: { agents: string[] }) => Math.ceil(paying(w) / 8);
-  for (const a of agents.filter((x) => !s.wallets.walletOf(x.id))) {
+  if (club) {
+    // The club pays for every agent (§18.8); the agents' own wallets matter only past its allowance, if allowed.
+    const st = s.alumni.cached()?.status;
+    const held = s.alumni.held();
+    const settingsAction: TroubleAction = { label: 'Open the alumni settings', go: 'settings', open: 'alumni' };
+    if (held?.code === 'cap') {
+      money.push(item('alumni', 'Alumni club', s.alumni.fallback() ? 'warn' : 'bad',
+        `The alumni club's allowance for today is used up${held.until ? `; it frees up at ${clock(held.until)}` : ''}. ${s.alumni.fallback() ? "Until then each agent's own wallet pays." : 'Until then paid calls are refused, and background receiving waits.'}`,
+        s.alumni.fallback() ? {} : { fix: "Wait for it, or let the agents' own wallets pay past the allowance.", action: settingsAction }));
+    } else if (held) {
+      money.push(item('alumni', 'Alumni club', 'warn', `The alumni club could not pay just now: ${held.text}${s.alumni.fallback() ? " Each agent's own wallet pays meanwhile." : ''}`,
+        { fix: 'The app tries again with the next call.' }));
+    } else {
+      const left = s.alumni.allowanceLeft();
+      money.push(item('alumni', 'Alumni club', 'ok', `Your ${st?.tier_name ?? 'alumni'} membership pays for every agent's calls${left ? `: ${left} of $${s.alumni.settings()?.daily_cap_usd ?? '?'} left today` : ''}.`));
+    }
+  }
+  for (const a of club ? [] : agents.filter((x) => !s.wallets.walletOf(x.id))) {
     money.push(item(`nowallet:${a.id}`, 'Wallets', 'bad', `${a.display_name} has no wallet to pay for its calls.`,
       wallets.length ? { action: { label: 'Choose a wallet', go: 'agents', open: 'chooseWallet', agent: a.id } } : { action: { label: 'Create a wallet', go: 'wallets' } }));
   }
-  for (const w of wallets.filter((x) => x.agents.length)) {
+  for (const w of club && !s.alumni.fallback() ? [] : wallets.filter((x) => x.agents.length)) {
     const bal = out.balances.get(w.id);
     const need = perDay !== null ? perDay * BigInt(calls(w)) : null;
     const topOff: TroubleAction = { label: 'Top off', go: 'wallets', open: 'topOff', wallet: w.id };
@@ -132,7 +151,7 @@ export function troubleshoot(s: Services, claude: (agent: string) => ClaudeState
       money.push(item(`budget:${w.id}`, 'Budgets', 'ok', `${w.name}: ${formatUsd(b.spent)} of ${formatUsd(b.budget)} spent in the last 24 hours.`));
     }
   }
-  if (!wallets.length && !agents.length) money.push(item('wallets', 'Wallets', 'info', 'No wallet yet. Create one before adding an agent.', { action: { label: 'Create a wallet', go: 'wallets' } }));
+  if (!club && !wallets.length && !agents.length) money.push(item('wallets', 'Wallets', 'info', 'No wallet yet. Create one before adding an agent.', { action: { label: 'Create a wallet', go: 'wallets' } }));
   groups.push({ title: 'Money', items: money });
 
   // ---- Each agent ----
@@ -148,7 +167,7 @@ export function troubleshoot(s: Services, claude: (agent: string) => ClaudeState
       items.push(item('way', 'The way in', 'bad', 'It has no connection to an AI.', { fix: 'Remove it and add it again with the AI that will use it.', action: { label: 'Open Agents', go: 'agents' } }));
     } else {
       for (const st of check.steps) {
-        if (st.key === 'network') items.push(fromStep(st, a.registered && s.wallets.walletOf(a.id) ? { label: `Sync now${price ? ` (${formatUsd(price.atomic)})` : ''}`, run: 'syncNow', agent: a.id } : undefined));
+        if (st.key === 'network') items.push(fromStep(st, a.registered && (club || s.wallets.walletOf(a.id)) ? { label: `Sync now${price ? ` (${formatUsd(price.atomic)})` : ''}`, run: 'syncNow', agent: a.id } : undefined));
         else if (st.key === 'bridge') items.push(fromStep(st, { label: claude(a.id)?.installed ? 'Update Claude\'s settings' : 'Connect Claude', go: 'agents', open: 'claude', agent: a.id }));
         else if (st.key === 'tunnel') {
           const t = s.tunnel.status;

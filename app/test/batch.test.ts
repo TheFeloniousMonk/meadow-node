@@ -165,11 +165,39 @@ test('an answer too large for one call pages through the agents, each in turn', 
   }
 });
 
-test("combined: each agent takes its own entry's attestation, and the node is heard (§16.23)", async () => {
+test('a node that puts off every agent: one paid call, and the agents are not counted as synced (security review A2)', async () => {
+  const { A } = await world([{ name: 'alice' }, { name: 'bob' }]);
+  A.s.transport.call = (async (path: string, body: any, agent: string | null) => {
+    if (path !== '/v2/sync-batch') throw new Error('unexpected');
+    return { status: 200, data: { node: 'n_x', more: true, syncs: body.syncs.map((e: any) => ({ agent: e.auth.agent, deferred: true })) } };
+  }) as any;
+  const results = await A.s.syncAll('background');
+  assert.deepEqual(results.map((r) => r.ok), [false, false]);
+});
+
+test('with the club paying and the fallback on, agents are combined only with others on the same wallet (security review A5)', async () => {
+  const { A, ids } = await world([{ name: 'alice', wallet: 'One' }, { name: 'bob', wallet: 'Two' }, { name: 'carol', wallet: 'Two' }]);
+  // As if a membership were active with the fallback on: the grouping must follow the agents' own wallets.
+  (A.s.alumni as any).active = () => true;
+  (A.s.alumni as any).fallback = () => true;
+  (A.s.alumni as any).settings = () => ({ daily_cap_usd: '1.50', receive_interval_min: 15, messageguard: false, combine_syncs: true });
+  const seen: string[][] = [];
+  const many = A.s.core.syncMany.bind(A.s.core);
+  A.s.core.syncMany = async (agents: string[]) => {
+    seen.push([...agents].sort());
+    return many(agents);
+  };
+  await A.s.syncAll('background').catch(() => {});
+  const two = [ids[1], ids[2]].sort();
+  assert.ok(seen.some((g) => JSON.stringify(g) === JSON.stringify(two)), 'bob and carol together');
+  assert.ok(seen.every((g) => !(g.includes(ids[0]) && g.length > 1)), 'alice never with the others');
+});
+
+test('combined: each agent takes its own entry\'s attestation, and the node is heard (§16.23)', async () => {
   const { A, ids } = await world([{ name: 'erin' }, { name: 'fay' }]);
   await A.s.syncAll('person');
   for (const id of ids) {
-    assert.deepEqual(A.s.core.problems(id).filter((p) => p.kind === 'nodes'), [], "every entry's attestation checks for its own agent");
+    assert.deepEqual(A.s.core.problems(id).filter((p) => p.kind === 'nodes'), [], 'every entry\'s attestation checks for its own agent');
     const views = A.s.db.prepare('SELECT DISTINCT node FROM node_views WHERE agent = ?').all(id) as any[];
     assert.equal(views.length, 1, 'kept under the agent it names');
   }

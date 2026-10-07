@@ -9,7 +9,7 @@
 import type { Catalog } from './catalog.ts';
 import { formatUsd } from './catalog.ts';
 import { TransportError, type CallResult, type Transport } from './transport.ts';
-import type { Wallets } from './wallets.ts';
+import type { Authorized, Wallets } from './wallets.ts';
 import { REPLY_LIMITS, ReplyTooLarge, readJson } from './deps.ts';
 
 export const MEADOW_SERVICE = 'meadow';
@@ -25,15 +25,20 @@ const decode = (header: string | null): any => {
   }
 };
 
+/** Who signs a 402's payment: the agent's wallet (§16.9), or the alumni club while a membership is active (§18.8). */
+export type Payer = (req: { agent: string | null; serviceId: string; path: string; offer: any }) => Authorized | Promise<Authorized>;
+
 export class PortalTransport implements Transport {
   #catalog: Catalog;
   #wallets: Wallets;
   #fetch: typeof fetch;
+  #payer: Payer;
 
-  constructor({ catalog, wallets, fetchImpl = fetch }: { catalog: Catalog; wallets: Wallets; fetchImpl?: typeof fetch }) {
+  constructor({ catalog, wallets, fetchImpl = fetch, payer }: { catalog: Catalog; wallets: Wallets; fetchImpl?: typeof fetch; payer?: Payer }) {
     this.#catalog = catalog;
     this.#wallets = wallets;
     this.#fetch = fetchImpl;
+    this.#payer = payer ?? ((req) => wallets.authorize(req));
   }
 
   call(path: string, body: unknown, agent: string | null): Promise<CallResult> {
@@ -57,12 +62,12 @@ export class PortalTransport implements Transport {
       const offer = decode(res.headers.get('payment-required')) ?? (await readJson(res, REPLY_LIMITS.portal).catch(() => undefined));
       let paid;
       try {
-        paid = this.#wallets.authorize({ agent, serviceId, path, offer });
+        paid = await this.#payer({ agent, serviceId, path, offer });
       } catch (err) {
         // Terms that do not match may mean a price or rail changed since the catalog was read: read it again, once.
         if (!(err instanceof TransportError) || !err.catalogMismatch) throw err;
         await this.#catalog.refresh().catch(() => {});
-        paid = this.#wallets.authorize({ agent, serviceId, path, offer });
+        paid = await this.#payer({ agent, serviceId, path, offer });
       }
       res = await this.#post(url, json, { 'payment-signature': paid.header });
       const settlement = decode(res.headers.get('payment-response'));

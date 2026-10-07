@@ -15,7 +15,7 @@ import { Troubleshoot } from './screens/Troubleshoot.tsx';
 export type Route = 'setup' | 'dashboard' | 'inbox' | 'agents' | 'wallets' | 'settings' | 'troubleshoot';
 /** What to open on arrival, for Troubleshoot's buttons (§16.21): the screen's own dialog, for one agent or wallet. */
 export interface Intent {
-  open?: 'topOff' | 'budget' | 'backup' | 'chatgpt' | 'claude' | 'chooseWallet';
+  open?: 'topOff' | 'budget' | 'backup' | 'chatgpt' | 'claude' | 'chooseWallet' | 'alumni';
   agent?: string;
   wallet?: string;
 }

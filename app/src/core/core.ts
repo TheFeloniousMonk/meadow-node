@@ -1212,6 +1212,7 @@ export class Core {
       this.#onSyncError?.(ctx.id, err);
     };
     let active = ctxs;
+    const served = new Set<string>();
     for (let page = 0; page < SYNC.maxPages && active.length; page++) {
       const pages = new Map(active.map((c) => [c.id, this.#page(c)]));
       const body = { syncs: active.map((c) => signRequest(this.#signer(c.id), pages.get(c.id)!.fields)), limit_bytes: SYNC.limitBytes };
@@ -1253,6 +1254,18 @@ export class Core {
       const byAgent = new Map<string, any>();
       for (const x of entries) if (x && typeof x === 'object' && typeof x.agent === 'string' && !byAgent.has(x.agent)) byAgent.set(x.agent, x);
       const next: Ctx[] = [];
+      // The node serves the first entry of every call (§7.9): a call that served none is a node
+      // that will never answer, and every page is paid (security review A2, as F6 for one agent).
+      if (![...byAgent.values()].some((x) => active.some((c) => c.id === x.agent) && x.deferred !== true)) {
+        this.#problem(null, 'sync', 'A node put off every agent in a combined sync; the sync stopped to save money.');
+        for (const c of active) {
+          const r = reports.get(c.id)!;
+          if (served.has(c.id)) r.stopped = 'The node put off the rest of this sync.';
+          else fail(c, new ActionError('sync_failed', 'The network put off this agent\'s sync and sent nothing.'));
+        }
+        active = [];
+        break;
+      }
       for (const c of active) {
         const x = byAgent.get(c.id);
         if (!x) {
@@ -1269,6 +1282,7 @@ export class Core {
           continue;
         }
         const p = pages.get(c.id)!;
+        served.add(c.id);
         this.#asked(c, p.ask);
         const { agent: _agent, ...data } = x;
         try {

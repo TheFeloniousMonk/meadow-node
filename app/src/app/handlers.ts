@@ -3,13 +3,14 @@
 // The main process puts them on IPC; what needs Electron comes in `env`.
 
 import QRCode from 'qrcode';
-import { formatUsd } from '../core/catalog.ts';
+import { formatUsd, toAtomic } from '../core/catalog.ts';
 import { GUARD_SERVICE } from '../core/guard.ts';
+import { ALUMNI_WALLET, ALUMNI_WALLET_NAME } from '../core/alumni.ts';
 import { dirname } from 'node:path';
 import { backupChanges, backupDue, describeBackup, makeBackup, readBackup, restoreBackup } from '../core/backup.ts';
 import { tokenBalance } from '../core/balance.ts';
 import { add, bridgeEntry, claudeDesktopConfigPath, claudeDesktopRunning, entryName, remove, status } from '../server/claude-desktop.ts';
-import { CHANNELS, linkAllowed, type Api, type AppState, type BridgePlanView, type BridgeStateView, type Channel, type MessageView, type MovePlanView, type MoveStateView, type NoteView } from '../shared/api.ts';
+import { CHANNELS, linkAllowed, type AlumniView, type Api, type AppState, type BridgePlanView, type BridgeStateView, type Channel, type MessageView, type MovePlanView, type MoveStateView, type NoteView } from '../shared/api.ts';
 import type { Services } from './services.ts';
 import { connectionCheck, diagnosticsText, testConnection, type ClaudeState } from './check.ts';
 import { runOutside, troubleshoot } from './troubleshoot.ts';
@@ -75,6 +76,45 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
   const moves = new Map<string, MoveStateView>();
   // Each Move to Base in progress or last finished (§16.9.3), by wallet, network, and kind.
   const bridges = new Map<string, BridgeStateView>();
+  // The alumni club's browser link in progress, and the last one's error (§18.6).
+  // `rotate` is what the link asked for, so Start again opens the same kind; `gen` tells the current link from one it replaced.
+  let alumniLinking: { busy: boolean; error: string | null; rotate: boolean } = { busy: false, error: null, rotate: false };
+  let alumniLinkGen = 0;
+  const alumniView = (): AlumniView => {
+    const c = s.alumni.cached();
+    const st = c?.status;
+    const active = s.alumni.active();
+    // The tier's settings as checked by Alumni, never the club's raw word (security review A1, A4).
+    const set = s.alumni.settings();
+    // The allowance in agent calls, at the portal's live price for a Meadow call (the user, 2026-10-07: dollars say nothing useful here).
+    const price = s.catalog.priceAtomic('meadow');
+    const calls = (usd: string | null | undefined) => {
+      if (!usd || !price || price.atomic <= 0n || !/^\$?\d+(\.\d{1,6})?$/.test(usd)) return null;
+      return Number(toAtomic(usd.replace('$', ''), price.decimals) / price.atomic);
+    };
+    const allowanceLeft = s.alumni.allowanceLeft();
+    // The other tiers, read defensively: shown only, never applied (the club's payer is the gate).
+    const usd = /^\d+(\.\d{1,6})?$/;
+    const rank = st?.options?.find((o) => o?.tier === st?.tier)?.rank;
+    const canChange = active && st?.can_change === true;
+    const options = !canChange || !Array.isArray(st?.options) || typeof rank !== 'number' ? [] : st.options
+      .filter((o) => o && typeof o.tier === 'string' && typeof o.name === 'string' && typeof o.rank === 'number' && usd.test(String(o.price_usd_month)) && usd.test(String(o.daily_cap_usd)) && o.tier !== st.tier)
+      .slice(0, 8)
+      .map((o) => ({ tier: o.tier, name: o.name.slice(0, 40), priceMonthUsd: `$${o.price_usd_month.replace(/\.00$/, '')}`, calls: calls(o.daily_cap_usd), messageguard: o.messageguard === true, higher: o.rank > rank }))
+      .sort((x, y) => Number(y.higher) - Number(x.higher)); // upgrades first
+    return {
+      linked: s.alumni.key() !== null, active,
+      tierName: active ? st?.tier_name ?? null : null, paidThrough: st?.paid_through ?? null, cancelled: !!st?.cancelled,
+      changesTo: st?.changes_to ?? null, changesOn: st?.changes_on ?? null,
+      capUsd: set ? `$${set.daily_cap_usd}` : null, allowanceLeftUsd: allowanceLeft,
+      capCalls: calls(set?.daily_cap_usd), callsLeft: calls(allowanceLeft), options, canChange,
+      messageguard: !!set?.messageguard, ended: !active && st ? st.ended ?? null : null,
+      receiveMinutes: set?.receive_interval_min ?? null,
+      held: ((h) => h && { code: h.code, text: h.text, until: h.until })(s.alumni.held()),
+      history: st?.history ?? [], fallback: s.alumni.fallback(), checkedAt: c?.at ?? null,
+      linking: alumniLinking.busy, linkError: alumniLinking.error,
+    };
+  };
   const moveTarget = (walletId: string, to: string) => {
     const other = s.wallets.list().find((w) => w.id === to && w.id !== walletId);
     return other ? { address: other.address, name: other.name } : { address: s.mover.destination(walletId, to), name: null };
@@ -161,7 +201,10 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
           // USDC on the wrong network (§16.9.2): safe, the person's, but not usable by the app.
           elsewhere: (s.elsewhere.get(w.id)?.found ?? []).map((f) => ({ network: f.network, kind: f.kind, usd: f.usd, text: elsewhereSentence(f), movable: !!movable(f.network, f.kind) })),
         })),
-        payments: s.wallets.payments(30).map((p) => ({ at: p.signed_at, service: p.service, path: p.path, usd: formatUsd(BigInt(p.amount)), agent: p.agent, status: p.status, tx: p.tx })),
+        payments: s.wallets.payments(30).map((p) => ({
+          at: p.signed_at, service: p.service, path: p.path, usd: formatUsd(BigInt(p.amount)), agent: p.agent, status: p.status, tx: p.tx,
+          wallet: p.wallet === ALUMNI_WALLET ? ALUMNI_WALLET_NAME : s.wallets.list().find((w) => w.id === p.wallet)?.name ?? null,
+        })),
         problems: s.core.problems().slice(-20).reverse(),
         pricePerCallUsd: price ? formatUsd(price.atomic, price.decimals) : null,
         guardPriceUsd: guardPrice ? formatUsd(guardPrice.atomic, guardPrice.decimals) : null,
@@ -169,6 +212,8 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
         authorized: s.oauth.authorized().map((c) => ({ ...c, agentName: s.core.agents().find((a) => a.id === c.agent)?.display_name ?? c.agent })),
         catalogError: s.catalog.fetchedAt ? null : 'The app has not read the portal\'s price list yet.',
         troubleshoot: troubleshoot(s, claudeState),
+        alumni: alumniView(),
+        devAlumniTesting: s.devAlumniToggle ? s.alumniTesting() : null,
       };
     },
 
@@ -179,7 +224,8 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     createAgent({ displayName, type, walletId }) {
       const { id } = s.core.createAgent(displayName);
       s.connections.set(id, type, displayName);
-      s.wallets.assign(id, walletId);
+      // While an alumni membership is active the club pays, so an agent may start with no wallet of its own (§18.8).
+      if (walletId || !s.alumni.active()) s.wallets.assign(id, walletId);
       return { id, handle: s.core.agents().find((a) => a.id === id)!.handle };
     },
 
@@ -497,11 +543,68 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       env.openExternal(url);
       return { ok: true };
     },
+
+    // The alumni club (§18.8). Its key never reaches the window: only what the club said about it.
+    alumniLink: undefined as any, // async, below
+    alumniValidate: undefined as any, // async, below
+    alumniRefresh: undefined as any, // async, below
+    alumniCancel: undefined as any, // async, below
+    setAlumniTesting({ on }) {
+      s.setAlumniTesting(!!on);
+      return { ok: true };
+    },
+    alumniOpenAccount() {
+      env.openExternal(s.alumni.accountUrl());
+      return { opened: true };
+    },
+    alumniSetFallback({ on }) {
+      s.alumni.setFallback(!!on);
+      for (const a of s.core.agents()) s.activity.add(a.id, 'you', 'settings', on ? 'Let the agents\' own wallets pay past the alumni club\'s allowance.' : 'Stopped the agents\' own wallets paying past the alumni club\'s allowance.');
+      return { ok: true };
+    },
   };
 
   const claudeRunning = () => (env.claudeRunning ?? claudeDesktopRunning)();
 
   const asyncHandlers: Partial<Record<keyof Api, (a: any) => Promise<unknown>>> = {
+    // The alumni club (§18.8).
+    // Start again (a link the browser never finished, 2026-10-07) is this with `again`: the same kind of link as the one waiting.
+    alumniLink: async ({ rotate, again }) => {
+      const wantRotate = again ? alumniLinking.rotate : !!rotate;
+      const { url, done } = await s.alumni.startLink(wantRotate);
+      const gen = ++alumniLinkGen;
+      alumniLinking = { busy: true, error: null, rotate: wantRotate };
+      s.changedNow();
+      done.then(
+        () => {
+          if (gen !== alumniLinkGen) return;
+          alumniLinking = { busy: false, error: null, rotate: false };
+          for (const a of s.core.agents()) s.activity.add(a.id, 'you', 'settings', wantRotate ? 'Got a new alumni membership key.' : 'Connected the alumni club membership.');
+        },
+        (err) => { if (gen === alumniLinkGen) alumniLinking = { busy: false, error: err.message, rotate: false }; },
+      ).finally(() => s.changedNow());
+      env.openExternal(url);
+      return { opened: true };
+    },
+    alumniValidate: async ({ key }) => {
+      try {
+        await s.alumni.validate(String(key ?? ''));
+        for (const a of s.core.agents()) s.activity.add(a.id, 'you', 'settings', 'Validated an alumni club membership.');
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: (err as Error).message };
+      }
+    },
+    alumniRefresh: async () => ({ ok: !!(await s.refreshAlumni().catch(() => null)) }),
+    alumniCancel: async () => {
+      try {
+        const r = await s.alumni.cancel();
+        for (const a of s.core.agents()) s.activity.add(a.id, 'you', 'settings', `Cancelled the alumni club membership; it runs to ${r.runs_until ?? 'the end of the paid month'}.`);
+        return { ok: true, runsUntil: r.runs_until };
+      } catch (err) {
+        return { ok: false, error: (err as Error).message };
+      }
+    },
     syncNow: ({ agent }) => withCause('person', () => s.syncOne(agent)),
     syncAllNow: () => s.syncAll('person'),
     claudeRunning: async () => ({ running: await claudeRunning() }),

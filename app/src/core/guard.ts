@@ -16,7 +16,7 @@
 // never marked safe.
 //
 // After a combined sync (§7.9) the agents' new messages are screened together
-// (§16.8): one batch for all of them, split at the same size, paid as the
+// (§18.8): one batch for all of them, split at the same size, paid as the
 // first agent. Each agent keeps its own rooms' settings and its own limit of
 // single checks.
 
@@ -110,7 +110,7 @@ export class MessageGuard {
   }
 
   /**
-   * Screens the new messages of several agents together (§16.8, §16.11): batched across them, paid as the
+   * Screens the new messages of several agents together (§18.8): batched across them, paid as the
    * first. Each agent's own report; a refusal stops the screening for all of them.
    */
   async screenMany(agents: string[]): Promise<Map<string, GuardReport>> {

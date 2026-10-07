@@ -12,7 +12,9 @@ import { Wallets } from '../core/wallets.ts';
 import { Mover } from '../core/move.ts';
 import { Bridger } from '../core/bridge.ts';
 import { withCause } from '../core/cause.ts';
-import { PortalTransport } from '../core/portal.ts';
+import { PortalTransport, type Payer } from '../core/portal.ts';
+import { Alumni, ClubFallback, MAX_INTERVAL, MIN_INTERVAL, type ClubStatus } from '../core/alumni.ts';
+import { TransportError } from '../core/transport.ts';
 import { Core, SYNC, type SyncReport } from '../core/core.ts';
 import { Connections } from '../core/connections.ts';
 import { ToolHost } from '../core/tools.ts';
@@ -76,6 +78,8 @@ export class Services {
   readonly connections: Connections;
   readonly tools: ToolHost;
   readonly transport: PortalTransport;
+  /** The alumni club (SPEC §18.8): pays for every agent while a membership is active. */
+  readonly alumni: Alumni;
   readonly guard: MessageGuard;
   readonly oauth: OAuth;
   readonly runner: Runner;
@@ -196,11 +200,16 @@ export class Services {
 
   readonly version: string;
 
-  constructor({ dbPath, masterKey, version, changed, catalog = new Catalog(), notify = () => {}, notifyText = () => {}, install = 'dev' }: {
+  constructor({ dbPath, masterKey, version, changed, catalog = new Catalog(), notify = () => {}, notifyText = () => {}, install = 'dev', alumniUrl, devAlumniToggle }: {
     dbPath: string; masterKey: Uint8Array; version: string; changed: () => void; catalog?: Catalog; notify?: Notify;
     /** A plain system notification (a deposit arrived, §16.9.2). */
     notifyText?: (title: string, body: string) => void; install?: InstallKind;
+    /** The alumni club's address (tests use a stand-in). */
+    alumniUrl?: string;
+    /** A development run (Electron, not packaged): the membership applies only with Alumni testing on. Never set in a release. */
+    devAlumniToggle?: boolean;
   }) {
+    this.devAlumniToggle = !!devAlumniToggle;
     this.#notify = notify;
     this.#notifyText = notifyText;
     this.#changed = changed;
@@ -211,9 +220,26 @@ export class Services {
     this.wallets = new Wallets({ db: this.db, vault: this.vault, catalog: this.catalog });
     this.mover = new Mover({ wallets: this.wallets, db: this.db });
     this.bridger = new Bridger({ wallets: this.wallets, db: this.db, mover: this.mover });
-    this.transport = new PortalTransport({ catalog: this.catalog, wallets: this.wallets });
+    // A membership starting or ending changes the receive interval in force (§18.8).
+    this.alumni = new Alumni({
+      db: this.db, vault: this.vault, catalog: this.catalog, changed: () => { this.#reschedule(); this.#changed(); }, ...(alumniUrl && { base: alumniUrl }),
+      enabled: () => this.alumniTesting(),
+    });
+    // While a membership is active the club signs; at its cap, or when it cannot be reached, the
+    // agent's own wallet pays only if the person turned the fallback on (§18.8).
+    const payer: Payer = async (req) => {
+      if (!this.alumni.active()) return this.wallets.authorize(req);
+      try {
+        return await this.alumni.authorize(req);
+      } catch (err) {
+        if (!(err instanceof ClubFallback)) throw err;
+        if (this.alumni.fallback()) return this.wallets.authorize(req);
+        throw new TransportError('refused', `${err.message} Your person can let their own wallet pay past the club's allowance, in Settings under Meadow v1 alumni.`, { code: `club_${err.code}` });
+      }
+    };
+    this.transport = new PortalTransport({ catalog: this.catalog, wallets: this.wallets, payer });
     const guardSettings = () => {
-      const s = this.settings();
+      const s = this.effectiveSettings();
       return { public: s.guardPublic, private: s.guardPrivate, perSyncLimit: s.guardLimit };
     };
     this.guard = new MessageGuard({
@@ -239,14 +265,18 @@ export class Services {
       },
       onReceived: (agent, what) => this.#received(agent, what),
       afterSync: async (agent, report) => this.#afterSync(agent, report, await this.guard.screenNew(agent)),
-      // After a combined sync, MessageGuard screens every agent's new messages in one check (§16.8, §16.11).
+      // After a combined sync, MessageGuard screens every agent's new messages in one check (§18.8).
       afterSyncMany: async (reports) => {
         const screened = await this.guard.screenMany([...reports.keys()]);
         for (const [agent, report] of reports) await this.#afterSync(agent, report, screened.get(agent)!);
       },
     });
     this.connections = new Connections({ db: this.db, vault: this.vault });
-    this.tools = new ToolHost({ core: this.core, wallets: this.wallets, catalog: this.catalog, guard: guardSettings, diagnostics: this.diagnostics, activity: this.activity, notes: this.notes, freshness: (agent) => this.freshness(agent) });
+    this.tools = new ToolHost({
+      core: this.core, wallets: this.wallets, catalog: this.catalog, guard: guardSettings, diagnostics: this.diagnostics, activity: this.activity, notes: this.notes,
+      club: () => ((st) => (st ? { capUsd: st.daily_cap_usd, allowanceLeftUsd: this.alumni.allowanceLeft() } : null))(this.alumni.settings()),
+      freshness: (agent) => this.freshness(agent),
+    });
     this.oauth = new OAuth({ db: this.db, diagnostics: this.diagnostics });
     this.runner = new Runner({ db: this.db, vault: this.vault, host: this.tools });
     // Each change of the tunnel's state is recorded, with its error or address, and so is
@@ -356,6 +386,22 @@ export class Services {
     return { ...DEFAULT_SETTINGS, ...stored, perCallMaxUsd: this.wallets.perCallMaxUsd() };
   }
 
+  /**
+   * The settings in force: the person's, with the alumni club's overrides while a membership is
+   * active (§18.8): the tier's receive interval, and MessageGuard for public rooms on the tiers that
+   * include it. Private-room MessageGuard stays the person's on those tiers; on a tier without
+   * MessageGuard it is off, since the club does not pay for screening. The person's own values are
+   * kept, and are in force again when the membership ends.
+   */
+  effectiveSettings(): Settings {
+    const own = this.settings();
+    // Whoever set it (the window or the club), the interval stays within what Settings offers (security review A1).
+    const s = { ...own, syncMinutes: Number.isSafeInteger(own.syncMinutes) ? Math.min(Math.max(own.syncMinutes, MIN_INTERVAL), MAX_INTERVAL) : 15 };
+    const club = this.alumni.settings();
+    if (!club) return s;
+    return { ...s, syncMinutes: club.receive_interval_min, guardPublic: club.messageguard, guardPrivate: club.messageguard && s.guardPrivate };
+  }
+
   setSettings(changes: Partial<Settings>): Settings {
     const { perCallMaxUsd, ...rest } = { ...this.settings(), ...changes };
     if (changes.perCallMaxUsd !== undefined) this.wallets.setPerCallMax(changes.perCallMaxUsd);
@@ -394,20 +440,23 @@ export class Services {
     this.#changed();
   }
 
-  /** Background receiving (§16.8): every agent that is registered and has a wallet, on the interval in Settings. */
+  /** Background receiving (§16.8): every agent that is registered and has a wallet, on the interval in force. */
   schedule() {
     if (this.#timer) clearInterval(this.#timer);
     this.#timer = null;
-    const s = this.settings();
+    const s = this.effectiveSettings();
+    this.#scheduled = s.syncEnabled ? s.syncMinutes : null;
     // Once a day, free: USDC sent to a wallet on the wrong network (§16.9.2); first a minute after start.
     if (!this.#daily) {
+      // The alumni club's status on start, then with the syncs once a day (§18.8).
+      setTimeout(() => void this.refreshAlumni().catch(() => {}), 5_000).unref();
       setTimeout(() => void this.checkElsewhere().catch(() => {}), 60_000).unref();
       this.#daily = setInterval(() => void this.checkElsewhere({ force: true }).catch(() => {}), 24 * 3600 * 1000);
       this.#daily.unref();
     }
     if (!s.syncEnabled) return;
     // Looks once a minute and syncs only the groups that are due (§16.8): a sync the AI, a write, or
-    // Sync Now just made is never repeated. A tick while the last one still runs is skipped.
+    // Sync Now just made is never repeated. A tick while the last one still runs is skipped (security review A1).
     this.#timer = setInterval(() => {
       if (this.#background) return;
       this.#background = true;
@@ -418,14 +467,59 @@ export class Services {
   /** A background receive is running. */
   #background = false;
 
-  /** When background receiving last tried each group (by its first agent), success or not. */
+  /** The interval background receiving runs on, once scheduled; null when it is off. */
+  #scheduled: number | null | undefined = undefined;
+
+  /** Schedules again when the interval in force changed (a membership began or ended). */
+  #reschedule() {
+    if (this.#scheduled === undefined) return;
+    const s = this.effectiveSettings();
+    if ((s.syncEnabled ? s.syncMinutes : null) !== this.#scheduled) this.schedule();
+  }
+
+  /** Asks the alumni club for the membership's status, and tells the person when it ends (§18.8). */
+  /** A development run's switch for the membership (the owner, 2026-10-07): set only from Settings → Developer. */
+  readonly devAlumniToggle: boolean;
+
+  /** Whether the alumni membership may apply: always in a release; in a development run, only with Alumni testing on (off by default). */
+  alumniTesting(): boolean {
+    return !this.devAlumniToggle || (this.db.prepare('SELECT value FROM meta WHERE key = ?').get('dev_alumni_testing') as any)?.value === '1';
+  }
+
+  setAlumniTesting(on: boolean) {
+    if (!this.devAlumniToggle) throw new Error('Alumni testing exists only in a development run.');
+    this.db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run('dev_alumni_testing', on ? '1' : '0');
+    // The membership's settings (receive interval, MessageGuard) start or stop applying.
+    this.#reschedule();
+    this.#changed();
+    if (on) void this.refreshAlumni().catch(() => {});
+  }
+
+  async refreshAlumni(): Promise<ClubStatus | null> {
+    if (!this.alumniTesting()) return null;
+    const was = this.alumni.active();
+    const status = await this.alumni.refresh();
+    if (was && !this.alumni.active()) {
+      this.#notifyText('Your alumni membership has ended', 'Your agents\' own wallets pay for their calls again.');
+    }
+    return status;
+  }
+
+  /** When background receiving last tried each group (by its agents), success or not. */
   #attempted = new Map<string, number>();
 
-  /** The agents that sync together (§7.9): each wallet's registered agents, up to 8 a call. */
+  /**
+   * The agents that sync together (§7.9), up to 8 a call: the club pays for every agent; otherwise
+   * each wallet pays for its own agents, so no wallet pays for another's. With the fallback on, a
+   * club refusal makes the first agent's own wallet pay for the call, so then the agents are grouped
+   * by their own wallets too (security review A5).
+   */
   #syncGroups(): string[][] {
+    const club = this.alumni.active();
+    const byOwn = !club || this.alumni.fallback();
     const groups = new Map<string, string[]>();
-    for (const a of this.core.agents().filter((x) => x.registered && this.wallets.walletOf(x.id))) {
-      const payer = this.wallets.walletOf(a.id)!;
+    for (const a of this.core.agents().filter((x) => x.registered && (club || this.wallets.walletOf(x.id)))) {
+      const payer = byOwn ? `${club ? 'alumni:' : ''}${this.wallets.walletOf(a.id) ?? 'none'}` : 'alumni';
       groups.set(payer, [...(groups.get(payer) ?? []), a.id]);
     }
     const out: string[][] = [];
@@ -434,13 +528,13 @@ export class Services {
   }
 
   /**
-   * When background receiving next syncs a group: a full interval after the least recently synced
-   * of its agents last synced successfully, by any path, and after its last background try.
+   * When background receiving next syncs a group: a full interval (in force, §18.8) after the least
+   * recently synced of its agents last synced successfully, by any path, and after its last background try.
    */
   #dueAt(group: string[]): number {
     const oldest = Math.min(...group.map((a) => this.lastSyncOk(a) ?? 0));
     const tried = Math.max(...group.map((a) => this.#attempted.get(a) ?? 0));
-    return Math.max(oldest, tried) + this.settings().syncMinutes * 60_000;
+    return Math.max(oldest, tried) + this.effectiveSettings().syncMinutes * 60_000;
   }
 
   /**
@@ -449,16 +543,24 @@ export class Services {
    */
   freshness(agent: string, now = Date.now()): { lastOk: number | null; nextBackground: number | null } {
     const lastOk = this.lastSyncOk(agent);
-    if (!this.settings().syncEnabled) return { lastOk, nextBackground: null };
+    if (!this.effectiveSettings().syncEnabled) return { lastOk, nextBackground: null };
     const group = this.#syncGroups().find((g) => g.includes(agent)) ?? [agent];
     return { lastOk, nextBackground: Math.max(this.#dueAt(group), now) + BACKGROUND_TICK_MS };
   }
 
   /**
-   * Syncs every agent with a wallet; `cause` is what its payments are recorded as (§16.9.4).
-   * `due`: background receiving, which syncs only the groups whose time has come (§16.8).
+   * Syncs every agent that something pays for: its wallet, or the alumni club; `cause` is what its
+   * payments are recorded as (§16.9.4). `due`: background receiving, which syncs only the groups whose
+   * time has come (§16.8).
    */
   async syncAll(cause: 'background' | 'person' = 'background', { due = false, now = Date.now() }: { due?: boolean; now?: number } = {}): Promise<{ agent: string; ok: boolean; message: string }[]> {
+    if (this.alumni.due()) await this.refreshAlumni().catch(() => {});
+    // A membership can end by its date alone, with nothing said: the interval in force follows.
+    this.#reschedule();
+    const club = this.alumni.active();
+    // At the club's cap, with the agents' own wallets not allowed past it, background receiving
+    // waits until the allowance frees up (§18.8): every call until then would be refused.
+    if (cause === 'background' && club && !this.alumni.fallback() && this.alumni.held()?.code === 'cap') return [];
     const groups = this.#syncGroups().filter((g) => !due || this.#dueAt(g) <= now);
     if (due) for (const g of groups) for (const a of g) this.#attempted.set(a, now);
     const out: { agent: string; ok: boolean; message: string }[] = [];
@@ -466,8 +568,8 @@ export class Services {
       for (const a of groups.flat()) out.push({ agent: a, ...(await withCause(cause, () => this.syncOne(a))) });
       return out;
     }
-    // Combined, always (§7.9, §16.8): each wallet's agents, up to 8 a call, so no wallet pays for
-    // another's. An agent alone on its wallet gets an ordinary sync (Core.syncMany).
+    // Combined, always (§7.9, §16.8): each payer's agents, up to 8 a call (#syncGroups); an agent
+    // alone with its payer gets an ordinary sync (Core.syncMany).
     {
       for (const chunk of groups) {
         const results = await withCause(cause, () => this.core.syncMany(chunk)).catch((err) => new Map(chunk.map((a) => [a, err as Error])));

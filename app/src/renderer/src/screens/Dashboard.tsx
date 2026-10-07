@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { agentsSharePayer, meadow, shortAddress, time, useAction, useCopy, when } from '../lib.tsx';
 import type { ScreenProps } from '../App.tsx';
 import { TopOff } from './Wallets.tsx';
+import { ClubHeldNotice } from './Alumni.tsx';
 
 export function Dashboard({ state, go, balances, reloadBalances }: ScreenProps) {
   const copy = useCopy();
@@ -12,9 +13,11 @@ export function Dashboard({ state, go, balances, reloadBalances }: ScreenProps) 
   const [topOff, setTopOff] = useState<string | null>(null);
   const unread = state.agents.reduce((n, a) => n + a.unread, 0);
   const queued = state.agents.reduce((n, a) => n + a.queued, 0);
-  const syncable = state.agents.filter((a) => a.registered && a.walletId);
+  // While an alumni membership is active the club pays for every agent (§18.8).
+  const club = state.alumni.active ? state.alumni : null;
+  const syncable = state.agents.filter((a) => a.registered && (club || a.walletId));
 
-  // Every agent at once; a wallet's agents go together, up to 8 a call (§16.8).
+  // Every agent at once; agents one payer pays for go together, up to 8 a call (§16.8).
   const combined = agentsSharePayer(state);
   const syncNow = () => run(async () => {
     const results = await meadow.syncAllNow();
@@ -36,12 +39,20 @@ export function Dashboard({ state, go, balances, reloadBalances }: ScreenProps) 
         <div className="card stat">
           <div className="label">Check the network now</div>
           <p className="small muted" style={{ margin: '.25rem 0 .6rem' }}>
-            About {state.pricePerCallUsd ?? 'the portal\'s price'} {combined ? 'for up to 8 agents together' : 'per agent'}, {combined ? 'paid from their wallet' : 'paid from its wallet'}.
+            About {state.pricePerCallUsd ?? 'the portal\'s price'} {combined ? 'for up to 8 agents together' : 'per agent'}, {club ? 'paid by the alumni club' : combined ? 'paid from their wallet' : 'paid from its wallet'}.
           </p>
           <button onClick={syncNow} disabled={busy || !syncable.length}>{busy ? 'Syncing…' : 'Sync Now'}</button>
         </div>
       </div>
       {result && <div className="notice" role="status">{result}</div>}
+      {club && (club.held ? <ClubHeldNotice held={club.held} fallback={club.fallback} /> : (
+        <div className="notice">
+          <strong>Your alumni club membership pays for your agents' calls.</strong>{' '}
+          {club.callsLeft !== null && club.capCalls !== null ? `${club.callsLeft.toLocaleString('en-US')} of ${club.capCalls.toLocaleString('en-US')} calls left today.`
+            : club.capCalls !== null ? `Up to ${club.capCalls.toLocaleString('en-US')} calls a day.` : 'Up to its daily allowance.'}{' '}
+          <button className="link" onClick={() => go('settings', { open: 'alumni' })}>Membership</button>
+        </div>
+      ))}
       {state.agents.filter((a) => a.held > 0).map((a) => (
         <div key={`held-${a.id}`} className="notice warn">
           <strong>MessageGuard kept {a.held} message{a.held === 1 ? '' : 's'} aside for {a.displayName}.</strong> {a.displayName} has not seen {a.held === 1 ? 'it' : 'them'}. <button className="link" onClick={() => go('inbox')}>Look in the Inbox</button>
