@@ -59,8 +59,8 @@ export interface Authorized {
   wallet: string;
 }
 
-const refuse = (message: string, catalogMismatch = false): never => {
-  throw new TransportError('refused', message, { catalogMismatch });
+const refuse = (code: string, message: string, catalogMismatch = false): never => {
+  throw new TransportError('refused', message, { catalogMismatch, code });
 };
 
 const HEX_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
@@ -246,30 +246,30 @@ export class Wallets {
 
   #evaluate(req: { agent: string | null; serviceId: string; offer: any }) {
     const walletId = this.walletOf(req.agent);
-    if (!walletId) refuse('No wallet pays for this agent yet. Assign one on the Agents screen.');
+    if (!walletId) refuse('no_wallet', 'No wallet pays for this agent yet. Assign one on the Agents screen.');
     const service = this.#catalog.service(req.serviceId);
     const rail = this.#catalog.baseRail(req.serviceId);
-    if (!service || !rail) refuse(`${req.serviceId} is not in the portal's price list with a USDC on Base price, so the app will not pay for it.`, true);
+    if (!service || !rail) refuse('not_in_price_list', `${req.serviceId} is not in the portal's price list with a USDC on Base price, so the app will not pay for it.`, true);
     // The price list may not change the token, the chain, or the unit limits are counted in.
     if (!sameAddress(rail!.tokenAddress, USDC.address) || rail!.tokenDecimals !== USDC.decimals || rail!.chainId !== BASE.chainId) {
-      refuse(`The portal's price list describes ${req.serviceId}'s payment differently from USDC on Base, so the app will not pay for it.`, true);
+      refuse('payment_terms_mismatch', `The portal's price list describes ${req.serviceId}'s payment differently from USDC on Base, so the app will not pay for it.`, true);
     }
 
     // Terms on the app's rail, in the exact scheme, to the catalog's asset and payee (checks 2).
     const all = parseTerms(req.offer);
     const terms = all.find((t) => t.scheme === 'exact' && t.network === BASE.network && sameAddress(t.asset, USDC.address));
-    if (!terms) return refuse('The portal did not offer a way to pay in USDC on Base, so nothing was paid.', true);
-    if (!sameAddress(terms.payTo, rail!.payToAddress)) refuse('The portal asked to pay an address its price list does not show, so nothing was paid.', true);
+    if (!terms) return refuse('payment_terms_mismatch', 'The portal did not offer a way to pay in USDC on Base, so nothing was paid.', true);
+    if (!sameAddress(terms.payTo, rail!.payToAddress)) refuse('payment_terms_mismatch', 'The portal asked to pay an address its price list does not show, so nothing was paid.', true);
 
-    if (terms.extra?.name !== USDC.name || terms.extra?.version !== USDC.version) refuse('The portal asked to sign for a token that is not USDC, so nothing was paid.', true);
+    if (terms.extra?.name !== USDC.name || terms.extra?.version !== USDC.version) refuse('payment_terms_mismatch', 'The portal asked to sign for a token that is not USDC, so nothing was paid.', true);
 
     // The amount (check 3).
     const decimals = USDC.decimals;
     const amount = BigInt(terms.amount);
     const price = toAtomic(service!.priceUsd, decimals);
-    if (amount > price) refuse(`The portal asked for ${formatUsd(amount, decimals)}, more than its listed price of ${formatUsd(price, decimals)}, so nothing was paid.`, true);
+    if (amount > price) refuse('price_above_list', `The portal asked for ${formatUsd(amount, decimals)}, more than its listed price of ${formatUsd(price, decimals)}, so nothing was paid.`, true);
     const perCall = toAtomic(this.perCallMaxUsd(), decimals);
-    if (amount > perCall) refuse(`This call costs ${formatUsd(amount, decimals)}, more than the most you allow per call (${formatUsd(perCall, decimals)}). You can change that in Settings.`);
+    if (amount > perCall) refuse('per_call_max', `This call costs ${formatUsd(amount, decimals)}, more than the most you allow per call (${formatUsd(perCall, decimals)}). You can change that in Settings.`);
 
     // The budget (check 4). Payments count from signing; authorize() runs this and records the payment in one step.
     {
@@ -288,7 +288,7 @@ export class Wallets {
             break;
           }
         }
-        refuse(amount > budget
+        refuse(amount > budget ? 'budget_below_one_call' : 'budget_spent', amount > budget
           ? `The daily budget of the wallet "${w.name}" (${formatUsd(budget, decimals)}) is less than one call (${formatUsd(amount, decimals)}). You can raise it on the Wallets screen.`
           : `The daily budget of the wallet "${w.name}" is spent: ${formatUsd(spent, decimals)} of ${formatUsd(budget, decimals)} in the last 24 hours. Enough frees up at ${time(frees!)}.`);
       }

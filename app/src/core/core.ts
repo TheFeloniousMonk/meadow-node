@@ -84,6 +84,9 @@ export const AUTHORS = {
 
 /** A write that cannot start within this (another network call still running) is refused, never sent late (§16.8). */
 export const WRITE_WAIT_MS = 20_000;
+// send's client_id (§16.7.4): the characters it may use, and how long a key is remembered.
+const CLIENT_ID = /^[A-Za-z0-9._:-]{1,128}$/;
+export const SEND_KEY_MS = 30 * 24 * 3600_000;
 /** What #exclusive returns for work given up before it started. */
 const SKIPPED = Symbol('skipped');
 
@@ -529,7 +532,7 @@ export class Core {
    * were written, and the caller is told so (an AI that saw an error might send it twice).
    * A write that cannot start within WRITE_WAIT_MS is refused and never sent.
    */
-  async #write<T>(agent: string, build: (ctx: Ctx) => T | Promise<T>): Promise<{ result: T; sent: boolean; refused?: string; offline?: string; held?: string; report?: SyncReport }> {
+  async #write<T>(agent: string, build: (ctx: Ctx) => T | Promise<T>): Promise<{ result: T; sent: boolean; refused?: string; refusedCode?: string; offline?: string; held?: string; report?: SyncReport }> {
     return this.#exclusive(agent, async () => {
       const ctx = this.#load(agent);
       const before = new Set(this.outbox(agent).map((e) => e.id));
@@ -543,7 +546,7 @@ export class Core {
         if (held) return { result, sent: false, held: left.get(held) ?? 'missing', report };
         return { result, sent: true, report };
       } catch (err) {
-        if (err instanceof TransportError && err.kind === 'refused') return { result, sent: false, refused: err.message };
+        if (err instanceof TransportError && err.kind === 'refused') return { result, sent: false, refused: err.message, ...(err.code && { refusedCode: err.code }) };
         if (err instanceof TransportError && err.kind === 'network') return { result, sent: false, offline: err.message };
         throw err;
       }
@@ -731,6 +734,18 @@ export class Core {
     }));
   }
 
+  /**
+   * The message a client_id already named (§16.7.4), as send answers it: `sent` once it has left the
+   * outbox, else its queued state. Null when the key is new, or older than 30 days.
+   */
+  #sendKey(agent: string, clientId: string, roomId: string): { result: string; sent: boolean; duplicate?: true; refused?: string; refusedCode?: string; offline?: string; held?: string; report?: SyncReport } | null {
+    const k: any = this.#db.prepare('SELECT message, room, at FROM send_keys WHERE agent = ? AND client_id = ?').get(agent, clientId);
+    if (!k || k.at < this.#now() - SEND_KEY_MS) return null;
+    if (k.room !== roomId) throw new ActionError('client_id_used', 'That client_id was already used for a message in another room. Choose a new one for a new message. Nothing was sent or charged.');
+    const queued: any = this.#db.prepare('SELECT reason FROM outbox WHERE agent = ? AND id = ?').get(agent, k.message);
+    return queued ? { result: k.message, sent: false, duplicate: true, held: queued.reason ?? 'queued' } : { result: k.message, sent: true, duplicate: true };
+  }
+
   /** What the room card and the tools say about a room (§16.24); null for a room this agent holds no events of. */
   roomInfo(agent: string, roomId: string): RoomInfo | null {
     const ctx = this.#load(agent);
@@ -825,7 +840,15 @@ export class Core {
   }
 
   /** Posts a message (§5.3, §8.7). In a private room or DM it is encrypted, sharing a new session first when §8.4 says so. */
-  async send(agent: string, roomId: string, text: string, opts: { replyTo?: string; report?: Record<string, unknown>; mentions?: string[] } = {}) {
+  async send(agent: string, roomId: string, text: string, opts: { replyTo?: string; report?: Record<string, unknown>; mentions?: string[]; clientId?: string } = {}) {
+    // An idempotency key (§16.7.4): a repeat answers the first message, writing and paying nothing.
+    if (opts.clientId !== undefined) {
+      if (typeof opts.clientId !== 'string' || !CLIENT_ID.test(opts.clientId)) {
+        throw new ActionError('bad_request', 'client_id is 1 to 128 letters, digits, or . _ : - characters. Nothing was sent or charged.');
+      }
+      const prior = this.#sendKey(agent, opts.clientId, roomId);
+      if (prior) return prior;
+    }
     // A reply names a message this agent holds in this same room (a tester replied to one from
     // another room, and to a made-up ID, 2026-10-02). Checked here, free, before anything is built.
     if (opts.replyTo !== undefined) {
@@ -833,6 +856,11 @@ export class Core {
       if (!target) throw new ActionError('unknown_reply', 'reply_to must be a message this agent has read in this room, and that ID is not one it holds. Nothing was sent or charged.');
       if (target.room !== roomId) throw new ActionError('unknown_reply', 'reply_to names a message in another room. A reply can only answer a message in the same room. Nothing was sent or charged.');
     }
+    const keyed = (id: string) => {
+      if (opts.clientId === undefined) return;
+      this.#db.prepare('DELETE FROM send_keys WHERE agent = ? AND at < ?').run(agent, this.#now() - SEND_KEY_MS);
+      this.#db.prepare('INSERT OR IGNORE INTO send_keys (agent, client_id, message, room, at) VALUES (?, ?, ?, ?, ?)').run(agent, opts.clientId, id, roomId, this.#now());
+    };
     return this.#write(agent, async (ctx) => {
       const room = this.#knownRoom(ctx, roomId);
       const type = room.create!.header.data.type;
@@ -843,6 +871,7 @@ export class Core {
           const mentions = [...new Set(opts.mentions ?? [])].filter((id) => /^a_[A-Za-z0-9_-]{43}$/.test(id) && id !== ctx.id).slice(0, MAX_MENTIONS);
           const ev = this.#build(ctx, room, 'msg.post', { content: JSON.stringify(body), ...(mentions.length && { mentions }) });
           this.#storeMessage(ctx, ev, { status: 'shown', body }, true);
+          keyed(ev.id);
           return ev.id;
         });
       }
@@ -860,6 +889,7 @@ export class Core {
         const ev = this.#build(ctx, room, 'msg.post', { content: enc.content, commitment: enc.commitment });
         ctx.crypto.recordOwnMessage(roomId, s, enc.index, ev.id);
         this.#storeMessage(ctx, ev, { status: 'shown', body, kf: enc.kf, session: s.gs.sessionId, index: enc.index }, true);
+        keyed(ev.id);
         return ev.id;
       });
     });
