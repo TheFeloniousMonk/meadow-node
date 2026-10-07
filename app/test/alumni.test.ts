@@ -17,6 +17,7 @@ import { TransportError } from '../src/core/transport.ts';
 import { startMockPortal, type MockPortal } from './mock-portal.ts';
 import { freesAt } from '../src/core/alumni.ts';
 import { troubleshoot } from '../src/app/troubleshoot.ts';
+import { createHandlers } from '../src/app/handlers.ts';
 
 const MEMBER_KEY = randomBytes(32);
 const MEMBER = addressOf(MEMBER_KEY);
@@ -206,6 +207,27 @@ test('Join alumni club: the browser hands a one-time code to the app\'s loopback
   assert.deepEqual(club.redeemed, ['code-1']);
   // Listening once: the port is closed now.
   await assert.rejects(fetch(`http://127.0.0.1:${port}/alumni/callback?code=code-1&state=${state}`));
+});
+
+test('Start again replaces a link the browser never finished, keeps its kind, and the replaced link leaves no error (2026-10-07)', async () => {
+  const { s } = await computer();
+  const opened: string[] = [];
+  const handle = createHandlers(s, { execPath: 'x', bridgeScript: 'x', copy: () => {}, openExternal: (u: string) => void opened.push(u), confirmMove: async () => false } as any);
+  const view = async () => ((await handle('state', undefined)) as any).alumni;
+  await handle('alumniLink', { rotate: true });
+  assert.equal((await view()).linking, true);
+  await handle('alumniLink', { rotate: false, again: true });
+  await new Promise((r) => setTimeout(r, 20)); // the first link's failure settles
+  assert.deepEqual(await view().then((v: any) => [v.linking, v.linkError]), [true, null], 'still waiting on the new link, with no error from the old one');
+  assert.equal(opened.length, 2);
+  assert.equal(new URL(opened[1]).searchParams.get('rotate'), '1', 'the same kind of link: Get a new key');
+  await assert.rejects(fetch(`http://127.0.0.1:${new URL(opened[0]).searchParams.get('port')}/alumni/callback?code=x&state=y`), 'the first listener is closed');
+  // The new link finishes as usual.
+  const u = new URL(opened[1]);
+  club.codes.set('code-again', u.searchParams.get('challenge')!);
+  await fetch(`http://127.0.0.1:${u.searchParams.get('port')}/alumni/callback?code=code-again&state=${u.searchParams.get('state')}`);
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(await view().then((v: any) => [v.linking, v.linkError, v.linked]), [false, null, true]);
 });
 
 test('cancel asks the club and refreshes; the membership stays active to the end of the paid period', async () => {

@@ -77,7 +77,9 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
   // Each Move to Base in progress or last finished (§16.9.3), by wallet, network, and kind.
   const bridges = new Map<string, BridgeStateView>();
   // The alumni club's browser link in progress, and the last one's error (§18.6).
-  let alumniLinking: { busy: boolean; error: string | null } = { busy: false, error: null };
+  // `rotate` is what the link asked for, so Start again opens the same kind; `gen` tells the current link from one it replaced.
+  let alumniLinking: { busy: boolean; error: string | null; rotate: boolean } = { busy: false, error: null, rotate: false };
+  let alumniLinkGen = 0;
   const alumniView = (): AlumniView => {
     const c = s.alumni.cached();
     const st = c?.status;
@@ -540,16 +542,20 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
 
   const asyncHandlers: Partial<Record<keyof Api, (a: any) => Promise<unknown>>> = {
     // The alumni club (§18.8).
-    alumniLink: async ({ rotate }) => {
-      const { url, done } = await s.alumni.startLink(!!rotate);
-      alumniLinking = { busy: true, error: null };
+    // Start again (a link the browser never finished, 2026-10-07) is this with `again`: the same kind of link as the one waiting.
+    alumniLink: async ({ rotate, again }) => {
+      const wantRotate = again ? alumniLinking.rotate : !!rotate;
+      const { url, done } = await s.alumni.startLink(wantRotate);
+      const gen = ++alumniLinkGen;
+      alumniLinking = { busy: true, error: null, rotate: wantRotate };
       s.changedNow();
       done.then(
         () => {
-          alumniLinking = { busy: false, error: null };
-          for (const a of s.core.agents()) s.activity.add(a.id, 'you', 'settings', rotate ? 'Got a new alumni membership key.' : 'Connected the alumni club membership.');
+          if (gen !== alumniLinkGen) return;
+          alumniLinking = { busy: false, error: null, rotate: false };
+          for (const a of s.core.agents()) s.activity.add(a.id, 'you', 'settings', wantRotate ? 'Got a new alumni membership key.' : 'Connected the alumni club membership.');
         },
-        (err) => { alumniLinking = { busy: false, error: err.message }; },
+        (err) => { if (gen === alumniLinkGen) alumniLinking = { busy: false, error: err.message, rotate: false }; },
       ).finally(() => s.changedNow());
       env.openExternal(url);
       return { opened: true };

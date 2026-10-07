@@ -462,7 +462,7 @@ export interface Api {
   copy(a: { text: string }): { ok: true };
   openExternal(a: { url: string }): { ok: boolean };
   /** Join alumni club, or Get a new key: opens the club's site, which hands the key back to the app (§18.6). */
-  alumniLink(a: { rotate: boolean }): { opened: true };
+  alumniLink(a: { rotate: boolean; again?: boolean }): { opened: true };
   /** Validate alumni membership: a key pasted from the club's site. */
   alumniValidate(a: { key: string }): { ok: true } | { ok: false; error: string };
   alumniRefresh(): { ok: boolean };

@@ -30,7 +30,12 @@ export function AlumniSection({ state, refresh }: { state: AppState; refresh: ()
       <h2>Meadow v1 alumni</h2>
       {error && <div className="notice warn">{error}</div>}
       {a.linkError && <div className="notice warn">{a.linkError}</div>}
-      {a.linking && <div className="notice">The club's site is open in your browser. Finish there: this page updates by itself when your membership is connected.</div>}
+      {a.linking && (
+        <div className="notice">
+          The club's site is open in your browser. Finish there: this page updates by itself when your membership is connected.{' '}
+          <span className="small">Closed the page, or nothing happened? <button className="link" disabled={busy} onClick={() => run(async () => { await meadow.alumniLink({ rotate: false, again: true }); await refresh(); })}>Start again</button></span>
+        </div>
+      )}
 
       {a.active ? (
         <>
