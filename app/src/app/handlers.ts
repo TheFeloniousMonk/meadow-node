@@ -93,12 +93,21 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       return Number(toAtomic(usd.replace('$', ''), price.decimals) / price.atomic);
     };
     const allowanceLeft = s.alumni.allowanceLeft();
+    // The other tiers, read defensively: shown only, never applied (the club's payer is the gate).
+    const usd = /^\d+(\.\d{1,6})?$/;
+    const rank = st?.options?.find((o) => o?.tier === st?.tier)?.rank;
+    const canChange = active && st?.can_change === true;
+    const options = !canChange || !Array.isArray(st?.options) || typeof rank !== 'number' ? [] : st.options
+      .filter((o) => o && typeof o.tier === 'string' && typeof o.name === 'string' && typeof o.rank === 'number' && usd.test(String(o.price_usd_month)) && usd.test(String(o.daily_cap_usd)) && o.tier !== st.tier)
+      .slice(0, 8)
+      .map((o) => ({ tier: o.tier, name: o.name.slice(0, 40), priceMonthUsd: `$${o.price_usd_month.replace(/\.00$/, '')}`, calls: calls(o.daily_cap_usd), messageguard: o.messageguard === true, higher: o.rank > rank }))
+      .sort((x, y) => Number(y.higher) - Number(x.higher)); // upgrades first
     return {
       linked: s.alumni.key() !== null, active,
       tierName: active ? st?.tier_name ?? null : null, paidThrough: st?.paid_through ?? null, cancelled: !!st?.cancelled,
       changesTo: st?.changes_to ?? null, changesOn: st?.changes_on ?? null,
       capUsd: set ? `$${set.daily_cap_usd}` : null, allowanceLeftUsd: allowanceLeft,
-      capCalls: calls(set?.daily_cap_usd), callsLeft: calls(allowanceLeft),
+      capCalls: calls(set?.daily_cap_usd), callsLeft: calls(allowanceLeft), options, canChange,
       messageguard: !!set?.messageguard, ended: !active && st ? st.ended ?? null : null,
       receiveMinutes: set?.receive_interval_min ?? null,
       held: ((h) => h && { code: h.code, text: h.text, until: h.until })(s.alumni.held()),
@@ -539,6 +548,10 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     alumniValidate: undefined as any, // async, below
     alumniRefresh: undefined as any, // async, below
     alumniCancel: undefined as any, // async, below
+    alumniOpenAccount() {
+      env.openExternal(s.alumni.accountUrl());
+      return { opened: true };
+    },
     alumniSetFallback({ on }) {
       s.alumni.setFallback(!!on);
       for (const a of s.core.agents()) s.activity.add(a.id, 'you', 'settings', on ? 'Let the agents\' own wallets pay past the alumni club\'s allowance.' : 'Stopped the agents\' own wallets paying past the alumni club\'s allowance.');

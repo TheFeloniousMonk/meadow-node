@@ -41,7 +41,12 @@ async function startClub() {
         ? { active: true, member: 'Jinx', tier: club.tier, tier_name: club.tier === 'basic' ? 'Basic' : 'Premium', paid_through: '2099-01-01', cancelled: club.cancelled,
           settings: club.tier === 'basic' ? { daily_cap_usd: '0.70', receive_interval_min: 15, messageguard: false, combine_syncs: true } : { daily_cap_usd: '1.50', receive_interval_min: 15, messageguard: true, combine_syncs: true },
           spent_24h_usd: '$0.00', allowance_left_usd: club.allowance ?? (club.tier === 'basic' ? '$0.70' : '$1.50'),
-          payer_address: MEMBER, history: [{ date: '2026-10-02', amount: '50.00', currency: 'USD', tier: 'Premium', status: 'completed' }] }
+          payer_address: MEMBER, history: [{ date: '2026-10-02', amount: '50.00', currency: 'USD', tier: 'Premium', status: 'completed' }],
+          options: [
+            { tier: 'basic', name: 'Basic', rank: 1, price_usd_month: '25.00', daily_cap_usd: '0.70', messageguard: false },
+            { tier: 'premium', name: 'Premium', rank: 2, price_usd_month: '50.00', daily_cap_usd: '1.50', messageguard: true },
+            { tier: 'charter', name: 'Charter supporter', rank: 3, price_usd_month: '100.00', daily_cap_usd: '3.00', messageguard: true },
+          ], can_change: !club.cancelled }
         : { active: false, member: 'Jinx', ended: 'expired', history: [] });
     }
     if (path === 'pay') {
@@ -133,7 +138,8 @@ test('while active, the club pays: recorded under the Alumni club, accepted by t
   assert.equal(st.wallet.balance, 'paid by the alumni club, up to its daily allowance');
   const r: any = (await s.tools.call(agent, 'sync', {}, { via: 'claude' })).data;
   assert.equal(r.cost, '$0.005');
-  assert.match(r.budget_left_today, /^\$1\.4/);
+  assert.ok(r.calls_left_today >= 280 && r.calls_left_today < 300 && r.calls_per_day === 300, 'the club allowance in calls (2026-10-07)');
+  assert.equal(r.budget_left_today, undefined);
   assert.equal(s.tools.spendingSummary(agent, 0, 'person')?.wallet, 'Alumni club');
 });
 
@@ -237,6 +243,12 @@ test("the window shows the allowance in agent calls at the portal's live price, 
   await s.alumni.validate(KEY);
   const a = ((await handle('state', undefined)) as any).alumni;
   assert.deepEqual([a.capCalls, a.callsLeft], [300, 261]); // Premium's $1.50 and $1.305 at $0.005 a call
+  // The other tiers, in calls, an upgrade marked; none once cancelled (a cancelled membership can't change tier).
+  assert.deepEqual(a.options.map((o: any) => [o.name, o.calls, o.priceMonthUsd, o.higher]), [['Charter supporter', 600, '$100', true], ['Basic', 140, '$25', false]]);
+  club.cancelled = true;
+  await s.refreshAlumni();
+  assert.deepEqual(((await handle('state', undefined)) as any).alumni.options, []);
+  club.cancelled = false;
 });
 
 test('cancel asks the club and refreshes; the membership stays active to the end of the paid period', async () => {
@@ -279,7 +291,7 @@ test('on Basic, MessageGuard is off for every room while active, since the club 
   assert.equal(s.effectiveSettings().guardPrivate, false);
   const st: any = (await s.tools.call(agent, 'status', {}, { via: 'claude' })).data;
   assert.equal(st.messageguard, 'off');
-  assert.equal(st.wallet.budget_left_today, '$0.20', "the allowance is the club's own count");
+  assert.equal(st.wallet.calls_left_today, 40, "the allowance is the club's own count, in calls: $0.20 at $0.005");
 });
 
 test("at the cap without the fallback, background receiving waits until the allowance frees up; the person's Sync Now still asks", async () => {

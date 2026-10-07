@@ -63,6 +63,12 @@ async function startStandInClub(tier: 'basic' | 'premium') {
       return send({ active: true, member: 'Harness', tier, tier_name: tier === 'basic' ? 'Basic' : 'Premium', paid_through: '2099-01-01', cancelled: false,
         settings: { daily_cap_usd: capUsd.toFixed(2), receive_interval_min: 15, messageguard: tier !== 'basic', combine_syncs: true },
         spent_24h_usd: `$${spent.toFixed(3)}`, allowance_left_usd: left(), payer_address: from,
+        // The membership options, as the club sends them (2026-10-07).
+        options: [
+          { tier: 'basic', name: 'Basic', rank: 1, price_usd_month: '25.00', daily_cap_usd: '0.70', messageguard: false },
+          { tier: 'premium', name: 'Premium', rank: 2, price_usd_month: '50.00', daily_cap_usd: '1.50', messageguard: true },
+          { tier: 'charter', name: 'Charter supporter', rank: 3, price_usd_month: '100.00', daily_cap_usd: '3.00', messageguard: true },
+        ], can_change: true,
         history: [{ date: '2026-10-02', amount: tier === 'basic' ? '25.00' : '50.00', currency: 'USD', tier: tier === 'basic' ? 'Basic' : 'Premium', status: 'completed' }] });
     }
     if (path === 'pay') {

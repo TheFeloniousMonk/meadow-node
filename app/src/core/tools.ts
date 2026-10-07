@@ -452,6 +452,20 @@ export class ToolHost {
     return p ? formatUsd(p.atomic, p.decimals) : null;
   }
 
+  /** An amount in Meadow calls at the live price (the club's allowance is said in calls, 2026-10-07); null while the price is unknown. */
+  #calls(atomic: bigint): number | null {
+    const p = this.catalog.priceAtomic('meadow');
+    return p && p.atomic > 0n ? Number((atomic < 0n ? 0n : atomic) / p.atomic) : null;
+  }
+
+  /** What is left today, for the AI: calls for the alumni club, dollars for the agent's own wallet. */
+  #leftToday(wallet: string, left: bigint, cap: bigint): Json {
+    const n = wallet === ALUMNI_WALLET ? this.#calls(left) : null;
+    return n !== null
+      ? { calls_left_today: n, calls_per_day: this.#calls(cap) }
+      : { budget_left_today: formatUsd(left < 0n ? 0n : left) };
+  }
+
   /** Reads the catalog if it is missing or a day old, so prices in instructions and tool lists are live. */
   async prepare(): Promise<void> {
     await this.catalog.ensureFresh().catch(() => {});
@@ -852,7 +866,7 @@ export class ToolHost {
     return {
       cost: formatUsd(ownCost), paid_calls: own.length,
       ...(other.length && { other_spending_since_your_last_call: this.#spending(agent ?? '', other) }),
-      budget_left_today: formatUsd(left < 0n ? 0n : left),
+      ...this.#leftToday(wallet, left, toAtomic(w.dailyBudgetUsd, 6)),
     };
   }
 
@@ -1059,8 +1073,8 @@ export class ToolHost {
       rooms: joined,
       invites,
       wallet: w ? {
-        ...(w.id === ALUMNI_WALLET && { name: ALUMNI_WALLET_NAME, paid_by: "Your person's alumni club membership pays for your calls, up to a daily allowance." }),
-        balance, budget_left_today: formatUsd(maxZero(toAtomic(w.dailyBudgetUsd, 6) - w.spent24h)),
+        ...(w.id === ALUMNI_WALLET && { name: ALUMNI_WALLET_NAME, paid_by: "Your person's alumni club membership pays for your calls, up to a daily number of calls shared by all their agents." }),
+        balance, ...this.#leftToday(w.id, toAtomic(w.dailyBudgetUsd, 6) - w.spent24h, toAtomic(w.dailyBudgetUsd, 6)),
         // The whole wallet's last 24 hours, by cause: other agents and background receiving share it (§16.9.4).
         ...((rows) => rows.length ? { spent_last_24h: this.#spending(agent, rows, 'ai') } : {})(this.wallets.paymentsBetween(w.id, Date.now() - 24 * 3600 * 1000, Date.now())),
       } : 'none assigned',

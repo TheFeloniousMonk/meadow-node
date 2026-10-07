@@ -297,6 +297,13 @@ export interface AlumniView {
   /** The allowance in agent calls, at the portal's live price; null while the price is unknown. */
   capCalls: number | null;
   callsLeft: number | null;
+  /**
+   * The other tiers the member can move to (2026-10-07), with their daily calls at the live price.
+   * Empty while a change is not possible (a cancelled membership) or the club did not say.
+   */
+  options: { tier: string; name: string; priceMonthUsd: string; calls: number | null; messageguard: boolean; higher: boolean }[];
+  /** The tier can change now: not once cancelled. */
+  canChange: boolean;
   messageguard: boolean;
   /** The tier's background receive interval, in force while active (§18.8). */
   receiveMinutes: number | null;
@@ -470,6 +477,8 @@ export interface Api {
   alumniValidate(a: { key: string }): { ok: true } | { ok: false; error: string };
   alumniRefresh(): { ok: boolean };
   alumniCancel(): { ok: true; runsUntil: string | null } | { ok: false; error: string };
+  /** Opens the club's account page in the browser, where an upgrade or other change is made with PayPal. */
+  alumniOpenAccount(): { opened: true };
   alumniSetFallback(a: { on: boolean }): { ok: true };
 }
 
@@ -478,7 +487,7 @@ export const CHANNELS: Channel[] = [
   'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'claudeRunning', 'installUpdate', 'disconnectClaude', 'localInterface', 'rotateToken',
   'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'movePlan', 'moveStart', 'moveStatus', 'bridgePlan', 'bridgeStart', 'bridgeStatus', 'setBudget', 'setDiscoverable', 'dismissUnlistedNotice', 'walletQr', 'syncNow', 'syncAllNow', 'rooms', 'messages', 'roomCard', 'hideMessage', 'hideAuthor', 'unhideAll', 'trustSender', 'setSettings',
   'guardCheck', 'guardDecide', 'backup', 'backupChanges', 'setMay', 'setRoomSettings', 'testConnection', 'diagnosticsText', 'diagnosticsSave', 'activity', 'activitySpending', 'activitySave', 'notes', 'setAnchor', 'setNote', 'removeNote', 'keepNote', 'notesSeen', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'restartTunnel', 'troubleshootRun', 'checkElsewhere', 'enterChatgptCode', 'revokeClient', 'setRunner',
-  'copy', 'openExternal', 'alumniLink', 'alumniValidate', 'alumniRefresh', 'alumniCancel', 'alumniSetFallback',
+  'copy', 'openExternal', 'alumniLink', 'alumniValidate', 'alumniRefresh', 'alumniCancel', 'alumniOpenAccount', 'alumniSetFallback',
 ];
 
 /** Links the window may open in the browser. */

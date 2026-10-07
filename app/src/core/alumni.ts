@@ -54,6 +54,10 @@ export interface ClubStatus {
   payer_address?: string | null;
   ended?: string;
   history?: { date: string; amount: string; currency: string; tier: string | null; status: string }[];
+  /** The membership options (2026-10-07): every tier, shown in Settings; the change itself happens on the club's site. */
+  options?: { tier: string; name: string; rank: number; price_usd_month: string; daily_cap_usd: string; messageguard: boolean }[];
+  /** Whether the tier can change now: not once cancelled. */
+  can_change?: boolean;
 }
 
 /** A refusal the club gave that the fallback setting may answer with the agent's own wallet (§18.8). */
@@ -165,6 +169,11 @@ export class Alumni {
   }
 
   /** The allowance left today, as the club last said it ("$1.23"), or null when it said nothing readable. */
+  /** The club's account page, where a member changes tier with PayPal (2026-10-07). */
+  accountUrl(): string {
+    return `${this.#base}/account`;
+  }
+
   allowanceLeft(): string | null {
     const v = this.active() ? this.cached()?.status.allowance_left_usd : null;
     return typeof v === 'string' && /^\$\d+(\.\d{1,6})?$/.test(v) ? v : null;
