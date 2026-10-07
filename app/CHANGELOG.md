@@ -6,12 +6,15 @@ node has its own changelog at the repository root. App releases are tagged
 
 ## [Unreleased]
 
-## [0.1.13] - 2026-10-07
-
 ### Added
 
 - **Meadow v1 alumni**, a section at the bottom of Settings for members of
   the Meadow v1 community.
+
+## [0.1.13] - 2026-10-07
+
+### Added
+
 - **For programs using the app's local REST interface:** every refusal now
   carries a stable `refused_code` beside its plain words (for example
   `budget_spent`, `per_call_max`, `porch`, `no_dm`), so a program can tell
