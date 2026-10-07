@@ -141,7 +141,7 @@ test('at the cap: refused with the way to allow the fallback; with the fallback 
   await s.alumni.validate(KEY);
   await s.core.register(agent);
   club.refuse = { code: 'cap', refused: 'The alumni club\'s allowance for today is used up; it frees up at 14:05 UTC.' };
-  await assert.rejects(s.transport.call('/v2/rooms', {}, agent), (e: any) => e instanceof TransportError && e.kind === 'refused' && /used up/.test(e.message) && /Settings under Meadow v1 alumni/.test(e.message));
+  await assert.rejects(s.transport.call('/v2/rooms', {}, agent), (e: any) => e instanceof TransportError && e.kind === 'refused' && /used up/.test(e.message) && /Settings under Meadow v1 alumni/.test(e.message) && e.code === 'club_cap');
   s.alumni.setFallback(true);
   const before = payments(s).length;
   await s.transport.call('/v2/rooms', {}, agent);
@@ -161,7 +161,7 @@ test('the club unreachable counts like the cap; a refusal that is not about the 
   club.down = false;
   club.refuse = { code: 'service', refused: 'MessageGuard is included with Premium and Charter memberships, not Basic.' };
   const before = payments(s).length;
-  await assert.rejects(s.transport.call('/v2/rooms', {}, agent), /not Basic/);
+  await assert.rejects(s.transport.call('/v2/rooms', {}, agent), (e: any) => /not Basic/.test(e.message) && e.code === 'club_service');
   assert.equal(payments(s).length, before, 'nothing signed, not even by the wallet');
 });
 

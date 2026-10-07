@@ -228,7 +228,7 @@ export class Services {
       } catch (err) {
         if (!(err instanceof ClubFallback)) throw err;
         if (this.alumni.fallback()) return this.wallets.authorize(req);
-        throw new TransportError('refused', `${err.message} Your person can let their own wallet pay past the club's allowance, in Settings under Meadow v1 alumni.`);
+        throw new TransportError('refused', `${err.message} Your person can let their own wallet pay past the club's allowance, in Settings under Meadow v1 alumni.`, { code: `club_${err.code}` });
       }
     };
     this.transport = new PortalTransport({ catalog: this.catalog, wallets: this.wallets, payer });

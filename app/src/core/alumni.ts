@@ -341,11 +341,11 @@ export class Alumni {
     if (!key) throw new ClubFallback('No alumni membership key on this computer.', 'nokey');
     const rail = this.#catalog.baseRail(req.serviceId);
     const service = this.#catalog.service(req.serviceId);
-    if (!rail || !service) throw new TransportError('refused', `${req.serviceId} is not in the portal's price list with a USDC on Base price, so nothing was paid.`, { catalogMismatch: true });
+    if (!rail || !service) throw new TransportError('refused', `${req.serviceId} is not in the portal's price list with a USDC on Base price, so nothing was paid.`, { catalogMismatch: true, code: 'not_in_price_list' });
     const terms = parseTerms(req.offer).find((t) => t.scheme === 'exact' && t.network === BASE.network && sameAddress(t.asset, USDC.address));
     if (!terms || !sameAddress(terms.payTo, rail.payToAddress) || BigInt(terms.amount) > toAtomic(service.priceUsd, USDC.decimals) ||
         terms.extra.name !== USDC.name || terms.extra.version !== USDC.version) {
-      throw new TransportError('refused', 'The portal asked for a payment its price list does not show, so nothing was paid.', { catalogMismatch: true });
+      throw new TransportError('refused', 'The portal asked for a payment its price list does not show, so nothing was paid.', { catalogMismatch: true, code: 'payment_terms_mismatch' });
     }
     let j: any;
     try {
@@ -364,12 +364,12 @@ export class Alumni {
       if (j.code === 'unavailable') this.#setHeld({ code: 'unavailable', text: String(j.refused), until: null, at: this.#now() });
       if (j.code === 'cap' || j.code === 'unavailable' || j.code === 'rate') throw new ClubFallback(j.refused, j.code);
       if (j.code === 'membership_ended' || j.code === 'key') void this.refresh();
-      throw new TransportError('refused', j.refused);
+      throw new TransportError('refused', j.refused, { code: typeof j.code === 'string' && /^[a-z_]{1,40}$/.test(j.code) ? `club_${j.code}` : 'club_refused' });
     }
     const a = j.authorization;
     // What the club signed must be exactly what the portal asked for.
     if (!a || !sameAddress(a.to, terms.payTo) || a.value !== terms.amount || typeof j.signature !== 'string' || !/^0x[0-9a-fA-F]{130}$/.test(j.signature)) {
-      throw new TransportError('refused', 'The alumni club answered with a payment that does not match the portal\'s terms, so it was not used.');
+      throw new TransportError('refused', 'The alumni club answered with a payment that does not match the portal\'s terms, so it was not used.', { code: 'payment_terms_mismatch' });
     }
     const echo: any = {};
     if (req.offer?.resource && typeof req.offer.resource === 'object') echo.resource = req.offer.resource;
