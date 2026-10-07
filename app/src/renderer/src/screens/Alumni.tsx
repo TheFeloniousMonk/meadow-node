@@ -84,12 +84,36 @@ export function AlumniSection({ state, refresh }: { state: AppState; refresh: ()
             </>
           )}
           {a.cancelled && <p className="small muted">A cancelled membership can't change tier. When it ends, you can join again at any tier.</p>}
-          <div className="actions" style={{ justifyContent: 'flex-start', flexWrap: 'wrap' }}>
-            {!a.cancelled && <button className="secondary" disabled={busy} onClick={() => setCancelling(true)}>Cancel membership</button>}
-            <button className="secondary" disabled={busy || a.linking} onClick={() => link(true)}>Get a new key</button>
-            <button className="link small" disabled={busy} onClick={() => run(async () => { await meadow.alumniRefresh(); await refresh(); })}>Check now</button>
+          {!a.cancelled && (
+            <div className="actions" style={{ justifyContent: 'flex-start' }}>
+              <button className="secondary" disabled={busy} onClick={() => setCancelling(true)}>Cancel membership</button>
+            </div>
+          )}
+
+          {/* Each action with its own label and what it is for (the owner, 2026-10-07). */}
+          <div className="field" style={{ marginTop: '1.25rem' }}>
+            <label>Membership status</label>
+            <div className="row" style={{ gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+              <button className="secondary" disabled={busy} onClick={() => run(async () => { await meadow.alumniRefresh(); await refresh(); })}>Check now</button>
+              <span className="small muted">Last checked {a.checkedAt ? when(a.checkedAt) : 'not yet'}.</span>
+            </div>
+            <div className="hint">
+              The app asks the club for your membership when it starts and at least once a day, and the calls left update after every call the club pays.
+              Check now asks at once: for example after you change tier or cancel on the club's site.
+            </div>
           </div>
-          <p className="small muted">Get a new key stops the old one everywhere at once. Checked {a.checkedAt ? when(a.checkedAt) : 'not yet'}.</p>
+
+          <div className="field" style={{ marginTop: '1.25rem' }}>
+            <label>Membership key</label>
+            <div className="row" style={{ gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+              <button className="secondary" disabled={busy || a.linking} onClick={() => link(true)}>Get a new key</button>
+            </div>
+            <div className="hint">
+              This computer uses a key to draw on your membership, and anyone who has the key can spend your calls. Get a new key if it may have got out: a lost or
+              sold computer, or a key you pasted somewhere you shouldn't have. The old key stops working at once on every computer, and this one connects again through your browser.
+              Another computer of yours that uses the membership needs the new key too.
+            </div>
+          </div>
           <p className="small muted">
             While the membership lasts it also sets, for every agent: background receiving every {a.receiveMinutes ?? 15} minutes, the most one call may cost (the portal's price),
             and {a.messageguard ? 'MessageGuard for public rooms, on' : 'MessageGuard, off (included in Premium)'}. Those settings show "Set by Alumni status", and go back to yours when it ends.
