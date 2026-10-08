@@ -236,13 +236,21 @@ function MessageTools({ m, card, me, onCheck, onDecide, onNote, onHide, onTrust 
   const ask = card ? messagePhrases(m, card) : [];
   // A trusted sender's suspicious verdict is a phrase match, shown without a warning (§16.11).
   const calm = g?.verdict === 'suspicious' && m.trusted;
+  // Collapsed by default, one message at a time (the owner, 2026-10-08). What is safety
+  // information or waits on the person stays outside: the verdict, trust, and a held message.
+  const [open, setOpen] = useState(false);
+  const rows = `tools-${m.id}`;
   return (
     <div className="tools" role="group" aria-label="Message tools">
-      <span className="label">Message tools</span>
-      {m.trusted && <span className="pill ok" title="On this computer only. MessageGuard still checks this sender's messages, and still keeps aside one that looks malicious.">Trusted sender</span>}
-      {g && (calm ? <span className="pill todo">MessageGuard: a phrase matched</span>
-        : <span className={`pill ${g.verdict === 'safe' ? 'ok' : g.verdict === 'unchecked' ? 'todo' : 'warn'}`}>{VERDICT_WORDS[g.verdict] ?? g.verdict}</span>)}
-      {g && g.matches.length > 0 && <span className="small muted">Matched: {g.matches.join(', ')}</span>}
+      <div className="tools-summary">
+        {g && (calm ? <span className="pill todo">MessageGuard: a phrase matched</span>
+          : <span className={`pill ${g.verdict === 'safe' ? 'ok' : g.verdict === 'unchecked' ? 'todo' : 'warn'}`}>{VERDICT_WORDS[g.verdict] ?? g.verdict}</span>)}
+        {m.trusted && <span className="pill ok" title="On this computer only. MessageGuard still checks this sender's messages, and still keeps aside one that looks malicious.">Trusted sender</span>}
+        {g?.held === 2 && <span className="pill warn">Kept held</span>}
+        <button className="link small tools-toggle" aria-expanded={open} aria-controls={rows} onClick={() => setOpen(!open)}>
+          Message tools <span aria-hidden="true">{open ? '▾' : '▸'}</span>
+        </button>
+      </div>
       {g?.held === 1 && (
         <div className="notice warn" style={{ width: '100%' }}>
           <strong>Kept aside.</strong> Your agent has not seen this message.{' '}
@@ -254,20 +262,45 @@ function MessageTools({ m, card, me, onCheck, onDecide, onNote, onHide, onTrust 
           </div>
         </div>
       )}
-      {g?.held === 2 && <span className="pill warn">Kept held</span>}
-      {m.text !== undefined && <button className="link small" onClick={onCheck}>Check for prompt injection</button>}
-      <button className="link small" onClick={onNote}>Note about this agent</button>
-      {m.trusted
-        ? <button className="link small" onClick={() => onTrust(false)}>Stop trusting</button>
-        : <button className="link small" onClick={() => onTrust(true)} title="On this computer only. A suspicious verdict on this agent's messages then reaches your agent without a warning; one that looks malicious is still kept aside.">Trust this sender</button>}
-      <button className="link small" onClick={() => onHide(false)} title="On this computer only: out of this window and away from your agent">Hide</button>
-      <button className="link small" onClick={() => onHide(true)} title="Hides this agent's messages in this room, later ones too, on this computer only">Hide this agent here</button>
-      {g && g.verdict !== 'unchecked' && <span className="small muted">A filter for known tricks, not a guarantee.</span>}
-      {ask.length > 0 && (
-        <details className="ask" style={{ width: '100%' }}>
-          <summary className="small">Ask {me ?? 'your agent'} to moderate this</summary>
-          <AskList phrases={ask} />
-        </details>
+      {open && (
+        <div id={rows} className="tools-rows">
+          <div className="tools-row">
+            <span className="label">MessageGuard</span>
+            <div className="tools-items">
+              {g && g.matches.length > 0 && <span>Matched: {g.matches.join(', ')}</span>}
+              {m.text !== undefined && <button className="link small" onClick={onCheck}>Check for prompt injection</button>}
+              <span className="small muted">A filter for known tricks, not a guarantee.</span>
+            </div>
+          </div>
+          <div className="tools-row">
+            <span className="label">This sender</span>
+            <div className="tools-items">
+              {m.trusted
+              ? <button className="link small" onClick={() => onTrust(false)}>Stop trusting</button>
+              : <button className="link small" onClick={() => onTrust(true)} title="On this computer only. A suspicious verdict on this agent's messages then reaches your agent without a warning; one that looks malicious is still kept aside.">Trust this sender</button>}
+              <button className="link small" onClick={onNote}>Note about this agent</button>
+            </div>
+          </div>
+          <div className="tools-row">
+            <span className="label">Hide</span>
+            <div className="tools-items">
+              <button className="link small" onClick={() => onHide(false)} title="On this computer only: out of this window and away from your agent">Hide this message</button>
+              <button className="link small" onClick={() => onHide(true)} title="Hides this agent's messages in this room, later ones too, on this computer only">Hide this agent here</button>
+              <span className="small muted">On this computer only.</span>
+            </div>
+          </div>
+          {ask.length > 0 && (
+            <div className="tools-row">
+              <span className="label">Moderate</span>
+              <div className="tools-items">
+                <details className="ask" style={{ flex: '1 1 20rem' }}>
+                <summary className="small">Ask {me ?? 'your agent'} to moderate this</summary>
+                <AskList phrases={ask} />
+                </details>
+              </div>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

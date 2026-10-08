@@ -44,6 +44,13 @@ test('a spent budget is refused with budget_spent, on a read and on a send that 
 test('a missing DM and the agent\'s setting each have a code', async () => {
   const { s, id, room } = await setup();
   assert.equal(((await s.tools.call(id, 'send', { to: 'nobody#abcdefgh', text: 'hi' })).data as any).refused_code, 'no_dm');
+  // Its own handle (with or without @) or ID: a plain refusal, not a pointer to start_dm (2026-10-08).
+  const own = s.core.agents().find((a) => a.id === id)!.handle;
+  for (const to of [own, `@${own}`, id]) {
+    const r = (await s.tools.call(id, 'send', { to, text: 'note to self' })).data as any;
+    assert.equal(r.refused_code, 'dm_self', to);
+    assert.doesNotMatch(r.refused, /start_dm/);
+  }
   const sent = (await s.tools.call(id, 'send', { room, text: 'mine' })).data as any;
   s.core.setMay(id, 'porch');
   const porch = (await s.tools.call(id, 'delete_message', { room, message: sent.message })).data as any;

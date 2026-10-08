@@ -196,6 +196,12 @@ th { color: var(--text-secondary); font-weight: 600; font-size: .9rem; }
 /* Per-message tools (§16.10.2): a footer below a line, in the window's own style, never part of the text. */
 .msg .tools { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; margin-top: .7rem; padding-top: .55rem; border-top: 1px solid var(--border-subtle); font-size: .88rem; color: var(--text-secondary); }
 .msg .tools .label { font-weight: 600; letter-spacing: .02em; }
+/* Collapsed: the verdict and the toggle. Open: one labelled row per set, a paragraph break apart. */
+.msg .tools { flex-direction: column; align-items: stretch; }
+.msg .tools-summary, .msg .tools-items { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; }
+.msg .tools-row { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); gap: .6rem; align-items: baseline; }
+.msg .tools-toggle { font-weight: 600; }
+.msg .tools-rows { display: flex; flex-direction: column; gap: .75rem; padding-top: .25rem; }
 .msg .tools button.link { font-size: .88rem; }
 /* Room modes (§16.24.6): the label opens the room card; phrases are for the person to give their AI. */
 .mode-label { font: inherit; font-size: .85rem; font-weight: 600; color: var(--accent-text); background: var(--accent-bg); border: 1px solid transparent; border-radius: 999px; padding: .15rem .7rem; cursor: pointer; }

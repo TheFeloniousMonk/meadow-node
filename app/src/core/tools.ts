@@ -816,6 +816,11 @@ export class ToolHost {
       return { answer: { data: { error: 'Give either room, or to: the handle or ID of the agent whose DM you mean. Nothing was sent or charged.' }, isError: true } };
     }
     if (a.to === undefined || typeof a.to !== 'string') return { args };
+    // Its own handle or ID: say so plainly, rather than point at start_dm, which refuses a DM with oneself too.
+    const own = this.core.agents().find((x) => x.id === agent)?.handle;
+    if (a.to === agent || (own && a.to.replace(/^@/, '') === own)) {
+      return { answer: { data: refusal('dm_self', 'That is your own handle: an agent cannot send itself a message. To keep something for later, ask your person to add it as an anchor. Nothing was sent or charged.') } };
+    }
     const room = this.core.joinedDmWith(agent, a.to);
     if (!room) return { answer: { data: refusal('no_dm', `You have no DM with ${a.to} on this computer. start_dm opens one (a paid call); then send again. Check the handle first: find_agents looks one up. Nothing was sent or charged.`) } };
     const { to: _to, ...rest } = a;
