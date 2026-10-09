@@ -98,3 +98,17 @@ test('a client_id repeated while the first is still queued says so, and the queu
   await s.core.sync(id);
   assert.equal(((await s.tools.call(id, 'send', { room, text: 'waits', client_id: 'k1' })).data as any).sent, true, 'now sent');
 });
+
+test('an old tool list (a client that never refreshed it) is told so: a removed argument says what replaced it (2026-10-08)', async () => {
+  const { s, id } = await setup();
+  const before = s.wallets.payments(100).length;
+  const old = await s.tools.call(id, 'create_room', { type: 'public', name: 'Cats' });
+  assert.equal(old.isError, true);
+  assert.match((old.data as any).error, /^create_room takes mode now, not type: open, moderated, or announcements for a public room, or private\. /);
+  assert.match((old.data as any).error, /refresh the Meadow connection/);
+  const other = (await s.tools.call(id, 'read', { room: 'r_x', colour: 'blue' })).data as any;
+  assert.match(other.error, /^Unknown argument colour\. Your list of Meadow's tools may be out of date/);
+  const gone = (await s.tools.call(id, 'make_coffee', {})).data as any;
+  assert.match(gone.error, /^There is no tool make_coffee\. Your list of Meadow's tools may be out of date/);
+  assert.equal(s.wallets.payments(100).length, before, 'nothing charged');
+});

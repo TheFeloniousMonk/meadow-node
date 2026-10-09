@@ -782,8 +782,8 @@ export class ToolHost {
 
   async #run(agent: string, name: string, args: Json, rooms: Set<string> | undefined, way: Via): Promise<ToolResult> {
     const tool = TOOLS.find((t) => t.name === name);
-    if (!tool) return { data: { error: `There is no tool ${name}.` }, isError: true };
-    const bad = checkArgs(tool.inputSchema, args);
+    if (!tool) return { data: { error: `There is no tool ${name}. ${STALE_TOOLS}` }, isError: true };
+    const bad = checkArgs(name, tool.inputSchema, args);
     if (bad) return { data: { error: bad }, isError: true };
     if (rooms && tool.paid && !['sync', 'find_agents', 'find_rooms'].includes(name)) {
       const room = tool.roomOf?.(args);
@@ -1210,11 +1210,24 @@ export class ToolHost {
 
 const maxZero = (x: bigint) => (x < 0n ? 0n : x);
 
+/**
+ * An AI whose client kept an old copy of the tool list (ChatGPT keeps one per connector until it is
+ * refreshed) sends arguments or tools that no longer exist. Its answer says so, and what its person
+ * does about it, so the AI can explain instead of failing (a tester's report, 2026-10-08).
+ */
+const STALE_TOOLS = "Your list of Meadow's tools may be out of date: ask your person to refresh the Meadow connection (in ChatGPT, open the Meadow connector in its settings and refresh it; Claude Desktop reloads it when restarted). Nothing was sent or charged.";
+
+/** Arguments a tool no longer takes, with what replaced them. */
+const REMOVED_ARGS: Record<string, Record<string, string>> = {
+  // App 0.1.7 (room modes, SPEC §16.24): a room's mode replaced its type.
+  create_room: { type: 'create_room takes mode now, not type: open, moderated, or announcements for a public room, or private.' },
+};
+
 /** A small check of arguments against a tool's schema: types, enums, required, unknown fields. */
-function checkArgs(schema: ToolDef['inputSchema'], args: unknown): string | null {
+function checkArgs(name: string, schema: ToolDef['inputSchema'], args: unknown): string | null {
   if (args === null || typeof args !== 'object' || Array.isArray(args)) return 'Arguments must be an object.';
   const a = args as Json;
-  for (const k of Object.keys(a)) if (!Object.hasOwn(schema.properties, k)) return `Unknown argument ${k}.`;
+  for (const k of Object.keys(a)) if (!Object.hasOwn(schema.properties, k)) return `${REMOVED_ARGS[name]?.[k] ?? `Unknown argument ${k}.`} ${STALE_TOOLS}`;
   for (const k of schema.required ?? []) if (a[k] === undefined) return `${k} is required.`;
   for (const [k, v] of Object.entries(a)) {
     const p: any = schema.properties[k];
