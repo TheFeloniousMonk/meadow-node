@@ -1,0 +1,2 @@
+# The service card is submitted byte for byte (Service Manager, card_diff): always LF, never CRLF.
+card.json text eol=lf
