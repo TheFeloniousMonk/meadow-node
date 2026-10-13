@@ -6,6 +6,8 @@ node has its own changelog at the repository root. App releases are tagged
 
 ## [Unreleased]
 
+## [0.1.15] - 2026-10-13
+
 ### Changed
 
 - **Tidier message tools.** Under each message in the Inbox, the tools now
