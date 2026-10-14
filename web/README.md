@@ -8,15 +8,18 @@ staked node hostname (which is a relay/peer endpoint, not a web server).
 | Path | What it is |
 |---|---|
 | `site/` | The files served at the site root, https://meadowprotocol.com/ |
-| `site/*.html` | The pages: `index` (`/`), `app`, `build`, `operators`, `get-usdc`, and `404` |
-| `site/*.md`, `site/llms-full.txt` | Markdown copies of the pages for AI agents. **Generated**: run `node web/tools/agent-files.mjs` after editing any page (`--check` fails if they are stale) |
+| `site/index.html`, `site/404.html` | The home page (`/`) and the not-found page |
+| `site/docs/*.html` | The docs, under `/docs/`: `index` (the docs home), `app`, `build`, `operators`, and `get-usdc`. Each starts with an "On this page" table of contents. **Generated**: run `node web/tools/docs-toc.mjs` after editing a docs page (`--check` fails if a contents block is stale) |
+| `site/**/*.md`, `site/llms-full.txt` | Markdown copies of the pages for AI agents. **Generated**: run `node web/tools/agent-files.mjs` after editing any page, and after `docs-toc.mjs` (`--check` fails if they are stale) |
 | `site/llms.txt` | The site index for AI agents ([llmstxt.org](https://llmstxt.org/)). Written by hand; keep it in step with the pages |
 | `site/openapi.json` | The client API |
 | `site/.well-known/api-catalog` | The API catalog (RFC 9727) |
 | `site/robots.txt`, `site/sitemap.xml` | For crawlers |
 | `site/media/` | The promo video and its poster: gitignored, uploaded by hand |
 | `nginx/meadow.conf` | The reference copy of the site's nginx server block |
+| `tools/docs-toc.mjs` | Writes each docs page's table of contents from its headings, giving each heading an id (zero dependencies) |
 | `tools/agent-files.mjs` | Writes the Markdown copies (zero dependencies) |
+| `tools/check-site.mjs` | Checks the live site's pages, redirects, and the paths that must never move |
 
 ## What else lives on the site
 
@@ -30,7 +33,8 @@ The site's nginx (`nginx/meadow.conf`) also serves, from other places:
   redirect permanently into `/legacy/`.
 - **The alumni club** at `/alumni/` (also in `meadow-protocol`). Its pages load
   `/brand.css`.
-- **The old `/v2/` addresses** redirect to the same page at the root, except
+- **The guides' old addresses** (`/app`, `/build`, `/operators`, `/get-usdc`, and their `.md` copies) redirect permanently to the same page under `/docs/` (since 2026-10-14; the app's `/app#keychain` link keeps its anchor). `/docs` was a v1 redirect to `/legacy/docs` until then.
+- **The old `/v2/` addresses** redirect to the same page at the root (the guides straight to `/docs/`), except
   `/v2/openapi.json` (the on-chain card cites it) and `/v2/brand.css`, which are
   served in place.
 
@@ -47,7 +51,9 @@ The site's nginx (`nginx/meadow.conf`) also serves, from other places:
 
 nginx also sends a `Link` header with the OpenAPI, the API catalog, and `llms.txt`.
 A new page needs all of these: copy an existing page's `<head>`, add it to
-`PAGES` in `tools/agent-files.mjs`, to `llms.txt`, and to `sitemap.xml`.
+`PAGES` in `tools/agent-files.mjs`, to `llms.txt`, and to `sitemap.xml`. A new
+docs page also needs the `<!-- toc -->` `<!-- /toc -->` markers, the breadcrumb
+(`<p class="crumbs">`), and a card on the docs home.
 
 ## Publishing
 

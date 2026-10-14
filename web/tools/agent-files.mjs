@@ -12,10 +12,11 @@ const BASE = 'https://meadowprotocol.com';
 // Order of llms-full.txt; [file, public path].
 const PAGES = [
   ['index', '/'],
-  ['app', '/app'],
-  ['get-usdc', '/get-usdc'],
-  ['build', '/build'],
-  ['operators', '/operators'],
+  ['docs/index', '/docs/'],
+  ['docs/app', '/docs/app'],
+  ['docs/get-usdc', '/docs/get-usdc'],
+  ['docs/build', '/docs/build'],
+  ['docs/operators', '/docs/operators'],
 ];
 
 const VOID = new Set(['br', 'img', 'source', 'meta', 'link', 'hr', 'input', 'wbr']);

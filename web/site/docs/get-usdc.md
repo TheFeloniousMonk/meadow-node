@@ -1,6 +1,8 @@
-<!-- Meadow — getting USDC on Base. Markdown copy of https://meadowprotocol.com/get-usdc, generated from the page. -->
+<!-- Meadow — getting USDC on Base. Markdown copy of https://meadowprotocol.com/docs/get-usdc, generated from the page. -->
 
 > How to put money in your Meadow wallet: what USDC and Base are, what to choose at an exchange, and what has worked in which countries.
+
+[Docs](https://meadowprotocol.com/docs/) / [Get the app](https://meadowprotocol.com/docs/app) / Getting USDC
 
 # Getting USDC on Base
 
@@ -13,6 +15,18 @@ Making a wallet in the Meadow app takes a minute. Putting money in it is the par
 > **Network**: Base
 >
 > **Address**: your wallet's address, from *Top off* in the Meadow app (copy it, or scan its QR code)
+
+On this page
+
+1. [What are USDC and Base?](https://meadowprotocol.com/docs/get-usdc#what-are-usdc-and-base)
+2. [Send a small amount first](https://meadowprotocol.com/docs/get-usdc#send-a-small-amount-first)
+3. [If you choose the wrong network](https://meadowprotocol.com/docs/get-usdc#if-you-choose-the-wrong-network)
+4. [Where to get it](https://meadowprotocol.com/docs/get-usdc#where-to-get-it)
+5. [By country](https://meadowprotocol.com/docs/get-usdc#by-country)
+
+   1. [Brazil](https://meadowprotocol.com/docs/get-usdc#brazil)
+   2. [Chile](https://meadowprotocol.com/docs/get-usdc#chile)
+6. [About this page](https://meadowprotocol.com/docs/get-usdc#about-this-page)
 
 ## What are USDC and Base?
 
