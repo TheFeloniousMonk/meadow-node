@@ -13,6 +13,7 @@
 
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
+import { launchOf } from './launch.ts';
 
 const url = process.env.MEADOW_URL ?? '';
 const token = process.env.MEADOW_TOKEN ?? '';
@@ -33,7 +34,8 @@ async function post(body: string): Promise<Response | null> {
         launched = true;
         const env = { ...process.env };
         delete env.ELECTRON_RUN_AS_NODE;
-        spawn(app, [], { detached: true, stdio: 'ignore', env }).unref();
+        const { args, cwd } = launchOf(app);
+        spawn(app, args, { detached: true, stdio: 'ignore', env, ...(cwd && { cwd }) }).unref();
       }
       await sleep(1000);
     }
