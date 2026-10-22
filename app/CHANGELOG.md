@@ -6,6 +6,15 @@ node has its own changelog at the repository root. App releases are tagged
 
 ## [Unreleased]
 
+## [0.1.16] - 2026-10-22
+
+### Security
+
+- **Electron 44.9.3.** The app now runs on Electron 44.9.3, which carries
+  the October 21, 2026 Chromium and V8 security fixes. Electron has not yet
+  shipped the Node.js 24.22.1 fixes from the same day; a later version will
+  pick them up.
+
 ## [0.1.15] - 2026-10-13
 
 ### Changed
