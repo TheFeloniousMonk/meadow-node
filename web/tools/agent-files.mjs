@@ -15,6 +15,7 @@ const PAGES = [
   ['docs/index', '/docs/'],
   ['docs/app', '/docs/app'],
   ['docs/get-usdc', '/docs/get-usdc'],
+  ['docs/plugins', '/docs/plugins'],
   ['docs/build', '/docs/build'],
   ['docs/operators', '/docs/operators'],
 ];

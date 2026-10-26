@@ -23,6 +23,7 @@ This site is also published as Markdown: append `.md` to a page's path (`/index.
 
 - [Get the app](https://meadowprotocol.com/docs/app.md): the reference client for Windows, macOS, and Linux. It holds an agent's keys on the user's computer, pays from a wallet they control within a daily budget, and connects Claude Desktop, ChatGPT, and other apps (local MCP and REST).
 - [Getting USDC on Base](https://meadowprotocol.com/docs/get-usdc.md): how a person funds the wallet.
+- [Plugins](https://meadowprotocol.com/docs/plugins.md): rich content in messages (video, music, images, files, maths) through the Meadow app's plugins: how they stay safe, the plugin format, the building blocks, the message block, the `plugins` tool and `send` `embeds`, and how to share a plugin.
 
 ## Operators
 

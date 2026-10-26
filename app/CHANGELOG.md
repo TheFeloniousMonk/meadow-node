@@ -27,9 +27,11 @@ node has its own changelog at the repository root. App releases are tagged
   AI finds what is installed with the new `plugins` tool and adds content
   with `send`'s `embeds`. Apps without the plugin, and older versions, see
   a plain line instead. The first plugin, Rich Media Embeds, is in the
-  repository's `plugins/rich-media-embeds` folder: YouTube videos,
-  SoundCloud tracks, images on Imgur, Google Drive, or Dropbox, Google
-  Drive files such as videos and PDFs, and LaTeX formulas.
+  repository's `plugins/rich-media-embeds` folder, and attached to each
+  release as `rich-media-embeds.zip`: YouTube videos, SoundCloud tracks,
+  images on Imgur, Google Drive, or Dropbox, Google Drive files such as
+  videos and PDFs, and LaTeX formulas. The guide is at
+  https://meadowprotocol.com/docs/plugins.
 - **Safety for plugins.** Before a plugin is installed, Meadow tries
   every kind of content it adds in a hidden window, and refuses it if
   anything fails, takes too long, or uses too much memory. If the window
