@@ -99,10 +99,6 @@ jobs:
         with: { node-version: 24.22.1 }
       - uses: actions/download-artifact@v8
         with: { path: dist, pattern: build-*, merge-multiple: true }
-      # Each plugin in plugins/ as a ready-to-install zip (docs/plugins), checked the way the app
-      # checks it: a plugin that would be refused fails the release. Node built-ins only, no npm ci.
-      - name: Plugins
-        run: for d in plugins/*/; do node app/scripts/pack-plugin.ts "$d" "dist/$(basename "$d").zip"; done
       - run: node app/scripts/release/checksums.mjs dist
       - name: Release notes from the changelog
         working-directory: app

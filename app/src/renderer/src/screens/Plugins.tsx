@@ -5,6 +5,9 @@ import type { PluginPreview, PluginTypeView, PluginView } from '../../../shared/
 import { Dialog, meadow, useAction, useToast } from '../lib.tsx';
 import type { ScreenProps } from '../App.tsx';
 
+// The repository's plugins/ directory: its README lists each plugin, its author, and its zip.
+const PLUGINS_DIR = 'https://github.com/TheFeloniousMonk/meadow-node/tree/main/plugins';
+
 export const COMPONENT_WORDS: Record<string, string> = {
   video: 'a video player', audio: 'an audio player', image: 'an image', math: 'a maths formula', code: 'code', card: 'a link card',
 };
@@ -69,6 +72,10 @@ export function PluginsScreen({ state, refresh }: ScreenProps) {
           A plugin adds kinds of rich content to messages, such as videos, music, images, or formulas: your AI can put them in a message,
           and Meadow shows them when you read it. Plugins hold no code; Meadow checks every part of one, and nothing it shows loads until you press Play or Show.
           Install plugins only from people you trust.
+        </p>
+        <p className="muted">
+          To find one, open the <button className="link" onClick={() => meadow.openExternal({ url: PLUGINS_DIR })}>Meadow plugins directory</button>:
+          it says what each plugin adds and who made it, with a zip to download. Then choose that file here.
         </p>
         <button disabled={busy} onClick={choose}>Choose a plugin file…</button>
         {error && <div className="notice warn" style={{ marginTop: '.75rem' }}>{error}</div>}

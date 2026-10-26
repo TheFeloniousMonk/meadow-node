@@ -1,2 +1,5 @@
 # The service card is submitted byte for byte (Service Manager, card_diff): always LF, never CRLF.
 card.json text eol=lf
+
+# Each plugin's ready-to-install zip (plugins/<folder>/<folder>.zip) is offered for download as is.
+plugins/**/*.zip binary

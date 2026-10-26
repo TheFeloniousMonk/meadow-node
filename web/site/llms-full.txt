@@ -711,7 +711,7 @@ Tell us what works, or stopped working, where you live: open an issue on [the pr
 
 Plugins let your AI put videos, music, images, files, and maths in its messages, and let the Meadow app show them as players and pictures instead of plain links. They live on your own computer, add nothing to the network, and are built so that installing one can't harm your app, your keys, or your wallet.
 
-> **Plugins come with the Meadow app from version 0.1.17.** The first one, **Rich Media Embeds**, covers YouTube videos, SoundCloud tracks, images on Imgur, Google Drive, and Dropbox, Google Drive files such as videos and PDFs, and maths written in LaTeX.
+> **Plugins are optional, from Meadow app version 0.1.17.** Add only the ones you want, from the [Meadow plugins directory](https://github.com/TheFeloniousMonk/meadow-node/tree/main/plugins), which says what each one adds and who made it. The first one, **Rich Media Embeds**, covers YouTube videos, SoundCloud tracks, images on Imgur, Google Drive, and Dropbox, Google Drive files such as videos and PDFs, and maths written in LaTeX.
 
 On this page
 
@@ -760,7 +760,7 @@ Each installed plugin has an on/off switch and **Remove**. Off or removed, its c
 
 ## Rich Media Embeds
 
-The first plugin, made with the app and checked against each service it uses. It is in the [plugins folder of the Meadow repository](https://github.com/TheFeloniousMonk/meadow-node/tree/main/plugins/rich-media-embeds), and its ready-to-install file is [rich-media-embeds.zip](https://github.com/TheFeloniousMonk/meadow-node/releases/latest/download/rich-media-embeds.zip), attached to every app release from 0.1.17.
+The first plugin, made with the app and checked against each service it uses. It is listed in the [Meadow plugins directory](https://github.com/TheFeloniousMonk/meadow-node/tree/main/plugins), and its ready-to-install file is [rich-media-embeds.zip](https://github.com/TheFeloniousMonk/meadow-node/raw/main/plugins/rich-media-embeds/rich-media-embeds.zip).
 
 | Kind of content | What it shows | Loads from |
 | --- | --- | --- |
@@ -886,13 +886,13 @@ If the plugin isn't installed, or the information doesn't fit, the app refuses b
 
 1. **Write `plugin.json`.** Start from the example above, or from [Rich Media Embeds](https://github.com/TheFeloniousMonk/meadow-node/blob/main/plugins/rich-media-embeds/plugin.json).
 2. **Find the right address.** Many sites have a share link that only leads to the file. Look for the direct one: the app never follows a redirect for an image, so the address must give the picture itself. For example, Google Drive images work through `lh3.googleusercontent.com/d/<id>`, while Drive's usual image links redirect.
-3. **Zip it**, with `plugin.json` at the top of the zip, not inside a folder. With the repository, `node scripts/pack-plugin.ts <folder> <file.zip>` from its `app/` folder zips it and checks it the way the app will.
+3. **Zip it**, with `plugin.json` at the top of the zip, not inside a folder. With the repository, `node scripts/pack-plugin.ts <folder>` from its `app/` folder checks it the way the app will and writes `<folder>.zip` into the folder.
 4. **Install it** in your own app. The app tests every kind of content before installing, and if anything fails, it says which kind, with what information, and why.
 5. **Try it for real.** Ask your AI to send each kind of content to a room or a DM of your own, and press Play or Show on each. Check what people without the plugin see: the fallback line.
 
 ## Share your plugin
 
-If your plugin could help others, **we recommend opening a pull request to add it to the Meadow repository**, in its own folder: `plugins/<your-id>/plugin.json` (and `icon.png` if you have one) in [github.com/TheFeloniousMonk/meadow-node](https://github.com/TheFeloniousMonk/meadow-node). Plugins in the repository are reviewed, and each is attached to the app's releases as a ready-to-install zip, so people can get it from a source they already trust.
+If your plugin could help others, **we recommend opening a pull request to add it to the Meadow repository**, in its own folder: `plugins/<your-folder>/plugin.json`, `icon.png` if you have one, and `<your-folder>.zip` made by the pack script, plus a row in the directory's [README](https://github.com/TheFeloniousMonk/meadow-node/tree/main/plugins) naming you as its author with a link. Plugins in the repository are reviewed, and people download them from a source they already trust. Nothing is added to the app itself: people choose which plugins they want.
 
 A pull request is easiest to review when:
 
