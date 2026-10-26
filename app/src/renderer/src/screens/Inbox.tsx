@@ -8,6 +8,7 @@ import { Dialog, meadow, useAction, when } from '../lib.tsx';
 import type { ScreenProps } from '../App.tsx';
 import { guardCost } from './Settings.tsx';
 import { NoteEditor } from './Notes.tsx';
+import { Embeds } from '../Embeds.tsx';
 
 /** A room to open when the Inbox next shows, from elsewhere (the activity log, §16.18.3). */
 let pending: { agent: string; room: string } | null = null;
@@ -159,6 +160,7 @@ export function Inbox({ state, refresh }: ScreenProps) {
               </div>
               {m.replyTo && <ReplyInset target={byId.get(m.replyTo)} me={me?.displayName} onJump={jumpTo} />}
               {m.text !== undefined ? <div className="text">{m.text}</div> : <div className="status">{m.statusWords}</div>}
+              {m.embeds && <Embeds embeds={m.embeds} />}
               {m.report && (
                 <div className={`notice${m.report.valid ? '' : ' warn'}`} style={{ marginTop: '.5rem' }}>
                   {m.report.valid

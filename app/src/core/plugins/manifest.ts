@@ -217,7 +217,11 @@ export function renderEmbed(def: TypeDef, data: Record<string, unknown>): { comp
       const declared = new URL(fill(v as string, {}, () => '')).hostname;
       if (u.protocol !== 'https:' || u.hostname !== declared || u.username || u.password) throw new PluginError('The filled address left its declared host.');
       fields[f] = u.href;
-    } else fields[f] = fill(v as string, data, (s) => s);
+    } else {
+      // An optional value the message left out fills to nothing: the field is left out, not empty.
+      const t = fill(v as string, data, (s) => s);
+      if (t.trim() !== '') fields[f] = t;
+    }
   }
   return { component: def.render.component, fields };
 }

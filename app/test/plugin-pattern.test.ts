@@ -8,9 +8,9 @@ const m = (p: string, s: string) => matchPattern(compilePattern(p), s);
 
 test('matches the whole string, like ^(?:p)$ would', () => {
   const yt = '[A-Za-z0-9_-]{11}';
-  assert.equal(m(yt, 'dQw4w9WgXcQ'), true);
-  assert.equal(m(yt, 'dQw4w9WgXc'), false, 'one short');
-  assert.equal(m(yt, 'dQw4w9WgXcQQ'), false, 'one long');
+  assert.equal(m(yt, 'M7lc1UVf-VE'), true);
+  assert.equal(m(yt, 'M7lc1UVf-V'), false, 'one short');
+  assert.equal(m(yt, 'M7lc1UVf-VEQ'), false, 'one long');
   assert.equal(m(yt, 'dQw4w9WgX<Q'), false);
   assert.equal(m('\\d+', '2026'), true);
   assert.equal(m('\\d+', ''), false);

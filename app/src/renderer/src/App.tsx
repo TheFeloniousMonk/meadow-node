@@ -10,9 +10,10 @@ import { Inbox } from './screens/Inbox.tsx';
 import { Agents } from './screens/Agents.tsx';
 import { Wallets } from './screens/Wallets.tsx';
 import { SettingsScreen } from './screens/Settings.tsx';
+import { PluginsScreen } from './screens/Plugins.tsx';
 import { Troubleshoot } from './screens/Troubleshoot.tsx';
 
-export type Route = 'setup' | 'dashboard' | 'inbox' | 'agents' | 'wallets' | 'settings' | 'troubleshoot';
+export type Route = 'setup' | 'dashboard' | 'inbox' | 'agents' | 'wallets' | 'plugins' | 'settings' | 'troubleshoot';
 /** What to open on arrival, for Troubleshoot's buttons (§16.21): the screen's own dialog, for one agent or wallet. */
 export interface Intent {
   open?: 'topOff' | 'budget' | 'backup' | 'chatgpt' | 'claude' | 'chooseWallet' | 'alumni';
@@ -27,6 +28,7 @@ const ICONS: Record<string, string> = {
   inbox: 'M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z',
   agents: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm14 10v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75',
   wallets: 'M21 12V7H5a2 2 0 0 1 0-4h14v4M3 5v14a2 2 0 0 0 2 2h16v-5M18 12a2 2 0 0 0 0 4h4v-4z',
+  plugins: 'M9 3v4M15 3v4M7 7h10v4a5 5 0 0 1-10 0zM12 16v5',
   troubleshoot: 'M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z',
   settings: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z',
 };
@@ -39,7 +41,7 @@ function Icon({ name }: { name: string }) {
   );
 }
 
-const LABELS: Record<Route, string> = { setup: 'Setup', dashboard: 'Dashboard', inbox: 'Inbox', agents: 'Agents', wallets: 'Wallets', settings: 'Settings', troubleshoot: 'Troubleshoot' };
+const LABELS: Record<Route, string> = { setup: 'Setup', dashboard: 'Dashboard', inbox: 'Inbox', agents: 'Agents', wallets: 'Wallets', plugins: 'Plugins', settings: 'Settings', troubleshoot: 'Troubleshoot' };
 
 export function App() {
   return (
@@ -84,7 +86,7 @@ function Shell() {
   if (!state || !route || !status) return null;
 
   const unread = state.agents.reduce((n, a) => n + a.unread, 0);
-  const nav: Route[] = status.allDone ? ['dashboard', 'inbox', 'agents', 'wallets', 'settings'] : ['setup', 'dashboard', 'inbox', 'agents', 'wallets', 'settings'];
+  const nav: Route[] = status.allDone ? ['dashboard', 'inbox', 'agents', 'wallets', 'plugins', 'settings'] : ['setup', 'dashboard', 'inbox', 'agents', 'wallets', 'plugins', 'settings'];
   const toggleTheme = () => meadow.setSettings({ theme: state.settings.theme === 'dark' ? 'light' : 'dark' }).then(refresh);
   const props = { state, refresh, go, balances, balancesAt: bal.at, reloadBalances: bal.reload, intent, clearIntent: () => setIntent(null) };
   const blocked = state.troubleshoot.verdict.state === 'bad';
@@ -122,6 +124,7 @@ function Shell() {
         {route === 'inbox' && <Inbox {...props} />}
         {route === 'agents' && <Agents {...props} />}
         {route === 'wallets' && <Wallets {...props} />}
+        {route === 'plugins' && <PluginsScreen {...props} />}
         {route === 'settings' && <SettingsScreen {...props} />}
         {route === 'troubleshoot' && <Troubleshoot {...props} />}
       </main>

@@ -101,10 +101,10 @@ export class PluginStore {
   }
 
   /** Checks a zip without keeping anything: what it would add (§16.26.6), or a PluginError/ZipError in plain words. */
-  preview(zip: Buffer): { manifest: Manifest; hasIcon: boolean; replaces: string | null } {
+  preview(zip: Buffer): { manifest: Manifest; hasIcon: boolean; icon: Buffer | null; replaces: string | null } {
     const { manifest, icon } = checkFiles(readZip(zip));
     const old = this.#loaded.get(manifest.id);
-    return { manifest, hasIcon: !!icon, replaces: old && !old.error ? old.manifest.version : null };
+    return { manifest, hasIcon: !!icon, icon, replaces: old && !old.error ? old.manifest.version : null };
   }
 
   /** Keeps a plugin (checked again), switched on. A newer or other version of the same id replaces it. */

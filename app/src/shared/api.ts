@@ -198,6 +198,53 @@ export interface MessageView {
   /** From a sender the person trusts (§16.11). */
   trusted?: boolean;
   report?: { valid: boolean; reason?: string; text?: string; note?: string; why?: string };
+  /** Plugin content (§16.26): its text then has the block lines removed. */
+  embeds?: EmbedView[];
+}
+
+/**
+ * One embed for the window (§16.26.4): a built-in component with final, checked values made in the
+ * main process, or why it is not shown, with its line as written.
+ */
+export type EmbedView =
+  | { type: string; shown: true; plugin: string; component: 'video' | 'audio' | 'image' | 'math' | 'code' | 'card'; fields: Record<string, string | boolean>; host?: string }
+  | { type: string; shown: false; why: 'not_installed' | 'bad_data'; detail?: string; line: string };
+
+export interface PluginTypeView {
+  type: string;
+  description: string;
+  component: string;
+}
+
+/** An installed plugin (§16.26.6). */
+export interface PluginView {
+  id: string;
+  name: string;
+  version: string | null;
+  description: string | null;
+  author: string | null;
+  homepage: string | null;
+  enabled: boolean;
+  /** Why the app switched it off (a failed check at startup). */
+  error: string | null;
+  hosts: string[];
+  types: PluginTypeView[];
+  icon: string | null;
+}
+
+/** What a chosen zip would add, before anything is kept (§16.26.6). */
+export interface PluginPreview {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  author: string | null;
+  homepage: string | null;
+  hosts: string[];
+  types: PluginTypeView[];
+  /** The version it would replace, if one is installed. */
+  replaces: string | null;
+  icon: string | null;
 }
 
 export interface RoomView {
@@ -283,6 +330,9 @@ export interface AppState {
   devAlumniTesting: boolean | null;
   /** Event Mode (§16.25). */
   eventMode: EventModeState;
+  /** Plugins (§16.26), and whether this run started in safe mode (§16.26.7). */
+  plugins: PluginView[];
+  safeMode: boolean;
 }
 
 /** Event Mode (§16.25): the person's choices, the countdown, and what one round of checks costs each payer. */
@@ -505,6 +555,16 @@ export interface Api {
   alumniSetFallback(a: { on: boolean }): { ok: true };
   /** Event Mode (§16.25): choose the frequency or duration, turn it on or off, pause, resume, or reset. */
   setEventMode(a: { action: 'choose' | 'start' | 'stop' | 'pause' | 'resume' | 'reset'; frequency?: number; duration?: number }): { ok: true };
+  /** Plugins (§16.26.6): choose a zip and see what it would add (nothing kept yet), keep it, or forget it. */
+  pluginChoose(): { preview: PluginPreview } | { error: string } | null;
+  pluginInstall(): { ok: true };
+  pluginCancel(): { ok: true };
+  pluginSetEnabled(a: { id: string; on: boolean }): { ok: true };
+  pluginRemove(a: { id: string }): { ok: true };
+  /** An embed's image, fetched on click from an active plugin's host (§16.26.4). */
+  embedImage(a: { url: string }): { data: string } | { error: string };
+  /** Opens a card's link in the browser, if it is on an active plugin's host. */
+  openEmbedLink(a: { url: string }): { opened: boolean };
 }
 
 export type Channel = keyof Api;
@@ -512,7 +572,7 @@ export const CHANNELS: Channel[] = [
   'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'claudeRunning', 'installUpdate', 'disconnectClaude', 'localInterface', 'rotateToken',
   'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'movePlan', 'moveStart', 'moveStatus', 'bridgePlan', 'bridgeStart', 'bridgeStatus', 'setBudget', 'setDiscoverable', 'dismissUnlistedNotice', 'walletQr', 'syncNow', 'syncAllNow', 'rooms', 'messages', 'roomCard', 'hideMessage', 'hideAuthor', 'unhideAll', 'trustSender', 'setSettings',
   'guardCheck', 'guardDecide', 'backup', 'backupChanges', 'setMay', 'setRoomSettings', 'testConnection', 'diagnosticsText', 'diagnosticsSave', 'activity', 'activitySpending', 'activitySave', 'notes', 'setAnchor', 'setNote', 'removeNote', 'keepNote', 'notesSeen', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'restartTunnel', 'troubleshootRun', 'checkElsewhere', 'enterChatgptCode', 'revokeClient', 'setRunner',
-  'copy', 'openExternal', 'alumniLink', 'alumniValidate', 'alumniRefresh', 'alumniCancel', 'alumniOpenAccount', 'setAlumniTesting', 'alumniSetFallback', 'setEventMode',
+  'copy', 'openExternal', 'alumniLink', 'alumniValidate', 'alumniRefresh', 'alumniCancel', 'alumniOpenAccount', 'setAlumniTesting', 'alumniSetFallback', 'setEventMode', 'pluginChoose', 'pluginInstall', 'pluginCancel', 'pluginSetEnabled', 'pluginRemove', 'embedImage', 'openEmbedLink',
 ];
 
 /** Links the window may open in the browser. */

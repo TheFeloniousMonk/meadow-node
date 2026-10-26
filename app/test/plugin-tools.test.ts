@@ -53,17 +53,17 @@ test('send with embeds: in a public room, read richly by an app with the plugin 
   await C.s.core.joinRoom(C.id, room);
   await A.s.core.sync(A.id);
 
-  const sent: any = (await A.s.tools.call(A.id, 'send', { room, text: 'Tonight:', embeds: [{ type: 'media.video', data: { id: 'dQw4w9WgXcQ', title: 'The talk' } }, { type: 'media.formula', data: { tex: 'E=mc^2' } }] })).data;
+  const sent: any = (await A.s.tools.call(A.id, 'send', { room, text: 'Tonight:', embeds: [{ type: 'media.video', data: { id: 'M7lc1UVf-VE', title: 'The talk' } }, { type: 'media.formula', data: { tex: 'E=mc^2' } }] })).data;
   assert.equal(sent.sent, true);
   const raw = A.s.core.messages(A.id, { room }).at(-1)!.text!;
-  assert.equal(raw, 'Tonight:\nVideo: https://youtu.be/dQw4w9WgXcQ\nFormula: E=mc^2\n[meadow:embed media.video {"id":"dQw4w9WgXcQ","title":"The talk"}]\n[meadow:embed media.formula {"tex":"E=mc^2"}]');
+  assert.equal(raw, 'Tonight:\nVideo: https://youtu.be/M7lc1UVf-VE\nFormula: E=mc^2\n[meadow:embed media.video {"id":"M7lc1UVf-VE","title":"The talk"}]\n[meadow:embed media.formula {"tex":"E=mc^2"}]');
 
   await B.s.core.sync(B.id);
   const b: any = (await B.s.tools.call(B.id, 'inbox', { room })).data;
   const mb = b.rooms[0].messages[0];
-  assert.equal(mb.text, 'Tonight:\nVideo: https://youtu.be/dQw4w9WgXcQ\nFormula: E=mc^2', 'the block lines are removed');
+  assert.equal(mb.text, 'Tonight:\nVideo: https://youtu.be/M7lc1UVf-VE\nFormula: E=mc^2', 'the block lines are removed');
   assert.deepEqual(mb.embeds, [
-    { type: 'media.video', data: { id: 'dQw4w9WgXcQ', title: 'The talk' }, shown: true },
+    { type: 'media.video', data: { id: 'M7lc1UVf-VE', title: 'The talk' }, shown: true },
     { type: 'media.formula', data: { tex: 'E=mc^2' }, shown: true },
   ]);
 
@@ -107,7 +107,7 @@ test('a bad or uninstalled embed is refused before anything is written or paid',
   assert.equal(bad.refused_code, 'bad_embed');
   assert.match(bad.refused, /media\.video: The data has a field the type does not take: onload\. Nothing was sent or charged\./);
   A.s.plugins.setEnabled('media', false);
-  const off: any = (await A.s.tools.call(A.id, 'send', { room, text: 'x', embeds: [{ type: 'media.video', data: { id: 'dQw4w9WgXcQ' } }] })).data;
+  const off: any = (await A.s.tools.call(A.id, 'send', { room, text: 'x', embeds: [{ type: 'media.video', data: { id: 'M7lc1UVf-VE' } }] })).data;
   assert.equal(off.refused_code, 'plugin_not_installed');
   assert.equal(paid(), before, 'nothing paid');
   assert.equal(count(), n, 'nothing written');
@@ -120,7 +120,7 @@ test('a block an AI typed by hand is read the same: the receiver never trusts ho
   await B.s.core.joinRoom(B.id, room);
   await A.s.core.sync(A.id);
   // Without the plugin, Alice's AI writes the block itself, once valid and once not.
-  await A.s.tools.call(A.id, 'send', { room, text: 'Hand made\n[meadow:embed media.video {"id":"dQw4w9WgXcQ"}]' });
+  await A.s.tools.call(A.id, 'send', { room, text: 'Hand made\n[meadow:embed media.video {"id":"M7lc1UVf-VE"}]' });
   await A.s.tools.call(A.id, 'send', { room, text: 'Forged\n[meadow:embed media.video {"id":"<script>"}]' });
   await B.s.core.sync(B.id);
   const msgs: any[] = ((await B.s.tools.call(B.id, 'inbox', { room })).data as any).rooms[0].messages;

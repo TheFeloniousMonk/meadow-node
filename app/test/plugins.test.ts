@@ -19,7 +19,7 @@ const refused = (m: unknown, why: RegExp) => assert.throws(() => checkManifest(m
 test('the sample Media plugin passes; every type fills its component from its example', () => {
   const m = checkManifest(clone());
   const v = renderEmbed(m.types.video, m.types.video.example);
-  assert.deepEqual(v, { component: 'video', fields: { src: 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ', title: 'A video' } });
+  assert.deepEqual(v, { component: 'video', fields: { src: 'https://www.youtube-nocookie.com/embed/M7lc1UVf-VE', title: 'A video' } });
   assert.equal(renderEmbed(m.types.track, m.types.track.example).fields.src, 'https://w.soundcloud.com/player/?url=https%3A//soundcloud.com/an-artist/a-track');
   assert.equal(renderEmbed(m.types.formula, m.types.formula.example).fields.display, true);
   assert.equal(fallbackText(m.types.image, m.types.image.example), 'Image (A picture): https://i.imgur.com/abc1234.png');
@@ -73,13 +73,13 @@ test('data is checked: extra fields, missing fields, forms, lengths, and enums',
 
 test('the block: written after the text and fallbacks, read back exactly; anything else is plain text', () => {
   const text = writeBlock('Look at this', [
-    { type: 'media.video', data: { id: 'dQw4w9WgXcQ' }, fallback: 'Video: https://youtu.be/dQw4w9WgXcQ' },
+    { type: 'media.video', data: { id: 'M7lc1UVf-VE' }, fallback: 'Video: https://youtu.be/M7lc1UVf-VE' },
     { type: 'media.formula', data: { tex: 'a^2+b^2=c^2' }, fallback: 'Formula: a^2+b^2=c^2' },
   ]);
-  assert.equal(text, 'Look at this\nVideo: https://youtu.be/dQw4w9WgXcQ\nFormula: a^2+b^2=c^2\n[meadow:embed media.video {"id":"dQw4w9WgXcQ"}]\n[meadow:embed media.formula {"tex":"a^2+b^2=c^2"}]');
+  assert.equal(text, 'Look at this\nVideo: https://youtu.be/M7lc1UVf-VE\nFormula: a^2+b^2=c^2\n[meadow:embed media.video {"id":"M7lc1UVf-VE"}]\n[meadow:embed media.formula {"tex":"a^2+b^2=c^2"}]');
   const r = readBlock(text);
-  assert.equal(r.text, 'Look at this\nVideo: https://youtu.be/dQw4w9WgXcQ\nFormula: a^2+b^2=c^2');
-  assert.deepEqual(r.embeds.map((e) => [e.type, e.data]), [['media.video', { id: 'dQw4w9WgXcQ' }], ['media.formula', { tex: 'a^2+b^2=c^2' }]]);
+  assert.equal(r.text, 'Look at this\nVideo: https://youtu.be/M7lc1UVf-VE\nFormula: a^2+b^2=c^2');
+  assert.deepEqual(r.embeds.map((e) => [e.type, e.data]), [['media.video', { id: 'M7lc1UVf-VE' }], ['media.formula', { tex: 'a^2+b^2=c^2' }]]);
 
   const none = (t: string) => assert.deepEqual(readBlock(t), { text: t, embeds: [] }, t);
   none('[meadow:embed media.video {"id":"x"}] and then more text');
@@ -111,11 +111,11 @@ test('the store: preview keeps nothing; install, on/off, remove; types in use; s
 
   s.install(zipOf(clone()));
   assert.deepEqual(s.active().map((m) => m.id), ['media']);
-  const ready = s.prepare({ type: 'media.video', data: { id: 'dQw4w9WgXcQ' } });
-  assert.equal(ready.fallback, 'Video: https://youtu.be/dQw4w9WgXcQ');
+  const ready = s.prepare({ type: 'media.video', data: { id: 'M7lc1UVf-VE' } });
+  assert.equal(ready.fallback, 'Video: https://youtu.be/M7lc1UVf-VE');
   assert.throws(() => s.prepare({ type: 'other.video', data: {} }), PluginNotInstalled);
   assert.throws(() => s.prepare({ type: 'media.video', data: { id: 'nope' } }), /not in the form/);
-  assert.equal(s.shows({ type: 'media.video', plugin: 'media', name: 'video', data: { id: 'dQw4w9WgXcQ' } }), true);
+  assert.equal(s.shows({ type: 'media.video', plugin: 'media', name: 'video', data: { id: 'M7lc1UVf-VE' } }), true);
   assert.equal(s.shows({ type: 'media.video', plugin: 'media', name: 'video', data: { id: 'bad' } }), false);
   assert.equal(s.type('media.constructor'), null, 'only the plugin\'s own types');
 

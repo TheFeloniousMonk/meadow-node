@@ -8,12 +8,18 @@ import type { Plugin } from 'vite';
 // Pages load over file:// in production, where no header is delivered, so the
 // strict policy is also injected as a meta tag at build time. The window
 // contacts nothing: every page, script, style, and font ships in the app.
+// The one exception is plugin media (SPEC §16.26.4): a player frame or an
+// audio file over https, made only on the person's click and only with an
+// address the main process built and checked against an active plugin's
+// declared hosts. Images never load here: the main process fetches them.
 const CSP = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data:",
   "font-src 'self' data:",
+  "frame-src https:",
+  "media-src https:",
   "connect-src 'none'",
   "object-src 'none'",
   "base-uri 'none'",

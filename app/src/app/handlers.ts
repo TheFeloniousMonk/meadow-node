@@ -23,6 +23,7 @@ import { heldWords } from '../core/watch.ts';
 import { MODE_NAMES, PUBLIC_MODES, modeSentence } from '../core/modes.ts';
 import { HINTS } from '../core/tools.ts';
 import { EVENT_DURATIONS, EVENT_FREQUENCIES } from './event-mode.ts';
+import { fetchEmbedImage, messageEmbeds, onActiveHost, pluginsView, previewView } from './plugin-views.ts';
 
 export interface HandlerEnv {
   /** The app's executable, which runs the Claude bridge as Node. */
@@ -49,6 +50,8 @@ export interface HandlerEnv {
    * wallet (§16.9.1): a window that is not what it seems cannot answer it.
    */
   confirmMove(q: { message: string; detail: string }): Promise<boolean>;
+  /** Asks for a plugin zip to open (§16.26.6); resolves to its name and bytes, or null. */
+  openPluginFile?(): Promise<{ name: string; data: Buffer } | null>;
 }
 
 const STATUS_WORDS: Record<string, string> = {
@@ -72,6 +75,8 @@ const GUARD_NAMES = { default: 'as set in Settings', always: 'always check', nev
 export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel, arg: unknown) => Promise<unknown> {
   // The backup chosen for a restore, held in memory between the person's steps.
   let restoring: { name: string; data: Buffer } | null = null;
+  // The plugin zip chosen and previewed, held in memory until Install or Cancel (§16.26.6).
+  let pluginZip: Buffer | null = null;
   let balanceCache: { at: number; values: Record<string, string | null> } | null = null;
   // Each wallet's move in progress or last finished (§16.9.1), for the window to follow.
   const moves = new Map<string, MoveStateView>();
@@ -232,6 +237,8 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
         alumni: alumniView(),
         devAlumniTesting: s.devAlumniToggle ? s.alumniTesting() : null,
         eventMode: eventModeView(price),
+        plugins: pluginsView(s.plugins),
+        safeMode: s.plugins.safeMode,
       };
     },
 
@@ -352,7 +359,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       return s.core.messages(agent, { room, visible: true }).map((m) => ({
         id: m.id, room: m.room, author: m.author, authorHandle: s.core.handleOf(agent, m.author), mine: m.author === agent,
         ts: m.ts, status: m.status, statusWords: m.status === 'shown' ? null : m.preJoin ? STATUS_WORDS.pre_join : STATUS_WORDS[m.status] ?? m.status,
-        ...(m.text !== undefined && { text: m.text }), ...(m.reply_to && { replyTo: m.reply_to }),
+        ...(m.text !== undefined && messageEmbeds(s.plugins, m.text)), ...(m.reply_to && { replyTo: m.reply_to }),
         unreadByAgent: !m.delivered && m.author !== agent, queued: queued.has(m.id), ...(queued.get(m.id) && { queuedWhy: heldWords(queued.get(m.id)) }), ...(m.mentioned && { mentioned: true }), ...(m.preJoin && { preJoin: true }),
         ...(m.guard && { guard: { verdict: m.guard.verdict, matches: m.guard.matches.map(matchWords), held: m.guard.held } }),
         ...(m.trusted && { trusted: true }),
@@ -567,6 +574,40 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     alumniValidate: undefined as any, // async, below
     alumniRefresh: undefined as any, // async, below
     alumniCancel: undefined as any, // async, below
+    pluginChoose: undefined as any,
+    embedImage: undefined as any,
+
+    pluginInstall() {
+      if (!pluginZip) throw new Error('Choose a plugin zip first.');
+      s.plugins.install(pluginZip);
+      pluginZip = null;
+      s.changedNow();
+      return { ok: true };
+    },
+
+    pluginCancel() {
+      pluginZip = null;
+      return { ok: true };
+    },
+
+    pluginSetEnabled({ id, on }) {
+      s.plugins.setEnabled(id, !!on);
+      s.changedNow();
+      return { ok: true };
+    },
+
+    pluginRemove({ id }) {
+      s.plugins.remove(id);
+      s.changedNow();
+      return { ok: true };
+    },
+
+    openEmbedLink({ url }) {
+      const u = onActiveHost(s.plugins, url);
+      if (u) env.openExternal(u.href);
+      return { opened: !!u };
+    },
+
     setEventMode(a) {
       s.setEventMode(a);
       return { ok: true };
@@ -590,6 +631,21 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
   const claudeRunning = () => (env.claudeRunning ?? claudeDesktopRunning)();
 
   const asyncHandlers: Partial<Record<keyof Api, (a: any) => Promise<unknown>>> = {
+    // A plugin zip (§16.26.6): checked fully, kept in memory, nothing written until Install.
+    pluginChoose: async () => {
+      if (!env.openPluginFile) return { error: 'Choosing a file is not available here.' };
+      const f = await env.openPluginFile();
+      if (!f) return null;
+      try {
+        const p = s.plugins.preview(f.data);
+        pluginZip = f.data;
+        return { preview: previewView(p, p.icon) };
+      } catch (e) {
+        pluginZip = null;
+        return { error: `${f.name} cannot be installed: ${(e as Error).message}` };
+      }
+    },
+    embedImage: async ({ url }) => fetchEmbedImage(s.plugins, url),
     // The alumni club (§18.8).
     // Start again (a link the browser never finished, 2026-10-07) is this with `again`: the same kind of link as the one waiting.
     alumniLink: async ({ rotate, again }) => {

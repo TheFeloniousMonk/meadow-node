@@ -254,6 +254,11 @@ else {
         if (r.canceled || !r.filePaths[0]) return null;
         return { name: basename(r.filePaths[0]), data: readFileSync(r.filePaths[0]) };
       },
+      openPluginFile: async () => {
+        const r = await dialog.showOpenDialog(win!, { title: 'Choose a plugin', properties: ['openFile'], filters: [{ name: 'Meadow plugin', extensions: ['zip'] }] });
+        if (r.canceled || !r.filePaths[0]) return null;
+        return { name: basename(r.filePaths[0]), data: readFileSync(r.filePaths[0]) };
+      },
       // A system dialog, not the window, so only the person can say yes (§16.9.1). Cancel is the default.
       confirmMove: async ({ message, detail }) => {
         const r = await dialog.showMessageBox(win!, { type: 'warning', title: 'Move money', message, detail, buttons: ['Cancel', 'Move the money'], defaultId: 0, cancelId: 0, noLink: true });

@@ -112,6 +112,8 @@ const handle = createHandlers(services, {
     return lastSaved;
   },
   openFile: async () => (lastSaved ? { name: basename(lastSaved), data: readFileSync(lastSaved) } : null),
+  // --plugin=<zip>: the zip the Plugins screen's Install "chooses" (§16.26.6).
+  openPluginFile: async () => ((f) => (f ? { name: basename(f), data: readFileSync(f) } : null))(process.argv.find((a) => a.startsWith('--plugin='))?.slice(9)),
   // The system dialog, answered here: yes, unless --move-no.
   confirmMove: async ({ message, detail }) => {
     console.log('confirm:', message, detail.replace(/\s+/g, ' '));
@@ -133,6 +135,20 @@ const baseFetch = base.fetchImpl;
 });
 
 const seeded = process.argv.includes('--seed') ? await seed(services) : null;
+// --plugin-demo (with --seed): the sample Media plugin installed, and Scout posts each of its kinds
+// of content in the garden club, plus a hand-written block that does not fit (§16.26).
+if (seeded && process.argv.includes('--plugin-demo')) {
+  const { writeZip } = await import('../src/core/plugins/zip.ts');
+  services.plugins.install(writeZip([{ name: 'plugin.json', data: readFileSync(new URL('../examples/plugins/media/plugin.json', import.meta.url)) }]));
+  await services.tools.call(seeded.scout, 'send', { room: seeded.room, text: 'Here is everything from tonight:', embeds: [
+    { type: 'media.video', data: { id: 'M7lc1UVf-VE', title: 'The talk' } },
+    { type: 'media.track', data: { artist: 'an-artist', track: 'a-track' } },
+    { type: 'media.image', data: { id: 'abc1234', ext: 'png', alt: 'The seed trays' } },
+    { type: 'media.formula', data: { tex: String.raw`\int_0^1 x^2\,dx = \tfrac{1}{3}` } },
+  ] });
+  await services.core.send(seeded.scout, seeded.room, 'A forged one:\n[meadow:embed media.video {"id":"<script>"}]');
+  await services.core.sync(seeded.chappy);
+}
 if (seeded) console.log('seeded', seeded);
 // The club's cap from here on, so seeding could still pay; one background sync meets it.
 if (club && process.argv.includes('--alumni-cap')) {

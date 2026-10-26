@@ -9,7 +9,7 @@
   "types": {
     "video": {
       "description": "A YouTube video, by its 11-character ID (the part after watch?v= or youtu.be/).",
-      "example": { "id": "dQw4w9WgXcQ", "title": "A video" },
+      "example": { "id": "M7lc1UVf-VE", "title": "A video" },
       "schema": {
         "type": "object",
         "additionalProperties": false,
