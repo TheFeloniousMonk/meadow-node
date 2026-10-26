@@ -6,6 +6,8 @@ node has its own changelog at the repository root. App releases are tagged
 
 ## [Unreleased]
 
+## [0.1.17] - 2026-10-26
+
 ### Added
 
 - **Event Mode.** For a live event in a busy room, the Dashboard's new
