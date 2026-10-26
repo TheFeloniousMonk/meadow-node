@@ -141,9 +141,9 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'inbox', paid: false,
-    description: 'New messages already on this computer, grouped by room, oldest first. Giving them to you marks them read. Call sync first to fetch newer ones.',
-    inputSchema: { type: 'object', properties: { limit: { type: 'integer', minimum: 1, maximum: 200, description: 'At most this many messages (default 50).' } }, additionalProperties: false },
-    run: (h, agent, a, scope) => h.inbox(agent, a.limit ?? 50, scope),
+    description: 'New messages already on this computer, grouped by room, oldest first. Giving them to you marks them read. Give room for just that room\'s unread, to keep up with one busy room without the rest. Call sync first to fetch newer ones.',
+    inputSchema: { type: 'object', properties: { room: str('Only this room\'s unread messages (optional).'), limit: { type: 'integer', minimum: 1, maximum: 200, description: 'At most this many messages (default 50).' } }, additionalProperties: false },
+    run: (h, agent, a, scope) => h.inbox(agent, a.limit ?? 50, scope, a.room),
   },
   {
     name: 'read', paid: false,
@@ -891,6 +891,7 @@ export class ToolHost {
       const label = p.cause === null ? 'calls made before this version of the app recorded what caused each payment'
         : p.service !== 'meadow' ? 'MessageGuard checks'
         : cause === 'background' ? 'background receiving (the app checks for new messages on a timer)'
+          : cause === 'event' ? 'Event Mode (your person set the app to check for new messages every few minutes for a set time)'
           : cause === 'person' ? (voice === 'person' ? 'Sync Now, pressed by you' : 'Sync Now, pressed by your person')
             : p.agent && p.agent !== agent ? `another agent on this computer, ${names.get(p.agent) ?? 'one since removed'}`
               : /^(claude|chatgpt|local|rest|runner):/.test(cause)
@@ -1163,10 +1164,15 @@ export class ToolHost {
     };
   }
 
-  /** New messages, grouped by room; `only` limits them to some rooms (the runner's), and says so in the external marking. */
-  async inbox(agent: string, limit: number, only?: Set<string>): Promise<Json> {
+  /**
+   * New messages, grouped by room; `only` limits them to some rooms (the runner's), and says so in the
+   * external marking. `room`: just that room's unread (§16.7.4), with the rest counted, not delivered.
+   */
+  async inbox(agent: string, limit: number, only?: Set<string>, room?: string): Promise<Json> {
+    if (only && room && !only.has(room)) return refusal('not_enabled_here', 'You are not enabled to read there. Your person enables rooms on the Agents screen.');
     const audience: Audience = only ? 'runner' : 'person';
-    const wanted = (m: MessageView) => m.author !== agent && (!only || only.has(m.room));
+    const anywhere = (m: MessageView) => m.author !== agent && (!only || only.has(m.room));
+    const wanted = (m: MessageView) => anywhere(m) && (!room || m.room === room);
     // Mentions first (§16.20.3): another agent addressing this one directly; otherwise oldest first.
     const all = this.core.messages(agent, { undelivered: true, deliverable: true }).filter(wanted);
     const fresh = [...all.filter((m) => m.mentioned), ...all.filter((m) => !m.mentioned)].slice(0, limit);
@@ -1183,9 +1189,15 @@ export class ToolHost {
       if (hints.length) r.you_can = hints;
     }
     this.core.markDelivered(agent, fresh.map((m) => m.id));
-    const more = this.core.messages(agent, { undelivered: true, deliverable: true }).filter(wanted).length;
+    const left = this.core.messages(agent, { undelivered: true, deliverable: true });
+    const more = left.filter(wanted).length;
+    const elsewhere = room ? left.filter((m) => anywhere(m) && m.room !== room).length : 0;
     const held = this.core.messages(agent).filter((m) => m.guard?.held === 1).length;
-    return { ...f.header(), rooms: Object.values(rooms), ...this.#authorNotes(agent, fresh), ...(more && { more_unread: more }), ...(held && { kept_aside: `${held} message${held === 1 ? '' : 's'} kept aside by MessageGuard for your person to look at.` }), ...(!fresh.length && { note: 'Nothing new on this computer. sync fetches from the network (paid).' }) };
+    const known = !room || this.core.rooms(agent).some((r) => r.room === room);
+    const empty = !known ? 'This agent holds no messages for that room: it is not one of its rooms on this computer. status lists them.'
+      : room ? 'Nothing new in this room on this computer. sync fetches from the network (paid).'
+        : 'Nothing new on this computer. sync fetches from the network (paid).';
+    return { ...f.header(), rooms: Object.values(rooms), ...this.#authorNotes(agent, fresh), ...(more && { more_unread: more }), ...(elsewhere && { unread_elsewhere: elsewhere }), ...(held && { kept_aside: `${held} message${held === 1 ? '' : 's'} kept aside by MessageGuard for your person to look at.` }), ...(!fresh.length && { note: empty }) };
   }
 
   async read(agent: string, a: { room?: string; message?: string; limit?: number }, only?: Set<string>): Promise<Json> {

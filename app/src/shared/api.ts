@@ -281,6 +281,25 @@ export interface AppState {
   alumni: AlumniView;
   /** A development run only (null in a release): whether Alumni testing is on (Settings → Developer). */
   devAlumniTesting: boolean | null;
+  /** Event Mode (§16.25). */
+  eventMode: EventModeState;
+}
+
+/** Event Mode (§16.25): the person's choices, the countdown, and what one round of checks costs each payer. */
+export interface EventModeState {
+  on: boolean;
+  paused: boolean;
+  frequency: number;
+  duration: number;
+  frequencies: number[];
+  durations: number[];
+  /** While running: when it ends (ms since 1970). While paused: the time left (ms). */
+  endsAt: number | null;
+  remainingMs: number | null;
+  /** The normal schedule it returns to. */
+  normal: { enabled: boolean; minutes: number };
+  /** Calls one round of checks makes, by payer: a wallet, or the alumni club; with what that payer has left today. */
+  payers: { name: string; club: boolean; callsPerRound: number; budgetLeftUsd: string | null; callsLeft: number | null }[];
 }
 
 /** The alumni membership on this computer, from the club's last answer (§18.8). */
@@ -484,6 +503,8 @@ export interface Api {
   /** A development run only: Enable Alumni testing (Settings → Developer). */
   setAlumniTesting(a: { on: boolean }): { ok: true };
   alumniSetFallback(a: { on: boolean }): { ok: true };
+  /** Event Mode (§16.25): choose the frequency or duration, turn it on or off, pause, resume, or reset. */
+  setEventMode(a: { action: 'choose' | 'start' | 'stop' | 'pause' | 'resume' | 'reset'; frequency?: number; duration?: number }): { ok: true };
 }
 
 export type Channel = keyof Api;
@@ -491,7 +512,7 @@ export const CHANNELS: Channel[] = [
   'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'claudeRunning', 'installUpdate', 'disconnectClaude', 'localInterface', 'rotateToken',
   'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'movePlan', 'moveStart', 'moveStatus', 'bridgePlan', 'bridgeStart', 'bridgeStatus', 'setBudget', 'setDiscoverable', 'dismissUnlistedNotice', 'walletQr', 'syncNow', 'syncAllNow', 'rooms', 'messages', 'roomCard', 'hideMessage', 'hideAuthor', 'unhideAll', 'trustSender', 'setSettings',
   'guardCheck', 'guardDecide', 'backup', 'backupChanges', 'setMay', 'setRoomSettings', 'testConnection', 'diagnosticsText', 'diagnosticsSave', 'activity', 'activitySpending', 'activitySave', 'notes', 'setAnchor', 'setNote', 'removeNote', 'keepNote', 'notesSeen', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'restartTunnel', 'troubleshootRun', 'checkElsewhere', 'enterChatgptCode', 'revokeClient', 'setRunner',
-  'copy', 'openExternal', 'alumniLink', 'alumniValidate', 'alumniRefresh', 'alumniCancel', 'alumniOpenAccount', 'setAlumniTesting', 'alumniSetFallback',
+  'copy', 'openExternal', 'alumniLink', 'alumniValidate', 'alumniRefresh', 'alumniCancel', 'alumniOpenAccount', 'setAlumniTesting', 'alumniSetFallback', 'setEventMode',
 ];
 
 /** Links the window may open in the browser. */

@@ -10,7 +10,7 @@ import { dirname } from 'node:path';
 import { backupChanges, backupDue, describeBackup, makeBackup, readBackup, restoreBackup } from '../core/backup.ts';
 import { tokenBalance } from '../core/balance.ts';
 import { add, bridgeEntry, claudeDesktopConfigPath, claudeDesktopRunning, entryName, remove, status } from '../server/claude-desktop.ts';
-import { CHANNELS, linkAllowed, type AlumniView, type Api, type AppState, type BridgePlanView, type BridgeStateView, type Channel, type MessageView, type MovePlanView, type MoveStateView, type NoteView } from '../shared/api.ts';
+import { CHANNELS, linkAllowed, type AlumniView, type Api, type AppState, type EventModeState, type BridgePlanView, type BridgeStateView, type Channel, type MessageView, type MovePlanView, type MoveStateView, type NoteView } from '../shared/api.ts';
 import type { Services } from './services.ts';
 import { connectionCheck, diagnosticsText, testConnection, type ClaudeState } from './check.ts';
 import { runOutside, troubleshoot } from './troubleshoot.ts';
@@ -22,6 +22,7 @@ import type { Note } from '../core/notes.ts';
 import { heldWords } from '../core/watch.ts';
 import { MODE_NAMES, PUBLIC_MODES, modeSentence } from '../core/modes.ts';
 import { HINTS } from '../core/tools.ts';
+import { EVENT_DURATIONS, EVENT_FREQUENCIES } from './event-mode.ts';
 
 export interface HandlerEnv {
   /** The app's executable, which runs the Claude bridge as Node. */
@@ -161,6 +162,22 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
   };
   const nameOf = (agent: string) => s.core.agents().find((a) => a.id === agent)?.name ?? '';
 
+  /** Event Mode for the window (§16.25): the choices, the countdown, and each payer's calls per round with what it has left today. */
+  const eventModeView = (price: ReturnType<typeof s.catalog.priceAtomic>): EventModeState => {
+    const v = s.eventMode.view();
+    const normal = s.effectiveSettings();
+    const club = alumniView();
+    const payers = [...s.receivingCallsByPayer()].map(([payer, callsPerRound]) => {
+      if (payer === 'alumni') return { name: ALUMNI_WALLET_NAME, club: true, callsPerRound, budgetLeftUsd: null, callsLeft: club.callsLeft };
+      const w = s.wallets.list().find((x) => x.id === payer);
+      if (!w || !price) return { name: w?.name ?? 'a wallet', club: false, callsPerRound, budgetLeftUsd: null, callsLeft: null };
+      const b = s.wallets.budgetFor(w.id, price.atomic);
+      const left = b.budget > b.spent ? b.budget - b.spent : 0n;
+      return { name: w.name, club: false, callsPerRound, budgetLeftUsd: formatUsd(left), callsLeft: Number(left / price.atomic) };
+    });
+    return { ...v, frequencies: [...EVENT_FREQUENCIES], durations: EVENT_DURATIONS, normal: { enabled: normal.syncEnabled, minutes: normal.syncMinutes }, payers };
+  };
+
   const handlers: Api = {
     state(): AppState {
       const price = s.catalog.priceAtomic('meadow');
@@ -214,6 +231,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
         troubleshoot: troubleshoot(s, claudeState),
         alumni: alumniView(),
         devAlumniTesting: s.devAlumniToggle ? s.alumniTesting() : null,
+        eventMode: eventModeView(price),
       };
     },
 
@@ -549,6 +567,11 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     alumniValidate: undefined as any, // async, below
     alumniRefresh: undefined as any, // async, below
     alumniCancel: undefined as any, // async, below
+    setEventMode(a) {
+      s.setEventMode(a);
+      return { ok: true };
+    },
+
     setAlumniTesting({ on }) {
       s.setAlumniTesting(!!on);
       return { ok: true };

@@ -23,6 +23,7 @@ import { createLocalServer } from '../server/local.ts';
 import { createPublicServer } from '../server/public.ts';
 import { OAuth } from '../core/oauth.ts';
 import { Runner } from '../core/runner.ts';
+import { EventMode } from './event-mode.ts';
 import { Tunnel } from './tunnel.ts';
 import { newOutside, type Outside } from './troubleshoot.ts';
 import { findElsewhere, type ElsewhereResult } from '../core/elsewhere.ts';
@@ -65,6 +66,15 @@ export type MentionNote = { rooms: { room: string; title: string; by: string; co
 export const MENTION_ROOMS_PER_SYNC = 5;
 /** How often background receiving looks for groups that are due (§16.8). */
 export const BACKGROUND_TICK_MS = 60_000;
+/** While Event Mode runs (§16.25): often enough that a 1-minute frequency means about a minute, not two. */
+export const EVENT_TICK_MS = 15_000;
+
+const minutes = (n: number) => (n === 1 ? 'minute' : `${n} minutes`);
+const hours = (min: number) => {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return `${h} hour${h === 1 ? '' : 's'}${m ? ` ${m} minutes` : ''}`;
+};
 
 export class Services {
   readonly db: Db;
@@ -83,6 +93,7 @@ export class Services {
   readonly guard: MessageGuard;
   readonly oauth: OAuth;
   readonly runner: Runner;
+  readonly eventMode: EventMode;
   readonly tunnel: Tunnel;
   readonly update: UpdateCheck;
   readonly diagnostics: Diagnostics;
@@ -279,6 +290,7 @@ export class Services {
     });
     this.oauth = new OAuth({ db: this.db, diagnostics: this.diagnostics });
     this.runner = new Runner({ db: this.db, vault: this.vault, host: this.tools });
+    this.eventMode = new EventMode({ db: this.db });
     // Each change of the tunnel's state is recorded, with its error or address, and so is
     // what the watch saw and did: wakes, checks, restarts, the door (§16.17.1, §16.17.8).
     let tunnelWas = '';
@@ -444,8 +456,8 @@ export class Services {
   schedule() {
     if (this.#timer) clearInterval(this.#timer);
     this.#timer = null;
-    const s = this.effectiveSettings();
-    this.#scheduled = s.syncEnabled ? s.syncMinutes : null;
+    const iv = this.#interval();
+    this.#scheduled = this.#scheduleKey();
     // Once a day, free: USDC sent to a wallet on the wrong network (§16.9.2); first a minute after start.
     if (!this.#daily) {
       // The alumni club's status on start, then with the syncs once a day (§18.8).
@@ -454,27 +466,109 @@ export class Services {
       this.#daily = setInterval(() => void this.checkElsewhere({ force: true }).catch(() => {}), 24 * 3600 * 1000);
       this.#daily.unref();
     }
-    if (!s.syncEnabled) return;
-    // Looks once a minute and syncs only the groups that are due (§16.8): a sync the AI, a write, or
-    // Sync Now just made is never repeated. A tick while the last one still runs is skipped (security review A1).
-    this.#timer = setInterval(() => {
-      if (this.#background) return;
-      this.#background = true;
-      void this.syncAll('background', { due: true }).finally(() => (this.#background = false));
-    }, BACKGROUND_TICK_MS);
+    // A paused or finished event still needs the clock: to end it on time, and to tell the person.
+    if (!iv.enabled && !this.eventMode.view().on) return;
+    // Looks once a minute (every 15 s during an event) and syncs only the groups that are due (§16.8):
+    // a sync the AI, a write, or Sync Now just made is never repeated. A tick while the last one still
+    // runs is skipped (security review A1).
+    // Unref'd like the daily check: the app's own life keeps it running, and a test's ends with its work.
+    this.#timer = setInterval(() => this.backgroundTick(), iv.event ? EVENT_TICK_MS : BACKGROUND_TICK_MS);
+    this.#timer.unref();
+  }
+
+  /** One look of background receiving: ends an event whose time is up, then syncs the groups that are due. */
+  backgroundTick() {
+    if (this.eventMode.due()) this.#endEvent();
+    const iv = this.#interval();
+    if (this.#background || !iv.enabled) return;
+    this.#background = true;
+    void this.syncAll(iv.event ? 'event' : 'background', { due: true }).finally(() => (this.#background = false));
   }
 
   /** A background receive is running. */
   #background = false;
 
-  /** The interval background receiving runs on, once scheduled; null when it is off. */
-  #scheduled: number | null | undefined = undefined;
+  /** What background receiving was scheduled with (interval in force, Event Mode on or not); undefined before the first schedule. */
+  #scheduled: string | undefined = undefined;
 
-  /** Schedules again when the interval in force changed (a membership began or ended). */
+  #scheduleKey(): string {
+    const iv = this.#interval();
+    return `${iv.enabled ? iv.minutes : 'off'}:${iv.event}:${this.eventMode.view().on}`;
+  }
+
+  /** Schedules again when the interval in force changed (a membership began or ended, Event Mode changed). */
   #reschedule() {
     if (this.#scheduled === undefined) return;
+    if (this.#scheduleKey() !== this.#scheduled) this.schedule();
+  }
+
+  /**
+   * The receive interval in force: Event Mode's frequency while it runs (§16.25), even with normal
+   * auto-sync off; otherwise the effective settings (the person's, or the club's, §18.8).
+   */
+  #interval(): { enabled: boolean; minutes: number; event: boolean } {
+    const f = this.eventMode.activeFrequency();
+    if (f !== null) return { enabled: true, minutes: f, event: true };
     const s = this.effectiveSettings();
-    if ((s.syncEnabled ? s.syncMinutes : null) !== this.#scheduled) this.schedule();
+    return { enabled: s.syncEnabled, minutes: s.syncMinutes, event: false };
+  }
+
+  /** The agents background receiving covers: those a wallet or the club pays for. */
+  receivingAgents(): string[] {
+    return this.#syncGroups().flat();
+  }
+
+  /** How many calls one round of background receiving makes: one per payer's group of up to 8 (§7.9), by wallet ('alumni' for the club). */
+  receivingCallsByPayer(): Map<string, number> {
+    const out = new Map<string, number>();
+    // An active membership pays first for every agent (its fallback only steps in past the allowance).
+    const club = this.alumni.active();
+    for (const g of this.#syncGroups()) {
+      const payer = club ? 'alumni' : this.wallets.walletOf(g[0]) ?? 'none';
+      out.set(payer, (out.get(payer) ?? 0) + 1);
+    }
+    return out;
+  }
+
+  /**
+   * The person's Event Mode controls (§16.25). Each change is logged for every agent it covers, as
+   * the person's settings change, and background receiving is scheduled again at once.
+   */
+  setEventMode(a: { action: 'choose' | 'start' | 'stop' | 'pause' | 'resume' | 'reset'; frequency?: number; duration?: number }) {
+    const em = this.eventMode;
+    const before = em.view();
+    if (a.action === 'choose') em.choose({ frequency: a.frequency, duration: a.duration });
+    else if (a.action === 'start') {
+      if (a.frequency !== undefined || a.duration !== undefined) em.choose({ frequency: a.frequency, duration: a.duration });
+      em.start();
+    } else if (a.action === 'stop') em.stop();
+    else if (a.action === 'pause') em.pause();
+    else if (a.action === 'resume') em.resume();
+    else if (a.action === 'reset') em.reset();
+    else throw new Error('Unknown Event Mode action.');
+    const now = em.view();
+    const text =
+      a.action === 'start' ? `Event Mode started: checking for new messages every ${minutes(now.frequency)} for ${hours(now.duration)}.`
+        : a.action === 'stop' ? 'Event Mode turned off: back to the normal schedule.'
+          : a.action === 'pause' ? 'Event Mode paused: the normal schedule applies until it resumes.'
+            : a.action === 'resume' ? `Event Mode resumed: checking every ${minutes(now.frequency)}.`
+              : a.action === 'reset' ? `Event Mode reset to ${hours(now.duration)}.`
+                : before.on && before.frequency !== now.frequency ? `Event Mode now checks every ${minutes(now.frequency)}.`
+                  : before.on && before.duration !== now.duration ? `Event Mode restarted for ${hours(now.duration)}.` : null;
+    if (text) for (const agent of this.receivingAgents()) this.activity.add(agent, 'you', 'settings', text, { room: null, ext: false });
+    this.#reschedule();
+    this.#changed();
+    return now;
+  }
+
+  /** The event's time is up (§16.25): back to the normal schedule, and the person is told. */
+  #endEvent() {
+    this.eventMode.stop();
+    const s = this.effectiveSettings();
+    for (const agent of this.receivingAgents()) this.activity.add(agent, 'you', 'settings', 'Event Mode ended: back to the normal schedule.', { room: null, ext: false });
+    this.#notifyText('Event Mode ended', s.syncEnabled ? `Back to checking every ${minutes(s.syncMinutes)}.` : 'Automatic checks are off, as before.');
+    this.#reschedule();
+    this.#changed();
   }
 
   /** Asks the alumni club for the membership's status, and tells the person when it ends (§18.8). */
@@ -534,7 +628,7 @@ export class Services {
   #dueAt(group: string[]): number {
     const oldest = Math.min(...group.map((a) => this.lastSyncOk(a) ?? 0));
     const tried = Math.max(...group.map((a) => this.#attempted.get(a) ?? 0));
-    return Math.max(oldest, tried) + this.effectiveSettings().syncMinutes * 60_000;
+    return Math.max(oldest, tried) + this.#interval().minutes * 60_000;
   }
 
   /**
@@ -543,9 +637,10 @@ export class Services {
    */
   freshness(agent: string, now = Date.now()): { lastOk: number | null; nextBackground: number | null } {
     const lastOk = this.lastSyncOk(agent);
-    if (!this.effectiveSettings().syncEnabled) return { lastOk, nextBackground: null };
+    const iv = this.#interval();
+    if (!iv.enabled) return { lastOk, nextBackground: null };
     const group = this.#syncGroups().find((g) => g.includes(agent)) ?? [agent];
-    return { lastOk, nextBackground: Math.max(this.#dueAt(group), now) + BACKGROUND_TICK_MS };
+    return { lastOk, nextBackground: Math.max(this.#dueAt(group), now) + (iv.event ? EVENT_TICK_MS : BACKGROUND_TICK_MS) };
   }
 
   /**
@@ -553,14 +648,14 @@ export class Services {
    * payments are recorded as (§16.9.4). `due`: background receiving, which syncs only the groups whose
    * time has come (§16.8).
    */
-  async syncAll(cause: 'background' | 'person' = 'background', { due = false, now = Date.now() }: { due?: boolean; now?: number } = {}): Promise<{ agent: string; ok: boolean; message: string }[]> {
+  async syncAll(cause: 'background' | 'event' | 'person' = 'background', { due = false, now = Date.now() }: { due?: boolean; now?: number } = {}): Promise<{ agent: string; ok: boolean; message: string }[]> {
     if (this.alumni.due()) await this.refreshAlumni().catch(() => {});
     // A membership can end by its date alone, with nothing said: the interval in force follows.
     this.#reschedule();
     const club = this.alumni.active();
     // At the club's cap, with the agents' own wallets not allowed past it, background receiving
     // waits until the allowance frees up (§18.8): every call until then would be refused.
-    if (cause === 'background' && club && !this.alumni.fallback() && this.alumni.held()?.code === 'cap') return [];
+    if (cause !== 'person' && club && !this.alumni.fallback() && this.alumni.held()?.code === 'cap') return [];
     const groups = this.#syncGroups().filter((g) => !due || this.#dueAt(g) <= now);
     if (due) for (const g of groups) for (const a of g) this.#attempted.set(a, now);
     const out: { agent: string; ok: boolean; message: string }[] = [];

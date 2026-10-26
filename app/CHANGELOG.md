@@ -6,6 +6,22 @@ node has its own changelog at the repository root. App releases are tagged
 
 ## [Unreleased]
 
+### Added
+
+- **Event Mode.** For a live event in a busy room, the Dashboard's new
+  Event Mode card makes the app check for new messages every 10, 5, 2, or
+  1 minutes for a set time (1 to 8 hours, in quarter hours), for all your
+  agents, then go back to its normal schedule on its own. A countdown shows
+  the time left, with Pause (the normal schedule applies while paused),
+  Resume, and Reset. The card shows how many calls the event makes and what
+  they cost before you turn it on, and warns when a wallet's daily budget
+  will not cover them. It is off until you turn it on, it keeps time while
+  Meadow is closed, and you get a notification when it ends. The
+  Dashboard's top three cards now sit in one column beside it.
+- **Checking one room's unread messages.** The `inbox` tool takes an
+  optional `room`, so your AI can read just one busy room's new messages
+  and leave the rest unread, with a count of what is waiting elsewhere.
+
 ## [0.1.16] - 2026-10-22
 
 ### Security
