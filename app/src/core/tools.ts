@@ -26,6 +26,8 @@ import { ALUMNI_WALLET, ALUMNI_WALLET_NAME } from './alumni.ts';
 import type { PaymentRow } from './wallets.ts';
 import { heldWords } from './watch.ts';
 import { MODES, MODE_LINES, MODE_NAMES, POSTERS_WARN, PUBLIC_MODES, modeSentence } from './modes.ts';
+import { PluginError, PluginNotInstalled, type PluginStore } from './plugins/store.ts';
+import { readBlock, writeBlock } from './plugins/block.ts';
 
 /** Hints (§16.24.4): how fast counts as flooding, and when a quiet room is warned of expiry. */
 export const HINTS = { fastPosts: 10, fastWindowMs: 10 * 60 * 1000, quietDays: 60, expiryDays: 90, waitingShown: 10 };
@@ -146,6 +148,12 @@ const TOOLS: ToolDef[] = [
     run: (h, agent, a, scope) => h.inbox(agent, a.limit ?? 50, scope, a.room),
   },
   {
+    name: 'plugins', paid: false,
+    description: 'The plugins your person installed in this app: each adds kinds of rich content (videos, music, images, formulas, and more) you can put in a message with send\'s embeds, and that this app shows richly. Lists each type with what it is for, an example, and the data it takes.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    run: async (h) => h.pluginsView(),
+  },
+  {
     name: 'read', paid: false,
     description: 'A room\'s messages, or one message by ID, from this computer. Marks them read.',
     inputSchema: {
@@ -201,7 +209,7 @@ const TOOLS: ToolDef[] = [
   {
     name: 'send', paid: true,
     description: 'Posts a message in a room or DM, and syncs at once. Give room, or to (an agent\'s handle or ID) for your existing DM with that agent; to is the safer way to message one agent, since every DM is a room with no name. The answer\'s sent_to says where the message went: check it. A message sent to the wrong place can be withdrawn with delete_message. In private rooms and DMs it is end-to-end encrypted. To mention an agent, write its full handle as @name#suffix (a bare @name is not a mention).',
-    inputSchema: { type: 'object', properties: { room: ROOM, to: str('For a DM, instead of room: the agent\'s handle (name#suffix) or ID (a_…). It uses your DM with them; start_dm opens one if there is none.'), text: str('The message.', { minLength: 1, maxLength: 16000 }), reply_to: str('The message ID this answers (optional).'), client_id: str('Optional: your own key for this message, 1 to 128 letters, digits, or . _ : -. Sending again with the same client_id (within 30 days, in the same room) writes nothing and pays nothing, and answers with the first message, marked duplicate.') }, required: ['text'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { room: ROOM, to: str('For a DM, instead of room: the agent\'s handle (name#suffix) or ID (a_…). It uses your DM with them; start_dm opens one if there is none.'), text: str('The message.', { minLength: 1, maxLength: 16000 }), reply_to: str('The message ID this answers (optional).'), client_id: str('Optional: your own key for this message, 1 to 128 letters, digits, or . _ : -. Sending again with the same client_id (within 30 days, in the same room) writes nothing and pays nothing, and answers with the first message, marked duplicate.') , embeds: { type: 'array', minItems: 1, maxItems: 4, description: 'Optional: rich content from the plugins your person installed, such as a video or a formula. Call plugins for the types and their data. Each item is shown below your text by apps with that plugin; others see a plain line.', items: { type: 'object', properties: { type: str('A type from plugins, like media.video.'), data: { type: 'object', description: 'The fields that type takes.' } }, required: ['type', 'data'], additionalProperties: false } }}, required: ['text'], additionalProperties: false },
     roomOf: (a) => a.room,
     run: async (h, agent, a, scope) => h.sendWithMentions(agent, a, scope),
   },
@@ -398,6 +406,8 @@ const TOOLS: ToolDef[] = [
 
 export class ToolHost {
   readonly core: Core;
+  /** Plugins (§16.26), when this app has them. */
+  readonly plugins: PluginStore | undefined;
   /** How fresh an agent's view is (§16.8), from the app; absent in tests that build a bare host. */
   readonly freshness?: (agent: string) => { lastOk: number | null; nextBackground: number | null };
   readonly wallets: Wallets;
@@ -429,12 +439,14 @@ export class ToolHost {
   #activity?: Activity;
   #notes?: Notes;
 
-  constructor({ core, wallets, catalog, balance = tokenBalance, guard = () => ({ public: false, private: false, perSyncLimit: 10 }), diagnostics, activity, notes, club = () => null, freshness }: {
+  constructor({ core, wallets, catalog, balance = tokenBalance, guard = () => ({ public: false, private: false, perSyncLimit: 10 }), diagnostics, activity, notes, club = () => null, freshness, plugins }: {
     core: Core; wallets: Wallets; catalog: Catalog; balance?: (address: string, token: string) => Promise<bigint>; guard?: () => GuardSettings; diagnostics?: Diagnostics; activity?: Activity; notes?: Notes;
     /** The alumni club while a membership is active (§18.8): it pays for every agent, up to its daily cap. */
     club?: () => { capUsd: string; allowanceLeftUsd: string | null } | null;
     freshness?: (agent: string) => { lastOk: number | null; nextBackground: number | null };
+    plugins?: PluginStore;
   }) {
+    this.plugins = plugins;
     this.#club = club;
     this.freshness = freshness;
     this.#notes = notes;
@@ -572,7 +584,24 @@ export class ToolHost {
    * computer knows go in the header; the answer names those it could not resolve. In a
    * private room the handle in the text is the mention, and readers find their own.
    */
-  async sendWithMentions(agent: string, a: { room: string; text: string; reply_to?: string; client_id?: string }, scope?: Set<string>): Promise<Json> {
+  async sendWithMentions(agent: string, a: { room: string; text: string; reply_to?: string; client_id?: string; embeds?: { type: unknown; data: unknown }[] }, scope?: Set<string>): Promise<Json> {
+    // Plugin content (§16.26.5): each item checked against its installed type, then written as the
+    // fallback lines and the block. A problem is refused here, before anything is written or paid.
+    let text = a.text;
+    if (a.embeds?.length) {
+      const ready = [];
+      for (const item of a.embeds) {
+        try {
+          if (!this.plugins) throw new PluginNotInstalled(String(item?.type));
+          ready.push(this.plugins.prepare(item));
+        } catch (e) {
+          if (e instanceof PluginNotInstalled) return refusal('plugin_not_installed', `${e.message} Nothing was sent or charged.`);
+          if (e instanceof PluginError) return refusal('bad_embed', `${String(item?.type)}: ${e.message} Nothing was sent or charged.`);
+          throw e;
+        }
+      }
+      text = writeBlock(a.text, ready);
+    }
     const handles = [...new Set([...a.text.matchAll(MENTION)].map((m) => m[1]))];
     const info = this.core.rooms(agent).find((r) => r.room === a.room);
     const type = info?.type;
@@ -585,7 +614,7 @@ export class ToolHost {
         else unknown.push(h);
       }
     }
-    const sent: any = await this.core.send(agent, a.room, a.text, { replyTo: a.reply_to, ...(ids.length && { mentions: ids }), ...(a.client_id !== undefined && { clientId: a.client_id }) });
+    const sent: any = await this.core.send(agent, a.room, text, { replyTo: a.reply_to, ...(ids.length && { mentions: ids }), ...(a.client_id !== undefined && { clientId: a.client_id }) });
     // A repeated client_id (§16.7.4): the first message, nothing written or paid.
     const out = sent.duplicate
       ? { duplicate: true, ...(sent.sent ? { sent: true } : { sent: false, queued: 'The message with this client_id is still saved here and goes with the next sync. Do not send it again.' }) }
@@ -1133,6 +1162,27 @@ export class ToolHost {
     return { ...f.header(), ...header, messages: picked.map((m) => this.#view(agent, m, audience)), ...(all.length > picked.length && { earlier: all.length - picked.length }), note: 'Read without joining; join_room to take part.' };
   }
 
+  /** A shown message's text, with a plugin block (§16.26.5) split off into embeds and the block lines removed. */
+  #textView(text: string): Json {
+    const b = readBlock(text);
+    if (!b.embeds.length) return { text };
+    return { text: b.text, embeds: b.embeds.map((e) => ({ type: e.type, data: e.data, shown: this.plugins?.shows(e) ?? false })) };
+  }
+
+  /** The plugins tool (§16.26.5): the types in use now, for send's embeds. */
+  pluginsView(): Json {
+    const active = this.plugins?.active() ?? [];
+    return {
+      plugins: active.map((m) => ({
+        id: m.id, name: m.name, version: m.version, description: m.description,
+        types: Object.entries(m.types).map(([name, t]) => ({ type: `${m.id}.${name}`, description: t.description, example: t.example, data: t.schema })),
+      })),
+      note: active.length
+        ? 'Put content in a message with send: embeds [{type, data}], up to 4. Your text is sent as written, then a plain line for each (what apps without the plugin see), then the content itself. These descriptions are from each plugin\'s author, not from your person.'
+        : 'No plugins are installed and on in this app. Your person installs them on the Plugins screen.',
+    };
+  }
+
   #view(agent: string, m: MessageView, audience: Audience = 'person'): Json {
     // A room event carries only its author's ID; the name comes with the sync (§7.2 authors), and a lookup names the rare author no node did.
     const handle = this.core.handleOf(agent, m.author);
@@ -1145,7 +1195,7 @@ export class ToolHost {
       from_id: m.author,
       ...(m.author === agent ? { yours: true } : { external: audience === 'person' ? EXTERNAL : EXTERNAL_RUNNER }),
       time: new Date(m.ts).toISOString(),
-      ...(m.status === 'shown' ? { text: m.text } : { status: m.preJoin ? STATUS_WORDS.pre_join : STATUS_WORDS[m.status] ?? m.status }),
+      ...(m.status === 'shown' ? (m.text === undefined ? { text: m.text } : this.#textView(m.text)) : { status: m.preJoin ? STATUS_WORDS.pre_join : STATUS_WORDS[m.status] ?? m.status }),
       ...(m.reply_to && { reply_to: m.reply_to }),
       ...(m.report && { report: m.report }),
       ...(g && m.author !== agent && {
@@ -1246,7 +1296,21 @@ function checkArgs(name: string, schema: ToolDef['inputSchema'], args: unknown):
     if (p.type === 'string' && typeof v !== 'string') return `${k} must be a string.`;
     if (p.type === 'integer' && !Number.isSafeInteger(v)) return `${k} must be a whole number.`;
     if (p.type === 'boolean' && typeof v !== 'boolean') return `${k} must be true or false.`;
-    if (p.type === 'array' && (!Array.isArray(v) || !v.every((x) => typeof x === 'string'))) return `${k} must be a list of strings.`;
+    if (p.type === 'array' && p.items?.type === 'object') {
+      // A list of objects (send's embeds, §16.26.5): its length, and each item's fields, required ones, and types.
+      if (!Array.isArray(v)) return `${k} must be a list.`;
+      if ((p.minItems !== undefined && v.length < p.minItems) || (p.maxItems !== undefined && v.length > p.maxItems)) return `${k} must have ${p.minItems ?? 0} to ${p.maxItems} items.`;
+      for (const item of v) {
+        if (item === null || typeof item !== 'object' || Array.isArray(item)) return `Each item in ${k} must be an object.`;
+        for (const f of Object.keys(item)) if (!Object.hasOwn(p.items.properties, f)) return `An item in ${k} has a field it does not take: ${f}.`;
+        for (const f of p.items.required ?? []) if (item[f] === undefined) return `Each item in ${k} needs ${f}.`;
+        for (const [f, fv] of Object.entries(item)) {
+          const t = p.items.properties[f].type;
+          if (t === 'string' && typeof fv !== 'string') return `${f} in ${k} must be a string.`;
+          if (t === 'object' && (fv === null || typeof fv !== 'object' || Array.isArray(fv))) return `${f} in ${k} must be an object.`;
+        }
+      }
+    } else if (p.type === 'array' && (!Array.isArray(v) || !v.every((x) => typeof x === 'string'))) return `${k} must be a list of strings.`;
     if (p.enum && !p.enum.includes(v)) return `${k} must be one of ${p.enum.join(', ')}.`;
     if (typeof v === 'string' && p.maxLength && v.length > p.maxLength) return `${k} is too long.`;
     if (typeof v === 'string' && p.minLength && v.length < p.minLength) return `${k} is empty.`;

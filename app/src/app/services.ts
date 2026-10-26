@@ -24,6 +24,8 @@ import { createPublicServer } from '../server/public.ts';
 import { OAuth } from '../core/oauth.ts';
 import { Runner } from '../core/runner.ts';
 import { EventMode } from './event-mode.ts';
+import { PluginStore } from '../core/plugins/store.ts';
+import { dirname as dirOf, join as joinPath } from 'node:path';
 import { Tunnel } from './tunnel.ts';
 import { newOutside, type Outside } from './troubleshoot.ts';
 import { findElsewhere, type ElsewhereResult } from '../core/elsewhere.ts';
@@ -94,6 +96,8 @@ export class Services {
   readonly oauth: OAuth;
   readonly runner: Runner;
   readonly eventMode: EventMode;
+  /** Plugins (§16.26): installed in a folder beside the database. */
+  readonly plugins: PluginStore;
   readonly tunnel: Tunnel;
   readonly update: UpdateCheck;
   readonly diagnostics: Diagnostics;
@@ -211,7 +215,7 @@ export class Services {
 
   readonly version: string;
 
-  constructor({ dbPath, masterKey, version, changed, catalog = new Catalog(), notify = () => {}, notifyText = () => {}, install = 'dev', alumniUrl, devAlumniToggle }: {
+  constructor({ dbPath, masterKey, version, changed, catalog = new Catalog(), notify = () => {}, notifyText = () => {}, install = 'dev', alumniUrl, devAlumniToggle, pluginsDir }: {
     dbPath: string; masterKey: Uint8Array; version: string; changed: () => void; catalog?: Catalog; notify?: Notify;
     /** A plain system notification (a deposit arrived, §16.9.2). */
     notifyText?: (title: string, body: string) => void; install?: InstallKind;
@@ -219,6 +223,8 @@ export class Services {
     alumniUrl?: string;
     /** A development run (Electron, not packaged): the membership applies only with Alumni testing on. Never set in a release. */
     devAlumniToggle?: boolean;
+    /** Where plugins are kept (§16.26.6); by default `plugins` beside the database, none for an in-memory one. */
+    pluginsDir?: string | null;
   }) {
     this.devAlumniToggle = !!devAlumniToggle;
     this.#notify = notify;
@@ -226,6 +232,9 @@ export class Services {
     this.#changed = changed;
     this.version = version;
     this.db = openDb(dbPath);
+    // Every installed plugin is checked again at startup (§16.26.7); one that fails is switched off with the reason.
+    this.plugins = new PluginStore({ dir: pluginsDir !== undefined ? pluginsDir : dbPath === ':memory:' ? null : joinPath(dirOf(dbPath), 'plugins'), db: this.db });
+    this.plugins.load();
     this.vault = new Vault(masterKey);
     this.catalog = catalog;
     this.wallets = new Wallets({ db: this.db, vault: this.vault, catalog: this.catalog });
@@ -287,6 +296,7 @@ export class Services {
       core: this.core, wallets: this.wallets, catalog: this.catalog, guard: guardSettings, diagnostics: this.diagnostics, activity: this.activity, notes: this.notes,
       club: () => ((st) => (st ? { capUsd: st.daily_cap_usd, allowanceLeftUsd: this.alumni.allowanceLeft() } : null))(this.alumni.settings()),
       freshness: (agent) => this.freshness(agent),
+      plugins: this.plugins,
     });
     this.oauth = new OAuth({ db: this.db, diagnostics: this.diagnostics });
     this.runner = new Runner({ db: this.db, vault: this.vault, host: this.tools });

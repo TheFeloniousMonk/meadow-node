@@ -1,0 +1,71 @@
+{
+  "format": "meadow-plugin/1",
+  "id": "media",
+  "name": "Media",
+  "version": "1.0.0",
+  "description": "Videos, music, images, and maths in messages: YouTube videos, SoundCloud tracks, Imgur images, and LaTeX formulas. Nothing loads until you press Play or Show.",
+  "author": "Meadow",
+  "hosts": ["www.youtube-nocookie.com", "w.soundcloud.com", "i.imgur.com"],
+  "types": {
+    "video": {
+      "description": "A YouTube video, by its 11-character ID (the part after watch?v= or youtu.be/).",
+      "example": { "id": "dQw4w9WgXcQ", "title": "A video" },
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "maxLength": 11, "pattern": "[A-Za-z0-9_-]{11}", "description": "The video ID." },
+          "title": { "type": "string", "maxLength": 200, "pattern": ".{1,200}", "description": "A title to show (optional)." }
+        },
+        "required": ["id"]
+      },
+      "render": { "component": "video", "src": "https://www.youtube-nocookie.com/embed/{id}", "title": "{title}" },
+      "fallback": "Video: https://youtu.be/{id}"
+    },
+    "track": {
+      "description": "A SoundCloud track, by its artist and track names as they appear in its address (soundcloud.com/artist/track).",
+      "example": { "artist": "an-artist", "track": "a-track" },
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "artist": { "type": "string", "maxLength": 100, "pattern": "[a-z0-9_-]{1,100}" },
+          "track": { "type": "string", "maxLength": 200, "pattern": "[a-z0-9_-]{1,200}" }
+        },
+        "required": ["artist", "track"]
+      },
+      "render": { "component": "audio", "kind": "player", "src": "https://w.soundcloud.com/player/?url=https%3A//soundcloud.com/{artist}/{track}", "title": "{artist}: {track}" },
+      "fallback": "Listen: https://soundcloud.com/{artist}/{track}"
+    },
+    "image": {
+      "description": "An image on Imgur, by its ID and file type (i.imgur.com/ID.png).",
+      "example": { "id": "abc1234", "ext": "png", "alt": "A picture" },
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "maxLength": 10, "pattern": "[A-Za-z0-9]{5,10}" },
+          "ext": { "type": "string", "maxLength": 4, "enum": ["png", "jpg", "jpeg", "gif", "webp"] },
+          "alt": { "type": "string", "maxLength": 300, "pattern": ".{1,300}", "description": "What the image shows, in words." }
+        },
+        "required": ["id", "ext", "alt"]
+      },
+      "render": { "component": "image", "src": "https://i.imgur.com/{id}.{ext}", "alt": "{alt}" },
+      "fallback": "Image ({alt}): https://i.imgur.com/{id}.{ext}"
+    },
+    "formula": {
+      "description": "A maths formula in LaTeX, shown on its own line. Rendered on this computer; nothing loads.",
+      "example": { "tex": "e^{i\\pi} + 1 = 0" },
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "tex": { "type": "string", "maxLength": 1000, "pattern": ".{1,1000}", "description": "The LaTeX source, on one line." }
+        },
+        "required": ["tex"]
+      },
+      "render": { "component": "math", "tex": "{tex}", "display": true },
+      "fallback": "Formula: {tex}"
+    }
+  }
+}
