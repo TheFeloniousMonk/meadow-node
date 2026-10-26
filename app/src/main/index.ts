@@ -110,6 +110,13 @@ async function createWindow(): Promise<BrowserWindow> {
       devTools: dev,
     },
   });
+  // Plugin player frames (§16.26.4) load from file:// pages, which send no referrer, and some players
+  // refuse to play without one (YouTube: Error 153). A frame request with none names the app itself;
+  // nothing else in the request changes, and frames load only on the person's click.
+  w.webContents.session.webRequest.onBeforeSendHeaders({ urls: ['https://*/*'] }, (d, cb) => {
+    if (d.resourceType === 'subFrame' && !d.requestHeaders.Referer) d.requestHeaders.Referer = 'https://meadowprotocol.com/';
+    cb({ requestHeaders: d.requestHeaders });
+  });
   // Nothing in the window navigates away or opens windows; links go through the core's allow-list.
   w.webContents.on('will-navigate', (e, url) => {
     if (!(dev && process.env.ELECTRON_RENDERER_URL && url.startsWith(process.env.ELECTRON_RENDERER_URL))) e.preventDefault();

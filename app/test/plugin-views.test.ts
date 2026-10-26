@@ -45,8 +45,8 @@ test('messages: components with final addresses, the block removed; uninstalled 
 test('the plugin list for the window', () => {
   const v = pluginsView(store());
   assert.equal(v[0].name, 'Media');
-  assert.deepEqual(v[0].types.map((t) => t.component), ['video', 'audio', 'image', 'math']);
-  assert.deepEqual(v[0].hosts, ['www.youtube-nocookie.com', 'w.soundcloud.com', 'i.imgur.com']);
+  assert.deepEqual(v[0].types.map((t) => t.component), ['video', 'audio', 'image', 'image', 'video', 'image', 'math']);
+  assert.deepEqual(v[0].hosts, ['www.youtube-nocookie.com', 'w.soundcloud.com', 'i.imgur.com', 'lh3.googleusercontent.com', 'drive.google.com', 'dl.dropboxusercontent.com']);
 });
 
 test('only https addresses on an active plugin\'s hosts are allowed', () => {
@@ -66,7 +66,7 @@ test('images: fetched only from declared hosts, without cookies, referrer, or re
   const ok = fake(PNG);
   const r = await fetchEmbedImage(s, 'https://i.imgur.com/abcde.png', ok.f);
   assert.ok('data' in r && r.data.startsWith('data:image/png;base64,'));
-  assert.equal(ok.calls[0].init.redirect, 'error');
+  assert.equal(ok.calls[0].init.redirect, 'manual', 'a redirect is answered, never followed');
   assert.equal(ok.calls[0].init.referrerPolicy, 'no-referrer');
   assert.equal(ok.calls[0].init.credentials, 'omit');
 
@@ -80,6 +80,9 @@ test('images: fetched only from declared hosts, without cookies, referrer, or re
   assert.match((html as any).error, /not a PNG/);
   const big = await fetchEmbedImage(s, 'https://i.imgur.com/abcde.png', fake(Buffer.concat([PNG, Buffer.alloc(6 * 1024 * 1024)])).f);
   assert.match((big as any).error, /larger than 5 MiB/);
+  // Imgur sends a missing image's request to its "removed" picture: not followed, and said plainly.
+  const moved = await fetchEmbedImage(s, 'https://i.imgur.com/abcde.png', fake(Buffer.alloc(0), 302).f);
+  assert.match((moved as any).error, /pointed somewhere else instead of sending the image/);
   const missing = await fetchEmbedImage(s, 'https://i.imgur.com/abcde.png', fake(Buffer.alloc(0), 404).f);
   assert.match((missing as any).error, /answered 404/);
 });

@@ -38,7 +38,7 @@ test('the plugins tool lists the types in use, with examples and the data each t
   const A = await computer('alice', { withMedia: true });
   const list: any = (await A.s.tools.call(A.id, 'plugins', {})).data;
   assert.deepEqual(list.plugins.map((p: any) => p.id), ['media']);
-  assert.deepEqual(list.plugins[0].types.map((t: any) => t.type), ['media.video', 'media.track', 'media.image', 'media.formula']);
+  assert.deepEqual(list.plugins[0].types.map((t: any) => t.type), ['media.video', 'media.track', 'media.image', 'media.drive-image', 'media.drive-file', 'media.dropbox-image', 'media.formula']);
   assert.equal(list.plugins[0].types[0].data.properties.id.pattern, '[A-Za-z0-9_-]{11}');
   const B = await computer('bob', { withMedia: false });
   assert.match(((await B.s.tools.call(B.id, 'plugins', {})).data as any).note, /No plugins are installed/);

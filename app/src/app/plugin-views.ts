@@ -80,8 +80,11 @@ export async function fetchEmbedImage(store: PluginStore, url: string, fetchImpl
   const u = onActiveHost(store, url);
   if (!u) return { error: 'That image is not from a site an installed plugin may load from.' };
   try {
-    // No cookies or referrer go with it, and redirects to anywhere else are refused.
-    const res = await fetchImpl(u.href, { redirect: 'error', referrerPolicy: 'no-referrer', credentials: 'omit', signal: AbortSignal.timeout(IMAGE_TIMEOUT_MS) });
+    // No cookies or referrer go with it, and a redirect is never followed: an image must be at its own address.
+    const res = await fetchImpl(u.href, { redirect: 'manual', referrerPolicy: 'no-referrer', credentials: 'omit', signal: AbortSignal.timeout(IMAGE_TIMEOUT_MS) });
+    if ((res.status >= 300 && res.status < 400) || res.type === 'opaqueredirect') {
+      return { error: `${u.hostname} pointed somewhere else instead of sending the image: it may have been removed, or the link may not be the direct one.` };
+    }
     if (!res.ok) return { error: `${u.hostname} answered ${res.status}.` };
     const bytes = await readBytes(res, IMAGE_LIMIT);
     const type = MAGIC.find(([, is]) => is(bytes))?.[0];

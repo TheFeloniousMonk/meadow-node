@@ -142,10 +142,10 @@ test('a zip with anything but plugin.json and a small PNG icon is refused; a new
   assert.throws(() => s.preview(writeZip([{ name: 'media/plugin.json', data: JSON.stringify(clone()) }])), /only plugin.json/);
   s.install(zipOf(clone()));
   const v2 = clone();
-  v2.version = '1.1.0';
-  assert.equal(s.preview(zipOf(v2)).replaces, '1.0.0');
+  v2.version = '9.9.9';
+  assert.equal(s.preview(zipOf(v2)).replaces, MEDIA.version);
   s.install(zipOf(v2));
-  assert.equal(s.list()[0].manifest.version, '1.1.0');
+  assert.equal(s.list()[0].manifest.version, '9.9.9');
   assert.equal(s.list().length, 1);
 });
 
