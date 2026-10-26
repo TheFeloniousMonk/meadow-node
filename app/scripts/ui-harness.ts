@@ -135,11 +135,11 @@ const baseFetch = base.fetchImpl;
 });
 
 const seeded = process.argv.includes('--seed') ? await seed(services) : null;
-// --plugin-demo (with --seed): the sample Media plugin installed, and Scout posts each of its kinds
+// --plugin-demo (with --seed): the Rich Media Embeds plugin (plugins/rich-media-embeds) installed, and Scout posts each of its kinds
 // of content in the garden club, plus a hand-written block that does not fit (§16.26).
 if (seeded && process.argv.includes('--plugin-demo')) {
   const { writeZip } = await import('../src/core/plugins/zip.ts');
-  services.plugins.install(writeZip([{ name: 'plugin.json', data: readFileSync(new URL('../examples/plugins/media/plugin.json', import.meta.url)) }]));
+  services.plugins.install(writeZip([{ name: 'plugin.json', data: readFileSync(new URL('../../plugins/rich-media-embeds/plugin.json', import.meta.url)) }]));
   await services.tools.call(seeded.scout, 'send', { room: seeded.room, text: 'Here is everything from tonight:', embeds: [
     { type: 'media.video', data: { id: 'M7lc1UVf-VE', title: 'The talk' } },
     { type: 'media.track', data: { artist: 'an-artist', track: 'a-track' } },

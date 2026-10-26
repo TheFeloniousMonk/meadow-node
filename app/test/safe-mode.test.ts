@@ -62,7 +62,7 @@ test('--safe-mode asks for it; the last trouble is kept across starts for Troubl
 
 test('in safe mode no plugin is active until turned back on, one at a time; choices are kept', () => {
   const s = new PluginStore({ dir: mkdtempSync(join(tmpdir(), 'meadow-sm-')), db: openDb(':memory:') });
-  const media = JSON.parse(readFileSync(new URL('../examples/plugins/media/plugin.json', import.meta.url), 'utf8'));
+  const media = JSON.parse(readFileSync(new URL('../../plugins/rich-media-embeds/plugin.json', import.meta.url), 'utf8'));
   s.install(writeZip([{ name: 'plugin.json', data: JSON.stringify(media) }]));
   s.install(writeZip([{ name: 'plugin.json', data: JSON.stringify({ ...media, id: 'other', name: 'Other' }) }]));
   s.safeMode = true;

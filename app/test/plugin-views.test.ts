@@ -13,7 +13,7 @@ import { fetchEmbedImage, messageEmbeds, onActiveHost, pluginsView } from '../sr
 
 function store() {
   const s = new PluginStore({ dir: mkdtempSync(join(tmpdir(), 'meadow-pv-')), db: openDb(':memory:') });
-  s.install(writeZip([{ name: 'plugin.json', data: readFileSync(new URL('../examples/plugins/media/plugin.json', import.meta.url)) }]));
+  s.install(writeZip([{ name: 'plugin.json', data: readFileSync(new URL('../../plugins/rich-media-embeds/plugin.json', import.meta.url)) }]));
   return s;
 }
 
@@ -32,7 +32,7 @@ test('messages: components with final addresses, the block removed; uninstalled 
   const text = 'Hi\nVideo: https://youtu.be/M7lc1UVf-VE\n[meadow:embed media.video {"id":"M7lc1UVf-VE"}]\n[meadow:embed media.image {"id":"x","ext":"png","alt":"a"}]\n[meadow:embed maps.pin {"lat":1}]';
   const v = messageEmbeds(s, text);
   assert.equal(v.text, 'Hi\nVideo: https://youtu.be/M7lc1UVf-VE');
-  assert.deepEqual(v.embeds![0], { type: 'media.video', shown: true, plugin: 'Media', component: 'video', fields: { src: 'https://www.youtube-nocookie.com/embed/M7lc1UVf-VE' }, host: 'www.youtube-nocookie.com' });
+  assert.deepEqual(v.embeds![0], { type: 'media.video', shown: true, plugin: 'Rich Media Embeds', component: 'video', fields: { src: 'https://www.youtube-nocookie.com/embed/M7lc1UVf-VE' }, host: 'www.youtube-nocookie.com' });
   assert.equal(v.embeds![1].shown, false);
   assert.equal((v.embeds![1] as any).why, 'bad_data');
   assert.equal((v.embeds![2] as any).why, 'not_installed');
@@ -44,7 +44,7 @@ test('messages: components with final addresses, the block removed; uninstalled 
 
 test('the plugin list for the window', () => {
   const v = pluginsView(store());
-  assert.equal(v[0].name, 'Media');
+  assert.equal(v[0].name, 'Rich Media Embeds');
   assert.deepEqual(v[0].types.map((t) => t.component), ['video', 'audio', 'image', 'image', 'video', 'image', 'math']);
   assert.deepEqual(v[0].hosts, ['www.youtube-nocookie.com', 'w.soundcloud.com', 'i.imgur.com', 'lh3.googleusercontent.com', 'drive.google.com', 'dl.dropboxusercontent.com']);
 });

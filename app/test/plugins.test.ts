@@ -11,12 +11,12 @@ import { checkData, checkManifest, fallbackText, PluginError, renderEmbed } from
 import { readBlock, writeBlock } from '../src/core/plugins/block.ts';
 import { PluginNotInstalled, PluginStore } from '../src/core/plugins/store.ts';
 
-const MEDIA = JSON.parse(readFileSync(new URL('../examples/plugins/media/plugin.json', import.meta.url), 'utf8'));
+const MEDIA = JSON.parse(readFileSync(new URL('../../plugins/rich-media-embeds/plugin.json', import.meta.url), 'utf8'));
 const clone = () => structuredClone(MEDIA);
 const zipOf = (manifest: unknown, extra: { name: string; data: string | Buffer }[] = []) => writeZip([{ name: 'plugin.json', data: JSON.stringify(manifest) }, ...extra]);
 const refused = (m: unknown, why: RegExp) => assert.throws(() => checkManifest(m), (e: any) => e instanceof PluginError && why.test(e.message));
 
-test('the sample Media plugin passes; every type fills its component from its example', () => {
+test('the Rich Media Embeds plugin passes; every type fills its component from its example', () => {
   const m = checkManifest(clone());
   const v = renderEmbed(m.types.video, m.types.video.example);
   assert.deepEqual(v, { component: 'video', fields: { src: 'https://www.youtube-nocookie.com/embed/M7lc1UVf-VE', title: 'A video' } });
@@ -106,7 +106,7 @@ function store() {
 test('the store: preview keeps nothing; install, on/off, remove; types in use; send preparation', () => {
   const { dir, db, s } = store();
   const p = s.preview(zipOf(clone()));
-  assert.equal(p.manifest.name, 'Media');
+  assert.equal(p.manifest.name, 'Rich Media Embeds');
   assert.equal(existsSync(join(dir, 'media')), false, 'a preview writes nothing');
 
   s.install(zipOf(clone()));

@@ -1,8 +1,8 @@
 {
   "format": "meadow-plugin/1",
   "id": "media",
-  "name": "Media",
-  "version": "1.1.0",
+  "name": "Rich Media Embeds",
+  "version": "1.2.0",
   "description": "Videos, music, images, files, and maths in messages: YouTube videos, SoundCloud tracks, images on Imgur, Google Drive, or Dropbox, Google Drive files such as videos and PDFs, and LaTeX formulas. Nothing loads until you press Play or Show.",
   "author": "Meadow",
   "hosts": [

@@ -13,7 +13,7 @@ import { Services } from '../src/app/services.ts';
 import { writeZip } from '../src/core/plugins/zip.ts';
 import { startMockPortal, type MockPortal } from './mock-portal.ts';
 
-const MEDIA = writeZip([{ name: 'plugin.json', data: readFileSync(new URL('../examples/plugins/media/plugin.json', import.meta.url)) }]);
+const MEDIA = writeZip([{ name: 'plugin.json', data: readFileSync(new URL('../../plugins/rich-media-embeds/plugin.json', import.meta.url)) }]);
 
 let portal: MockPortal;
 before(async () => {

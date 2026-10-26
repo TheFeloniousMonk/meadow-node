@@ -1,7 +1,7 @@
 // Packs a plugin folder into a zip the app can install (SPEC §16.26.3), checking it first the way
 // the app will. A plugin folder holds plugin.json and, optionally, icon.png.
 //
-//   node scripts/pack-plugin.ts examples/plugins/media media.zip
+//   node scripts/pack-plugin.ts ../plugins/rich-media-embeds rich-media-embeds.zip
 
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';

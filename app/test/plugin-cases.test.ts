@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { checkManifest, checkData } from '../src/core/plugins/manifest.ts';
 import { dryRunCases } from '../src/core/plugins/cases.ts';
 
-const MEDIA = checkManifest(JSON.parse(readFileSync(new URL('../examples/plugins/media/plugin.json', import.meta.url), 'utf8')));
+const MEDIA = checkManifest(JSON.parse(readFileSync(new URL('../../plugins/rich-media-embeds/plugin.json', import.meta.url), 'utf8')));
 
 test('each type gets its example and edge cases, every one valid for its schema', () => {
   const cases = dryRunCases(MEDIA);
