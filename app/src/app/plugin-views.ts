@@ -8,6 +8,7 @@ import { readBlock } from '../core/plugins/block.ts';
 import { checkData, renderEmbed, type Manifest } from '../core/plugins/manifest.ts';
 import type { PluginStore } from '../core/plugins/store.ts';
 import { readBytes } from '../core/deps.ts';
+import { dryRunCases } from '../core/plugins/cases.ts';
 
 export const IMAGE_LIMIT = 5 * 1024 * 1024;
 const IMAGE_TIMEOUT_MS = 15_000;
@@ -90,4 +91,30 @@ export async function fetchEmbedImage(store: PluginStore, url: string, fetchImpl
     const msg = (e as Error).message ?? '';
     return { error: /over \d+ bytes/.test(msg) ? 'That image is larger than 5 MiB, so it is not shown.' : `The image could not be loaded from ${u.hostname}.` };
   }
+}
+
+/** One dry-run case, ready for the hidden window (§16.26.7). */
+export interface DryRunCase {
+  label: string;
+  view: EmbedView;
+}
+
+/**
+ * The dry run's cases as the window would get them, built exactly as for a real message. A template
+ * that fails here (an address that leaves its host) is a failure of the dry run itself.
+ */
+export function dryRunViews(m: Manifest): { cases: DryRunCase[] } | { error: string } {
+  const cases: DryRunCase[] = [];
+  for (const c of dryRunCases(m)) {
+    const def = m.types[c.type.split('.')[1]];
+    const label = `${c.type} with ${c.label}`;
+    try {
+      const r = renderEmbed(def, c.data);
+      const src = typeof r.fields.src === 'string' ? r.fields.src : typeof r.fields.href === 'string' ? r.fields.href : null;
+      cases.push({ label, view: { type: c.type, shown: true, plugin: m.name, component: r.component, fields: r.fields, ...(src && { host: new URL(src).hostname }) } });
+    } catch (e) {
+      return { error: `${label}: ${(e as Error).message}` };
+    }
+  }
+  return { cases };
 }

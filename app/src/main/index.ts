@@ -20,12 +20,22 @@ import { createHandlers } from '../app/handlers.ts';
 import { CHANNELS } from '../shared/api.ts';
 import { bridgeCopyPath, downloadRelease, installKind, launchPath, scoopUpdateScript, scoopWaitScript } from '../core/update.ts';
 import { claudeDesktopConfigPath } from '../server/claude-desktop.ts';
+import { dryRun } from './dryrun.ts';
 
 const arg = (name: string) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 const dev = !app.isPackaged;
 const screenshot = dev ? arg('screenshot') : undefined;
+// Checks of the plugin safety layer (§16.26.7), refused in a packaged app: --dryrun-check=<zip>
+// [--dryrun-extra=<json of extra cases>] prints a dry run's result and exits; --crash-test crashes
+// the window's first two loads, so safe mode switches on.
+const dryrunCheck = dev ? arg('dryrun-check') : undefined;
+const dryrunExtra = dev ? arg('dryrun-extra') : undefined;
+const crashTest = dev && process.argv.includes('--crash-test');
+let crashed = 0;
 const route = dev ? arg('route') : undefined;
 const hidden = process.argv.includes('--hidden');
+// --safe-mode: start with every plugin off (§16.26.7); the tray's Restart without plugins uses it.
+const askedSafe = process.argv.includes('--safe-mode');
 if (dev && arg('data')) app.setPath('userData', resolve(arg('data')!));
 const resources = join(import.meta.dirname, '../../resources');
 const install = installKind(process.execPath, process.env, app.isPackaged);
@@ -117,6 +127,23 @@ async function createWindow(): Promise<BrowserWindow> {
     }
   });
   if (!hidden || screenshot) w.once('ready-to-show', () => w.show());
+  // Safe mode (§16.26.7): a crash or a freeze is recorded and the window loads again; the second
+  // within ten minutes turns every plugin off first. A freeze is ended by crashing the page.
+  let hung = false;
+  w.on('unresponsive', () => {
+    hung = true;
+    if (!w.isDestroyed()) w.webContents.forcefullyCrashRenderer();
+  });
+  w.webContents.on('render-process-gone', (_e, d) => {
+    if (quitting || d.reason === 'clean-exit') return;
+    const reason = hung ? 'the window stopped responding' : `the window crashed (${d.reason})`;
+    hung = false;
+    if (services!.health.failure(reason)) services!.plugins.safeMode = true;
+    services!.health.loading();
+    if (!w.isDestroyed()) w.webContents.reload();
+  });
+  services!.health.loading();
+  if (crashTest) w.webContents.on('did-finish-load', () => { if (crashed < 2) setTimeout(() => { crashed++; if (!w.isDestroyed()) w.webContents.forcefullyCrashRenderer(); }, 2000); });
   const query = route ? `?route=${encodeURIComponent(route)}` : '';
   if (dev && process.env.ELECTRON_RENDERER_URL) await w.loadURL(process.env.ELECTRON_RENDERER_URL + query);
   else await w.loadFile(join(import.meta.dirname, '../renderer/index.html'), { search: query });
@@ -167,6 +194,12 @@ function createTray() {
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Open Meadow', click: showWindow },
     { label: 'Check for messages now', click: () => void services?.syncAll('person') },
+    // Works when the window cannot be used (§16.26.7): Meadow starts again with every plugin off.
+    { label: 'Restart without plugins', click: () => {
+      app.relaunch({ args: [...process.argv.slice(1).filter((a) => a !== '--safe-mode' && a !== '--hidden'), '--safe-mode'] });
+      quitting = true;
+      app.exit(0);
+    } },
     { type: 'separator' },
     { label: 'Quit Meadow', click: () => { quitting = true; app.quit(); } },
   ]));
@@ -222,10 +255,21 @@ else {
         }
       }
       services = new Services({ dbPath: join(dir, 'meadow.db'), masterKey: key, version: app.getVersion(), changed, notify, notifyText, install, devAlumniToggle: dev });
+      services.plugins.safeMode = services.health.start({ asked: askedSafe }).on;
     } catch (err) {
       console.error('Meadow could not start:', err);
       dialog.showErrorBox('Meadow could not start', err instanceof Error ? err.message : String(err));
       app.exit(1);
+      return;
+    }
+    if (dryrunCheck) {
+      const { dryRunViews } = await import('../app/plugin-views.ts');
+      const p = services.plugins.preview(readFileSync(dryrunCheck));
+      const v = dryRunViews(p.manifest);
+      const extra = dryrunExtra ? JSON.parse(readFileSync(dryrunExtra, 'utf8')) : [];
+      const r = 'error' in v ? v : await dryRun([...v.cases, ...extra], { dev, rendererUrl: process.env.ELECTRON_RENDERER_URL });
+      console.log(`DRYRUN ${'cases' in v ? v.cases.length + extra.length : 0} cases: ${JSON.stringify(r)}`);
+      app.exit(0);
       return;
     }
     // The first run follows the system's light or dark setting (§16.4).
@@ -254,6 +298,7 @@ else {
         if (r.canceled || !r.filePaths[0]) return null;
         return { name: basename(r.filePaths[0]), data: readFileSync(r.filePaths[0]) };
       },
+      dryRun: (cases) => dryRun(cases, { dev, rendererUrl: process.env.ELECTRON_RENDERER_URL }),
       openPluginFile: async () => {
         const r = await dialog.showOpenDialog(win!, { title: 'Choose a plugin', properties: ['openFile'], filters: [{ name: 'Meadow plugin', extensions: ['zip'] }] });
         if (r.canceled || !r.filePaths[0]) return null;

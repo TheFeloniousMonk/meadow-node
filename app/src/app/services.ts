@@ -25,6 +25,7 @@ import { OAuth } from '../core/oauth.ts';
 import { Runner } from '../core/runner.ts';
 import { EventMode } from './event-mode.ts';
 import { PluginStore } from '../core/plugins/store.ts';
+import { WindowHealth } from './window-health.ts';
 import { dirname as dirOf, join as joinPath } from 'node:path';
 import { Tunnel } from './tunnel.ts';
 import { newOutside, type Outside } from './troubleshoot.ts';
@@ -98,6 +99,8 @@ export class Services {
   readonly eventMode: EventMode;
   /** Plugins (§16.26): installed in a folder beside the database. */
   readonly plugins: PluginStore;
+  /** The window's health, for safe mode (§16.26.7). */
+  readonly health: WindowHealth;
   readonly tunnel: Tunnel;
   readonly update: UpdateCheck;
   readonly diagnostics: Diagnostics;
@@ -235,6 +238,7 @@ export class Services {
     // Every installed plugin is checked again at startup (§16.26.7); one that fails is switched off with the reason.
     this.plugins = new PluginStore({ dir: pluginsDir !== undefined ? pluginsDir : dbPath === ':memory:' ? null : joinPath(dirOf(dbPath), 'plugins'), db: this.db });
     this.plugins.load();
+    this.health = new WindowHealth({ dir: dbPath === ':memory:' ? null : dirOf(dbPath) });
     this.vault = new Vault(masterKey);
     this.catalog = catalog;
     this.wallets = new Wallets({ db: this.db, vault: this.vault, catalog: this.catalog });

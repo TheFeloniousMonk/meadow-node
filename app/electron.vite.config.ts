@@ -45,7 +45,8 @@ export default defineConfig({
   },
   renderer: {
     root: resolve('src/renderer'),
-    build: { rollupOptions: { input: { index: resolve('src/renderer/index.html') } } },
+    // dryrun.html: a plugin's dry run before install, in a hidden window (§16.26.7).
+    build: { rollupOptions: { input: { index: resolve('src/renderer/index.html'), dryrun: resolve('src/renderer/dryrun.html') } } },
     plugins: [react(), cspMeta],
   },
 });

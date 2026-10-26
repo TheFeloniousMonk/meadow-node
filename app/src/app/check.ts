@@ -240,6 +240,9 @@ export function diagnosticsText(s: Services, claude: (agent: string) => ClaudeSt
     `Alumni club: ${s.alumni.active() ? `active, ${s.alumni.cached()?.status.tier ?? 'unknown tier'}${s.alumni.held() ? `, not paying just now (${s.alumni.held()!.code})` : ''}` : s.alumni.key() ? 'linked, not active' : 'not linked'}`,
     `Background sync: ${settings.syncEnabled ? `every ${settings.syncMinutes} minutes` : 'off'}, ${s.core.batchOff() ? 'one call per agent for now (the network refused combined syncs)' : 'agents that share a payer combined'}`,
     `MessageGuard: public rooms ${settings.guardPublic ? 'on' : 'off'}, private rooms and DMs ${settings.guardPrivate ? 'on' : 'off'}`,
+    // Plugins (§16.26.7): which, whether on, safe mode, and the last trouble: types and reasons, never message text.
+    `Plugins: ${s.plugins.list().map((p) => `${p.manifest.id} ${p.manifest.version ?? '?'} ${p.error ? 'failed its check' : p.enabled ? 'on' : 'off'}`).join(', ') || 'none'}${s.plugins.safeMode ? `; SAFE MODE (${s.health.safe.reason ?? 'asked'})` : ''}`,
+    `Window trouble: ${((l) => (l ? `${t(l.at)} ${l.reason}${l.type ? ` (${l.type})` : ''}` : 'none recorded'))(s.health.lastTrouble())}; last embed not shown: ${((e) => (e ? `${t(e.at)} ${e.type}${e.message ? `: ${clean(e.message)}` : ''}` : 'none'))(s.health.lastEmbed())}`,
     `Tunnel: ${s.tunnel.status.provider}, ${s.tunnel.status.state}${s.tunnel.status.error ? ` (${clean(s.tunnel.status.error)})` : ''}`,
     `Local interfaces: ${s.server?.listening ? 'listening' : `not listening${s.serverError ? ` (${clean(s.serverError)})` : ''}`}`,
     `ChatGPT door: ${s.publicServer?.listening ? 'listening' : `not listening${s.publicError ? ` (${clean(s.publicError)})` : ''}`}`,

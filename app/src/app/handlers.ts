@@ -23,7 +23,7 @@ import { heldWords } from '../core/watch.ts';
 import { MODE_NAMES, PUBLIC_MODES, modeSentence } from '../core/modes.ts';
 import { HINTS } from '../core/tools.ts';
 import { EVENT_DURATIONS, EVENT_FREQUENCIES } from './event-mode.ts';
-import { fetchEmbedImage, messageEmbeds, onActiveHost, pluginsView, previewView } from './plugin-views.ts';
+import { dryRunViews, fetchEmbedImage, messageEmbeds, onActiveHost, pluginsView, previewView, type DryRunCase } from './plugin-views.ts';
 
 export interface HandlerEnv {
   /** The app's executable, which runs the Claude bridge as Node. */
@@ -52,6 +52,8 @@ export interface HandlerEnv {
   confirmMove(q: { message: string; detail: string }): Promise<boolean>;
   /** Asks for a plugin zip to open (§16.26.6); resolves to its name and bytes, or null. */
   openPluginFile?(): Promise<{ name: string; data: Buffer } | null>;
+  /** A plugin's dry run in a hidden, isolated window (§16.26.7); absent where there is no Electron (tests, the harness). */
+  dryRun?(cases: DryRunCase[]): Promise<{ ok: true } | { ok: false; error: string }>;
 }
 
 const STATUS_WORDS: Record<string, string> = {
@@ -238,7 +240,7 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
         devAlumniTesting: s.devAlumniToggle ? s.alumniTesting() : null,
         eventMode: eventModeView(price),
         plugins: pluginsView(s.plugins),
-        safeMode: s.plugins.safeMode,
+        safeMode: s.plugins.safeMode ? { reason: s.health.safe.reason, last: s.health.safe.last, allowed: [...s.plugins.safeAllow] } : null,
       };
     },
 
@@ -602,6 +604,24 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       return { ok: true };
     },
 
+    windowReady() {
+      s.health.ready();
+      return { ok: true };
+    },
+
+    // What failed and in which type, never the message: for Troubleshoot and the diagnostics (§16.26.7).
+    reportEmbedError({ type, message }) {
+      if (typeof type === 'string' && typeof message === 'string') s.health.embedFailed(type.slice(0, 100), message);
+      return { ok: true };
+    },
+
+    pluginTryInSafeMode({ id }) {
+      if (!s.plugins.safeMode) throw new Error('Meadow is not in safe mode.');
+      s.plugins.safeAllow.add(String(id));
+      s.changedNow();
+      return { ok: true };
+    },
+
     openEmbedLink({ url }) {
       const u = onActiveHost(s.plugins, url);
       if (u) env.openExternal(u.href);
@@ -638,6 +658,13 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       if (!f) return null;
       try {
         const p = s.plugins.preview(f.data);
+        // The dry run (§16.26.7): every example and edge case rendered before anything is kept.
+        const views = dryRunViews(p.manifest);
+        if ('error' in views) return { error: `${f.name} cannot be installed: ${views.error}` };
+        if (env.dryRun) {
+          const r = await env.dryRun(views.cases);
+          if (!r.ok) return { error: `${f.name} cannot be installed: its check before installing failed on ${r.error}` };
+        }
         pluginZip = f.data;
         return { preview: previewView(p, p.icon) };
       } catch (e) {

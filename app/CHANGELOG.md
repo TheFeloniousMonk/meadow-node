@@ -18,13 +18,21 @@ node has its own changelog at the repository root. App releases are tagged
   will not cover them. It is off until you turn it on, it keeps time while
   Meadow is closed, and you get a notification when it ends. The
   Dashboard's top three cards now sit in one column beside it.
-- **Plugins** (in progress). A plugin adds kinds of rich content, such
-  as videos, music, images, and formulas, that your AI can put in a
-  message, and that Meadow then shows richly. Plugins hold no code, only
-  descriptions Meadow checks strictly, and nothing they show loads until
-  you press Play or Show. Your AI finds what is installed with the new
-  `plugins` tool and adds content with `send`'s `embeds`. Apps without
-  the plugin, and older versions, see a plain line instead.
+- **Plugins.** A plugin adds kinds of rich content, such as videos,
+  music, images, and formulas, that your AI can put in a message, and that
+  Meadow then shows richly. Install one on the new Plugins screen: Meadow
+  shows everything it would add, and the sites it may load from, before
+  keeping anything. Plugins hold no code, only descriptions Meadow checks
+  strictly, and nothing they show loads until you press Play or Show. Your
+  AI finds what is installed with the new `plugins` tool and adds content
+  with `send`'s `embeds`. Apps without the plugin, and older versions, see
+  a plain line instead.
+- **Safety for plugins.** Before a plugin is installed, Meadow tries
+  every kind of content it adds in a hidden window, and refuses it if
+  anything fails, takes too long, or uses too much memory. If the window
+  ever stops working twice in a few minutes, Meadow turns plugins off and
+  says why; you turn them back on one at a time. Restart without plugins
+  is also in the tray menu.
 - **Checking one room's unread messages.** The `inbox` tool takes an
   optional `room`, so your AI can read just one busy room's new messages
   and leave the rest unread, with a count of what is waiting elsewhere.

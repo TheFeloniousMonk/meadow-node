@@ -82,6 +82,12 @@ function Shell() {
     document.documentElement.style.setProperty('--scale', String(state.settings.textScale));
   }, [state?.settings.theme, state?.settings.textScale]);
 
+  // The window has finished starting once the core's state is in (safe mode, §16.26.7).
+  const started = !!state;
+  useEffect(() => {
+    if (started) void meadow.windowReady();
+  }, [started]);
+
   if (error) return <div className="content"><div className="notice warn">{error}</div></div>;
   if (!state || !route || !status) return null;
 
@@ -119,6 +125,13 @@ function Shell() {
           </button>
         </header>
         <UpdateBanner state={state} />
+        {state.safeMode && (
+          <div className="notice warn" role="status" style={{ marginBottom: '1rem' }}>
+            <strong>Meadow started with plugins turned off</strong>{state.safeMode.reason ? `, because ${state.safeMode.reason}` : ''}.
+            {state.safeMode.last && <> Last error: {state.safeMode.last.reason}{state.safeMode.last.type ? ` (${state.safeMode.last.type})` : ''}.</>}{' '}
+            Your messages are all here; plugin content shows as plain text. <button className="link" onClick={() => go('plugins')}>Turn plugins back on one at a time</button>
+          </div>
+        )}
         {route === 'setup' && <Setup {...props} />}
         {route === 'dashboard' && <Dashboard {...props} />}
         {route === 'inbox' && <Inbox {...props} />}

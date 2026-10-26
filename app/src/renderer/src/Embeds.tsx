@@ -91,7 +91,10 @@ function Card({ f, host }: { f: Record<string, string | boolean>; host?: string 
   );
 }
 
-class Contained extends ReactComponent<{ children: ReactNode; type: string }, { failed: string | null }> {
+class Contained extends ReactComponent<{ children: ReactNode; type: string; onError?: (type: string, message: string) => void }, { failed: string | null }> {
+  componentDidCatch(e: Error) {
+    this.props.onError?.(this.props.type, e?.message ?? 'it failed');
+  }
   state = { failed: null as string | null };
   static getDerivedStateFromError(e: Error) {
     return { failed: e?.message ?? 'it failed' };
@@ -126,6 +129,7 @@ function One({ e }: { e: EmbedView }) {
   }
 }
 
-export function Embeds({ embeds }: { embeds: EmbedView[] }) {
-  return <>{embeds.map((e, i) => <Contained key={`${e.type}-${i}`} type={e.type}><One e={e} /></Contained>)}</>;
+/** `onError`: told of each embed that fails, with its type (the dry run, and reports for Troubleshoot, §16.26.7). */
+export function Embeds({ embeds, onError }: { embeds: EmbedView[]; onError?: (type: string, message: string) => void }) {
+  return <>{embeds.map((e, i) => <Contained key={`${e.type}-${i}`} type={e.type} onError={onError}><One e={e} /></Contained>)}</>;
 }

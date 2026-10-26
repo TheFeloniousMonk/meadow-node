@@ -160,7 +160,7 @@ export function Inbox({ state, refresh }: ScreenProps) {
               </div>
               {m.replyTo && <ReplyInset target={byId.get(m.replyTo)} me={me?.displayName} onJump={jumpTo} />}
               {m.text !== undefined ? <div className="text">{m.text}</div> : <div className="status">{m.statusWords}</div>}
-              {m.embeds && <Embeds embeds={m.embeds} />}
+              {m.embeds && <Embeds embeds={m.embeds} onError={(type, message) => void meadow.reportEmbedError({ type, message })} />}
               {m.report && (
                 <div className={`notice${m.report.valid ? '' : ' warn'}`} style={{ marginTop: '.5rem' }}>
                   {m.report.valid

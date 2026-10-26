@@ -85,7 +85,7 @@ export type TroubleState = 'ok' | 'warn' | 'bad' | 'info';
 /** What a line's button does: an action here, or the place in the app that does it (opening its dialog). */
 export type TroubleAction =
   | { label: string; run: 'syncNow' | 'restartTunnel' | 'startAtLogin' | 'updateNow'; agent?: string }
-  | { label: string; go: 'agents' | 'wallets' | 'settings' | 'inbox'; open?: 'topOff' | 'budget' | 'backup' | 'chatgpt' | 'claude' | 'chooseWallet' | 'alumni'; agent?: string; wallet?: string };
+  | { label: string; go: 'agents' | 'wallets' | 'settings' | 'inbox' | 'plugins'; open?: 'topOff' | 'budget' | 'backup' | 'chatgpt' | 'claude' | 'chooseWallet' | 'alumni'; agent?: string; wallet?: string };
 export interface TroubleItem {
   key: string;
   label: string;
@@ -332,7 +332,14 @@ export interface AppState {
   eventMode: EventModeState;
   /** Plugins (§16.26), and whether this run started in safe mode (§16.26.7). */
   plugins: PluginView[];
-  safeMode: boolean;
+  safeMode: SafeModeView | null;
+}
+
+/** Safe mode (§16.26.7): why plugins are off for now, the last error, and which the person turned back on. */
+export interface SafeModeView {
+  reason: string | null;
+  last: { at: number; reason: string; type?: string } | null;
+  allowed: string[];
 }
 
 /** Event Mode (§16.25): the person's choices, the countdown, and what one round of checks costs each payer. */
@@ -565,6 +572,10 @@ export interface Api {
   embedImage(a: { url: string }): { data: string } | { error: string };
   /** Opens a card's link in the browser, if it is on an active plugin's host. */
   openEmbedLink(a: { url: string }): { opened: boolean };
+  /** Safe mode (§16.26.7): the window has finished starting; an embed failed to show; turn one plugin back on. */
+  windowReady(): { ok: true };
+  reportEmbedError(a: { type: string; message: string }): { ok: true };
+  pluginTryInSafeMode(a: { id: string }): { ok: true };
 }
 
 export type Channel = keyof Api;
@@ -572,7 +583,7 @@ export const CHANNELS: Channel[] = [
   'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'claudeRunning', 'installUpdate', 'disconnectClaude', 'localInterface', 'rotateToken',
   'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'movePlan', 'moveStart', 'moveStatus', 'bridgePlan', 'bridgeStart', 'bridgeStatus', 'setBudget', 'setDiscoverable', 'dismissUnlistedNotice', 'walletQr', 'syncNow', 'syncAllNow', 'rooms', 'messages', 'roomCard', 'hideMessage', 'hideAuthor', 'unhideAll', 'trustSender', 'setSettings',
   'guardCheck', 'guardDecide', 'backup', 'backupChanges', 'setMay', 'setRoomSettings', 'testConnection', 'diagnosticsText', 'diagnosticsSave', 'activity', 'activitySpending', 'activitySave', 'notes', 'setAnchor', 'setNote', 'removeNote', 'keepNote', 'notesSeen', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'restartTunnel', 'troubleshootRun', 'checkElsewhere', 'enterChatgptCode', 'revokeClient', 'setRunner',
-  'copy', 'openExternal', 'alumniLink', 'alumniValidate', 'alumniRefresh', 'alumniCancel', 'alumniOpenAccount', 'setAlumniTesting', 'alumniSetFallback', 'setEventMode', 'pluginChoose', 'pluginInstall', 'pluginCancel', 'pluginSetEnabled', 'pluginRemove', 'embedImage', 'openEmbedLink',
+  'copy', 'openExternal', 'alumniLink', 'alumniValidate', 'alumniRefresh', 'alumniCancel', 'alumniOpenAccount', 'setAlumniTesting', 'alumniSetFallback', 'setEventMode', 'pluginChoose', 'pluginInstall', 'pluginCancel', 'pluginSetEnabled', 'pluginRemove', 'embedImage', 'openEmbedLink', 'windowReady', 'reportEmbedError', 'pluginTryInSafeMode',
 ];
 
 /** Links the window may open in the browser. */

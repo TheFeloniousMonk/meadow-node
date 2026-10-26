@@ -10,7 +10,7 @@
 export class PatternError extends Error {}
 
 type Test = (c: number) => boolean;
-interface Atom {
+export interface Atom {
   test: Test;
   min: number;
   max: number; // Infinity for unbounded

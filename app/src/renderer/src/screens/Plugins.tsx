@@ -54,8 +54,15 @@ export function PluginsScreen({ state, refresh }: ScreenProps) {
     setPreview(null);
   };
 
+  const safe = state.safeMode;
   return (
     <div className="stack">
+      {safe && (
+        <div className="notice warn">
+          <strong>Safe mode: plugins are off for now.</strong> Turn them back on one at a time below, and use Meadow for a while after each.
+          If the window stops working again with one on, that is the one to remove. Next time Meadow starts normally, they are all on again as you set them.
+        </div>
+      )}
       <section className="card">
         <h2 style={{ marginTop: 0 }}>Install a plugin</h2>
         <p className="muted">
@@ -85,6 +92,9 @@ export function PluginsScreen({ state, refresh }: ScreenProps) {
                     onChange={(e) => run(async () => { await meadow.pluginSetEnabled({ id: p.id, on: e.target.checked }); await refresh(); })} />
                   {p.enabled ? 'On: its content shows in messages' : 'Off: its content shows as plain text'}
                 </label>
+                {safe && p.enabled && !p.error && !safe.allowed.includes(p.id) && (
+                  <button disabled={busy} onClick={() => run(async () => { await meadow.pluginTryInSafeMode({ id: p.id }); toast(`${p.name} is back on for now.`); await refresh(); })}>Turn this one back on</button>
+                )}
                 <button className="secondary" disabled={busy} onClick={() => setRemoving(p)}>Remove</button>
               </div>
             </div>

@@ -89,6 +89,20 @@ export function troubleshoot(s: Services, claude: (agent: string) => ClaudeState
     ? item('guard', 'MessageGuard', 'ok', `On for ${settings.guardPublic && settings.guardPrivate ? 'every room' : settings.guardPublic ? 'public rooms' : 'private rooms and DMs'}.`)
     : item('guard', 'MessageGuard', 'info', `Off. Recommended: it checks new messages for prompt injection${guardCost ? `, for ${formatUsd(guardCost)} a sync that brings new messages` : ''}.`,
       { action: { label: 'Turn on in Settings', go: 'settings' } }));
+  // Plugins (§16.26.7): safe mode and its reason, or the last embed that failed to show. Never message text.
+  const installed = s.plugins.list();
+  if (installed.length) {
+    const lastEmbed = s.health.lastEmbed();
+    const on = s.plugins.active().length;
+    computer.push(s.plugins.safeMode
+      ? item('plugins', 'Plugins', 'warn', `Safe mode: plugins are off for now${s.health.safe.reason ? `, because ${s.health.safe.reason}` : ''}.${s.health.safe.last ? ` Last error: ${s.health.safe.last.reason}${s.health.safe.last.type ? ` (${s.health.safe.last.type})` : ''}.` : ''}`,
+        { at: s.health.safe.last?.at, fix: 'Turn plugins back on one at a time, and remove the one that brings the trouble back.', action: { label: 'Open Plugins', go: 'plugins' } })
+      : installed.some((p) => p.error)
+        ? item('plugins', 'Plugins', 'warn', `${installed.filter((p) => p.error).map((p) => p.manifest.name).join(', ')} failed its check when Meadow started, so it is off.`, { fix: 'Install it again, or remove it.', action: { label: 'Open Plugins', go: 'plugins' } })
+        : lastEmbed
+          ? item('plugins', 'Plugins', 'info', `${on} on. Last content that could not be shown: ${lastEmbed.type}${lastEmbed.message ? ` (${lastEmbed.message})` : ''}.`, { at: lastEmbed.at })
+          : item('plugins', 'Plugins', 'ok', `${on} of ${installed.length} on.`));
+  }
   groups.push({ title: 'This computer', items: computer });
 
   // ---- Money ----

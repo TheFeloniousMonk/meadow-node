@@ -52,6 +52,8 @@ export class PluginStore {
   #loaded = new Map<string, InstalledPlugin>();
   /** Safe mode (§16.26.7): every plugin treated as off, without changing what the person chose. */
   safeMode = false;
+  /** In safe mode, the plugins the person turned back on, one at a time. */
+  readonly safeAllow = new Set<string>();
 
   constructor({ dir, db, now = Date.now }: { dir: string | null; db: Db; now?: () => number }) {
     this.#dir = dir;
@@ -162,8 +164,7 @@ export class PluginStore {
 
   /** The plugins in use now: installed, on, passed their check, and not in safe mode. */
   active(): Manifest[] {
-    if (this.safeMode) return [];
-    return [...this.#loaded.values()].filter((p) => p.enabled && !p.error).map((p) => p.manifest);
+    return [...this.#loaded.values()].filter((p) => p.enabled && !p.error && (!this.safeMode || this.safeAllow.has(p.manifest.id))).map((p) => p.manifest);
   }
 
   /** A type in use now, by `plugin.name`. */
