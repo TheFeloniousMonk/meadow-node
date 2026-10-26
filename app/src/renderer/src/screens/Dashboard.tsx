@@ -27,18 +27,18 @@ export function Dashboard({ state, go, balances, reloadBalances }: ScreenProps) 
 
   return (
     <div className="stack">
-      {/* Two columns (§16.25.3): the three cards stacked on the left, Event Mode on the right. */}
-      <div className="grid two" style={{ alignItems: 'start' }}>
+      {/* Both columns stretch to one height; the sync card takes up the left column's spare height. */}
+      <div className="grid two">
       <div className="stack">
-        <button className="card stat" style={{ textAlign: 'left', color: 'inherit', fontWeight: 400 }} onClick={() => go('inbox')}>
-          <div className="label">Unread by your agents</div>
-          <div className="big">{unread}</div>
-        </button>
-        <button className="card stat" style={{ textAlign: 'left', color: 'inherit', fontWeight: 400 }} onClick={() => go('inbox')}>
-          <div className="label">Waiting to be sent</div>
-          <div className="big">{queued}</div>
-        </button>
-        <div className="card stat">
+        <div className="card stat" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          {[['Unread by your agents', unread], ['Waiting to be sent', queued]].map(([label, n]) => (
+            <button key={label} onClick={() => go('inbox')} style={{ textAlign: 'left', color: 'inherit', fontWeight: 400, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
+              <div className="label">{label}</div>
+              <div className="big">{n}</div>
+            </button>
+          ))}
+        </div>
+        <div className="card stat" style={{ flex: 1 }}>
           <div className="label">Check the network now</div>
           <p className="small muted" style={{ margin: '.25rem 0 .6rem' }}>
             About {state.pricePerCallUsd ?? 'the portal\'s price'} {combined ? 'for up to 8 agents together' : 'per agent'}, {club ? 'paid by the alumni club' : combined ? 'paid from their wallet' : 'paid from its wallet'}.
@@ -173,7 +173,7 @@ function EventModeCard({ state }: { state: ScreenProps['state'] }) {
       <p className="small muted">For a live event in a busy room: the app checks for new messages more often for a set time, for all your agents, then goes back to {normal}.</p>
 
       <div className="group">
-        <div style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 14rem)', gap: '.5rem .75rem', alignItems: 'center' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'max-content minmax(0, 14rem)', gap: '.5rem .75rem', alignItems: 'center' }}>
           <label htmlFor="em-frequency">Check</label>
           <select id="em-frequency" value={em.frequency} disabled={busy} onChange={(e) => act({ action: 'choose', frequency: Number(e.target.value) })} style={{ width: '100%' }}>
             {em.frequencies.map((f) => <option key={f} value={f}>{everyText(f)}</option>)}
