@@ -8,6 +8,12 @@ relate.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-28
+
+Same protocol (3) and room version (1), the same client and peer APIs, and
+no database changes: 0.6.1 and 0.6.0 nodes replicate normally, and a rollback
+to 0.6.0 is safe. Only peer discovery changed.
+
 ### Fixed
 
 - Discovery reads the chain indexer again (SPEC §11.1). The indexer no
