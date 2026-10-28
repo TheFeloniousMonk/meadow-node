@@ -79,8 +79,8 @@ function startNetwork(network) {
     peerPath: NETWORKS[network].peerPath,
     fetch,
     ...(env.MEADOW_DISCOVERY_INTERVAL_MS ? { intervalMs: Number(env.MEADOW_DISCOVERY_INTERVAL_MS) } : {}),
-    listSuppliers: (net, { since }) => listSuppliers(network, {
-      since, fetch,
+    listSuppliers: (net, { since, known }) => listSuppliers(network, {
+      since, known, fetch,
       base: env[`MEADOW_LCD_${NET}`] ?? LCD[network],
       indexer: env[`MEADOW_INDEXER_${NET}`] === 'off' ? null : env[`MEADOW_INDEXER_${NET}`] ?? INDEXER[network],
     }),

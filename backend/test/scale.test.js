@@ -30,35 +30,65 @@ function room(name = 'alice', posts = 1) {
 
 // ---- (t) Discovery from the indexer ----
 
-test('indexer listing: complete, then only changes since a height; unbonding comes back removed; a lagging indexer falls back to the chain API', async () => {
+// The indexer as it answers since 2026-10 (SPEC §11.1, 0.6.1): configs carry no supplier link, and a
+// query nested deeper than 4 levels is refused; stake status comes from `suppliers` by ID.
+function fakeIndexer({ configs, suppliers, lag = () => 0 }) {
   const asked = [];
-  let lag = 0;
   const fetch = async (url, init) => {
-    if (url.startsWith('https://idx')) {
-      asked.push(JSON.parse(init.body));
-      return json({ data: {
-        _metadata: { lastProcessedHeight: 1000, targetHeight: 1000 + lag },
-        supplierServiceConfigs: { nodes: [
-          { supplierId: 'pokt1a', endpoints: [{ url: 'https://a.example', rpcType: 4 }], supplier: { stakeStatus: 'Staked' } },
-          { supplierId: 'pokt1b', endpoints: [{ url: 'https://b.example' }], supplier: { stakeStatus: 'Unstaking' } },
-        ], pageInfo: { hasNextPage: false, endCursor: null } },
-      } });
+    if (!url.startsWith('https://idx')) {
+      return json({ supplier: [{ operator_address: 'pokt1lcd', services: [{ service_id: 'meadow', endpoints: [{ url: 'https://lcd.example' }] }] }], pagination: {} });
     }
-    return json({ supplier: [{ operator_address: 'pokt1lcd', services: [{ service_id: 'meadow', endpoints: [{ url: 'https://lcd.example' }] }] }], pagination: {} });
+    const { query, variables } = JSON.parse(init.body);
+    asked.push({ query, variables });
+    if (/supplier\s*\{/.test(query)) return json({ errors: [{ message: 'Field "supplier" is not defined by type "SupplierServiceConfigFilter".' }] }, 400);
+    if (query.includes('suppliers(')) {
+      return json({ data: { suppliers: { nodes: suppliers.filter((x) => variables.ids.includes(x.id)) } } });
+    }
+    const since = variables.since === undefined ? null : Number(variables.since);
+    const nodes = configs.filter((c) => since === null || c.activatedAtId === null || c.activatedAtId > since)
+      .map(({ supplierId, endpoints }) => ({ supplierId, endpoints }));
+    return json({ data: {
+      _metadata: { lastProcessedHeight: 1000, targetHeight: 1000 + lag() },
+      supplierServiceConfigs: { nodes, pageInfo: { hasNextPage: false, endCursor: null } },
+    } });
   };
+  return { asked, fetch };
+}
+
+test('indexer listing: configs, then stake status by ID; complete, then only changes since a height; a lagging indexer falls back to the chain API', async () => {
+  let lag = 0;
+  const { asked, fetch } = fakeIndexer({
+    configs: [
+      { supplierId: 'pokt1a', endpoints: [{ url: 'https://a.example', rpcType: 4 }], activatedAtId: 950 },
+      { supplierId: 'pokt1b', endpoints: [{ url: 'https://b.example' }], activatedAtId: 960 },
+      { supplierId: 'pokt1old', endpoints: [{ url: 'https://old.example' }], activatedAtId: 100 },
+    ],
+    suppliers: [
+      { id: 'pokt1a', stakeStatus: 'Staked', unstakingBeginBlockId: null },
+      { id: 'pokt1b', stakeStatus: 'Unstaking', unstakingBeginBlockId: '955' },
+      { id: 'pokt1old', stakeStatus: 'Staked', unstakingBeginBlockId: null },
+      { id: 'pokt1gone', stakeStatus: 'Unstaked', unstakingBeginBlockId: '920' },
+      { id: 'pokt1leaving', stakeStatus: 'Staked', unstakingBeginBlockId: '990' },
+    ],
+    lag: () => lag,
+  });
   const opts = { indexer: 'https://idx/graphql', base: 'https://lcd', fetch };
 
   const full = await listSuppliers('main', opts);
-  assert.deepEqual({ full: full.full, height: full.height, source: full.source }, { full: true, height: 1000, source: 'indexer' });
+  assert.deepEqual({ full: full.full, height: full.height, source: full.source, fallback: full.fallback }, { full: true, height: 1000, source: 'indexer', fallback: undefined });
+  assert.deepEqual(full.suppliers, [{ operator: 'pokt1a', urls: ['https://a.example'] }, { operator: 'pokt1old', urls: ['https://old.example'] }], 'only staked suppliers');
+  assert.deepEqual(full.removed, []);
   assert.equal(asked[0].variables.since, undefined);
-  assert.match(asked[0].query, /stakeStatus: \{ equalTo: Staked \}/);
+  assert.doesNotMatch(asked[0].query, /supplier\s*\{/, 'no nested supplier link');
+  assert.deepEqual(asked[1].variables.ids.sort(), ['pokt1a', 'pokt1b', 'pokt1old']);
 
-  const changes = await listSuppliers('main', { ...opts, since: 900 });
-  assert.equal(asked[1].variables.since, '900');
-  assert.match(asked[1].query, /unstakingBeginBlockId/);
+  asked.length = 0;
+  const changes = await listSuppliers('main', { ...opts, since: 900, known: ['pokt1old', 'pokt1gone', 'pokt1leaving'] });
+  assert.equal(asked[0].variables.since, '900');
   assert.equal(changes.full, false);
-  assert.deepEqual(changes.suppliers, [{ operator: 'pokt1a', urls: ['https://a.example'] }]);
-  assert.deepEqual(changes.removed, ['pokt1b']);
+  assert.deepEqual(changes.suppliers, [{ operator: 'pokt1a', urls: ['https://a.example'] }], 'a changed config of a staked supplier');
+  assert.deepEqual(changes.removed.sort(), ['pokt1b', 'pokt1gone', 'pokt1leaving'], 'changed but not staked; known and no longer staked; known and unbonding since the height');
+  assert.ok(asked[1].variables.ids.includes('pokt1old'), 'the known ones are asked about too');
 
   lag = 500;
   const fallback = await listSuppliers('main', opts);
@@ -66,6 +96,41 @@ test('indexer listing: complete, then only changes since a height; unbonding com
   assert.match(fallback.fallback, /500 blocks behind/);
   assert.deepEqual({ full: fallback.full, height: fallback.height }, { full: true, height: null });
   assert.deepEqual(fallback.suppliers, [{ operator: 'pokt1lcd', urls: ['https://lcd.example'] }]);
+});
+
+test('stake status is asked 100 IDs at a time', async () => {
+  const configs = Array.from({ length: 250 }, (_, i) => ({ supplierId: `pokt1s${i}`, endpoints: [{ url: `https://s${i}.example` }], activatedAtId: 10 }));
+  const { asked, fetch } = fakeIndexer({ configs, suppliers: configs.map((c) => ({ id: c.supplierId, stakeStatus: 'Staked', unstakingBeginBlockId: null })) });
+  const full = await listSuppliers('main', { indexer: 'https://idx/graphql', base: 'https://lcd', fetch });
+  assert.equal(full.suppliers.length, 250);
+  assert.deepEqual(asked.filter((a) => a.query.includes('suppliers(')).map((a) => a.variables.ids.length), [100, 100, 50]);
+});
+
+test('while the indexer fails, an unknown node starts an early run at most once an hour', async () => {
+  const store = new Store();
+  let runs = 0;
+  let fallback = 'indexer: 400 Field "supplier" is not defined';
+  const d = new Discovery(store, new Peers([], { log: quiet }), {
+    networks: ['main'], peerPath: '', fetch: async () => json({}), log: quiet,
+    listSuppliers: async () => {
+      runs++;
+      return { suppliers: [], removed: [], height: fallback ? null : 1000, full: true, ...(fallback && { fallback }) };
+    },
+  });
+  const t0 = 1_000_000_000;
+  const settle = () => wait(10);
+  assert.equal(d.nudge('n_x', t0), true);
+  await settle();
+  assert.equal(d.nudge('n_x', t0 + 6 * 60_000), false, 'not after 6 minutes: the last listing was the chain API');
+  assert.equal(d.nudge('n_x', t0 + 61 * 60_000), true, 'after an hour');
+  await settle();
+  fallback = null;
+  assert.equal(d.nudge('n_x', t0 + 122 * 60_000), true);
+  await settle();
+  assert.equal(d.nudge('n_x', t0 + 128 * 60_000), true, 'once the indexer answers again, every 5 minutes as before');
+  await settle();
+  assert.equal(runs, 4);
+  store.close();
 });
 
 test('discovery reads changes between complete listings and asks a hostname only when new, failing, or due again', async () => {

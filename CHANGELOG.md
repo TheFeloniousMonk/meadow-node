@@ -8,6 +8,26 @@ relate.
 
 ## [Unreleased]
 
+### Fixed
+
+- Discovery reads the chain indexer again (SPEC §11.1). The indexer no
+  longer links a service config to its supplier and refuses queries nested
+  more than 4 levels deep, so the old query had failed since at least
+  2026-10-22 and every run read the chain API's much larger list instead
+  (peers were still found). A run now asks for the Meadow configs, then for
+  their suppliers' stake status by ID, 100 at a time. A listing of changes
+  also asks about the suppliers already known, so one that unstakes or
+  begins unbonding is let go at once.
+- A node this one cannot verify no longer causes a large read every 5
+  minutes: while the indexer is failing and discovery reads the chain API,
+  a signed request from an unknown node starts an early run at most once an
+  hour.
+
+### Changed
+
+- The node image is pinned to `node:24.22.1-alpine`, the October 2026 Node.js
+  security release.
+
 ## [0.6.0] - 2026-10-05
 
 Same protocol (3) and room version (1): no event format or validity changes,

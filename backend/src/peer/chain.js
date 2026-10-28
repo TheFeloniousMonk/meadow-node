@@ -22,6 +22,8 @@ export const SERVICE_ID = 'meadow';
 export const LCD_PAGING = { perPage: 50, maxPages: 40 };
 // The indexer returns only the Meadow service's own config per supplier (about 300 bytes).
 export const INDEXER_PAGING = { perPage: 100, maxPages: 50 };
+// Suppliers' stake status is asked by ID, this many at a time.
+export const INDEXER_IDS = 100;
 // An indexer this many blocks behind the chain it follows is not used.
 export const INDEXER_MAX_LAG = 50;
 
@@ -30,11 +32,12 @@ export const INDEXER_MAX_LAG = 50;
 // activated or (re)staked after it, or that began unbonding after it, are listed, and those
 // no longer staked come back in `removed`. Without `since` the list is complete (`full`).
 // When the indexer fails, the LCD's complete list is used and `fallback` says why.
-export async function listSuppliers(network, { since = null, indexer = INDEXER[network], base = LCD[network], fetch = globalThis.fetch, timeoutMs = 20_000 } = {}) {
+// `known`: the operators listed so far, so a listing of changes can tell which of them left.
+export async function listSuppliers(network, { since = null, known = [], indexer = INDEXER[network], base = LCD[network], fetch = globalThis.fetch, timeoutMs = 20_000 } = {}) {
   let fallback = null;
   if (indexer) {
     try {
-      return { ...(await indexerSuppliers(network, { since, url: indexer, fetch, timeoutMs })), source: 'indexer' };
+      return { ...(await indexerSuppliers(network, { since, known, url: indexer, fetch, timeoutMs })), source: 'indexer' };
     } catch (err) {
       fallback = err.message;
     }
@@ -44,7 +47,6 @@ export async function listSuppliers(network, { since = null, indexer = INDEXER[n
 }
 
 const STAKED = 'Staked';
-const ENTRY = 'supplierId endpoints supplier { stakeStatus }';
 
 async function graphql(url, query, variables, { fetch, timeoutMs }) {
   const res = await fetch(url, {
@@ -60,22 +62,23 @@ async function graphql(url, query, variables, { fetch, timeoutMs }) {
   return body.data;
 }
 
-export async function indexerSuppliers(network, { since = null, url = INDEXER[network], serviceId = SERVICE_ID, fetch = globalThis.fetch, timeoutMs = 20_000 } = {}) {
+// Two shallow queries (SPEC §11.1, 0.6.1): the indexer no longer links a config to its
+// supplier and allows at most 4 levels of nesting. First the Meadow configs, then the
+// stake status of their suppliers (and, for a listing of changes, of the known ones) by ID.
+export async function indexerSuppliers(network, { since = null, known = [], url = INDEXER[network], serviceId = SERVICE_ID, fetch = globalThis.fetch, timeoutMs = 20_000 } = {}) {
   if (!url) throw new Error(`no indexer for network "${network}"`);
   const full = since === null || since === undefined;
-  // Complete: every staked supplier's Meadow config. Changed: configs activated after `since`
-  // (or not yet activated: a new stake), and suppliers that began unbonding after it.
+  // Complete: every Meadow config. Changed: configs activated after `since`, or not yet activated (a new stake).
   const filter = full
-    ? '{ serviceId: { equalTo: $service }, supplier: { stakeStatus: { equalTo: Staked } } }'
-    : '{ serviceId: { equalTo: $service }, or: [{ activatedAtId: { isNull: true } }, { activatedAtId: { greaterThan: $since } }, { supplier: { unstakingBeginBlockId: { greaterThan: $since } } }] }';
+    ? '{ serviceId: { equalTo: $service } }'
+    : '{ serviceId: { equalTo: $service }, or: [{ activatedAtId: { isNull: true } }, { activatedAtId: { greaterThan: $since } }] }';
   const query = `query($service: String!, $first: Int!, $after: Cursor${full ? '' : ', $since: BigFloat!'}) {
     _metadata { lastProcessedHeight targetHeight }
     supplierServiceConfigs(filter: ${filter}, first: $first, after: $after, orderBy: ID_ASC) {
-      nodes { ${ENTRY} } pageInfo { hasNextPage endCursor }
+      nodes { supplierId endpoints } pageInfo { hasNextPage endCursor }
     }
   }`;
-  const suppliers = [];
-  const removed = [];
+  const configs = new Map(); // operator -> [url]
   let height = null;
   let after = null;
   for (let page = 0; page < INDEXER_PAGING.maxPages; page++) {
@@ -90,14 +93,41 @@ export async function indexerSuppliers(network, { since = null, url = INDEXER[ne
     const conn = data.supplierServiceConfigs ?? {};
     for (const n of conn.nodes ?? []) {
       if (typeof n.supplierId !== 'string') continue;
-      const urls = (Array.isArray(n.endpoints) ? n.endpoints : []).map((e) => e?.url).filter((u) => typeof u === 'string');
-      if (n.supplier?.stakeStatus === STAKED && urls.length) suppliers.push({ operator: n.supplierId, urls });
-      else removed.push(n.supplierId);
+      configs.set(n.supplierId, (Array.isArray(n.endpoints) ? n.endpoints : []).map((e) => e?.url).filter((u) => typeof u === 'string'));
     }
     if (!conn.pageInfo?.hasNextPage) break;
     after = conn.pageInfo.endCursor;
   }
+
+  const ids = [...new Set([...configs.keys(), ...(full ? [] : known)])];
+  const staked = await stakedSuppliers(url, ids, full ? null : since, { fetch, timeoutMs });
+  const suppliers = [];
+  const removed = [];
+  for (const [operator, urls] of configs) {
+    if (staked.has(operator) && urls.length) suppliers.push({ operator, urls });
+    else if (!full) removed.push(operator);
+  }
+  if (!full) for (const operator of known) if (!configs.has(operator) && !staked.has(operator)) removed.push(operator);
   return { suppliers, removed, height, full };
+}
+
+// The IDs among `ids` whose supplier is staked and, given `since`, did not begin unbonding after it.
+async function stakedSuppliers(url, ids, since, { fetch, timeoutMs }) {
+  const query = `query($ids: [String!]!, $first: Int!) {
+    suppliers(filter: { id: { in: $ids } }, first: $first) { nodes { id stakeStatus unstakingBeginBlockId } }
+  }`;
+  const staked = new Set();
+  for (let i = 0; i < ids.length; i += INDEXER_IDS) {
+    const batch = ids.slice(i, i + INDEXER_IDS);
+    const data = await graphql(url, query, { ids: batch, first: batch.length }, { fetch, timeoutMs });
+    for (const n of data.suppliers?.nodes ?? []) {
+      if (typeof n?.id !== 'string' || n.stakeStatus !== STAKED) continue;
+      const leaving = n.unstakingBeginBlockId !== null && n.unstakingBeginBlockId !== undefined;
+      if (leaving && (since === null || Number(n.unstakingBeginBlockId) > Number(since))) continue;
+      staked.add(n.id);
+    }
+  }
+  return staked;
 }
 
 // [{ operator, urls }] for suppliers staked for `serviceId` on `network` and

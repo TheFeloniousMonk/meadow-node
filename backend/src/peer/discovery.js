@@ -16,6 +16,8 @@ import { shortId } from './peers.js';
 export const PEER_PATH = '/meadow-peer';
 // Early discovery (§11.1): at most once in this long, on a signed request from an unknown node.
 export const EARLY_MIN_MS = 5 * 60 * 1000;
+// ...and at most once in this long while the last listing came from the chain API (large), 0.6.1.
+export const EARLY_FALLBACK_MIN_MS = 60 * 60 * 1000;
 // A complete supplier listing at least this often; changes only in between.
 export const FULL_LISTING_MS = 6 * 60 * 60 * 1000;
 // A hostname that answered is asked again after this long.
@@ -30,6 +32,7 @@ export class Discovery {
   #timer = null;
   #running = null;
   #earlyAt = 0;
+  #fellBack = false; // the last listing came from the chain API because the indexer failed
   #suppliers = new Map(); // "<network> <operator>" -> [origin]
   #listed = new Map(); // network -> { height, fullAt } after an incremental-capable listing
   #hellos = new Map(); // origin -> { node, ok, at }
@@ -39,7 +42,7 @@ export class Discovery {
   // The last runs, for the health report (§9.6): when, suppliers listed, nodes found, and failures in a row.
   status = { lastRun: null, suppliers: null, others: null, found: null, lastError: null, failuresInARow: 0 };
 
-  // opts.listSuppliers(network, { since }) -> { suppliers: [{ operator, urls }], removed, height, full, source, fallback? },
+  // opts.listSuppliers(network, { since, known }) -> { suppliers: [{ operator, urls }], removed, height, full, source, fallback? },
   // or a plain array of suppliers, taken as a complete listing.
   constructor(store, peers, opts) {
     this.#store = store;
@@ -74,8 +77,10 @@ export class Discovery {
   // A correctly signed request came from a node this one doesn't know (§11.1): look at the chain
   // again now rather than at the next interval, at most once every 5 minutes. A signature alone never
   // makes a peer: the run checks the chain and asks /v2/hello as usual. Returns whether it ran.
+  // While the indexer is failing, each run reads the chain API's large list, so then once an hour.
   nudge(nodeId, now = Date.now()) {
-    if (!this.#opts.networks.length || this.#running || now - this.#earlyAt < EARLY_MIN_MS) return false;
+    const gap = this.#fellBack ? EARLY_FALLBACK_MIN_MS : EARLY_MIN_MS;
+    if (!this.#opts.networks.length || this.#running || now - this.#earlyAt < gap) return false;
     this.#earlyAt = now;
     this.#opts.log.log?.(`discovery: running early: a signed request from unknown node ${shortId(nodeId)}`);
     this.#runOnce();
@@ -89,10 +94,12 @@ export class Discovery {
   async #list(network, now) {
     const prev = this.#listed.get(network);
     const since = prev && now - prev.fullAt < this.#opts.fullEveryMs ? prev.height : null;
-    let r = await this.#opts.listSuppliers(network, { since });
-    if (Array.isArray(r)) r = { suppliers: r, removed: [], height: null, full: true };
-    if (r.fallback) this.#opts.log.warn?.(`discovery: indexer unavailable (${r.fallback}); read the chain API instead`);
     const key = (op) => `${network} ${op}`;
+    const known = [...this.#suppliers.keys()].filter((k) => k.startsWith(`${network} `)).map((k) => k.slice(network.length + 1));
+    let r = await this.#opts.listSuppliers(network, { since, known });
+    if (Array.isArray(r)) r = { suppliers: r, removed: [], height: null, full: true };
+    this.#fellBack = !!r.fallback;
+    if (r.fallback) this.#opts.log.warn?.(`discovery: indexer unavailable (${r.fallback}); read the chain API instead`);
     if (r.full) for (const k of this.#suppliers.keys()) if (k.startsWith(`${network} `)) this.#suppliers.delete(k);
     for (const op of r.removed ?? []) this.#suppliers.delete(key(op));
     for (const s of r.suppliers) {
