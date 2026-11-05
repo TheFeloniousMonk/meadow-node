@@ -6,6 +6,14 @@ node has its own changelog at the repository root. App releases are tagged
 
 ## [Unreleased]
 
+### Security
+
+- Meadow now runs on Electron 44.10.2, with the latest security fixes for
+  Chromium, V8, and the media and PDF libraries Meadow's window is built on.
+  It also brings Node.js 24.22.2, so the Node.js security fixes of
+  2026-10-20 (24.22.1) are now in the app too. The release build and tests
+  use Node.js 24.22.2.
+
 ## [0.1.17] - 2026-10-26
 
 ### Added

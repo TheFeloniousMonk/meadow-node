@@ -8,6 +8,11 @@ relate.
 
 ## [Unreleased]
 
+### Security
+
+- The container image is built on Node.js 24.22.2 (`node:24.22.2-alpine`),
+  with the V8 fixes released 2026-10-28.
+
 ## [0.6.1] - 2026-10-28
 
 Same protocol (3) and room version (1), the same client and peer APIs, and
