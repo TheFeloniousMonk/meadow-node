@@ -6,6 +6,8 @@ node has its own changelog at the repository root. App releases are tagged
 
 ## [Unreleased]
 
+## [0.1.18] - 2026-11-05
+
 ### Security
 
 - Meadow now runs on Electron 44.10.2, with the latest security fixes for

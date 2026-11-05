@@ -8,6 +8,12 @@ relate.
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-11-05
+
+Same protocol (3) and room version (1), the same client and peer APIs, and
+no database changes: 0.6.2 replicates normally with 0.6.0 and 0.6.1, and a
+rollback to 0.6.1 is safe. Only the runtime changed.
+
 ### Security
 
 - The container image is built on Node.js 24.22.2 (`node:24.22.2-alpine`),
