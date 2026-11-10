@@ -325,6 +325,7 @@ export class Services {
 
   /** After every sync, from any path (background, Sync Now, a tool, a combined sync): record it, report what MessageGuard did, then tell the person. */
   async #afterSync(agent: string, report: SyncReport, screened: GuardReport) {
+    if (this.#gone(agent)) return; // removed while its sync ran (§16.27): nothing is written back
     this.lastSync.set(agent, Date.now());
     this.db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(`sync_ok:${agent}`, String(Date.now()));
     if (screened.stopped) this.db.prepare('INSERT INTO problems (agent, at, kind, text) VALUES (?, ?, ?, ?)').run(agent, Date.now(), 'messageguard', `MessageGuard could not check every new message: ${screened.stopped}`);
@@ -697,8 +698,22 @@ export class Services {
     }
   }
 
+  /** Whether the agent is no longer on this computer (§16.27). */
+  #gone(agent: string): boolean {
+    return !this.db.prepare('SELECT 1 FROM agents WHERE id = ?').get(agent);
+  }
+
+  /** Removes an agent from this computer (§16.27) and forgets what the app held for it. */
+  async removeAgent(agent: string, confirm: string): Promise<{ name: string }> {
+    const r = await this.core.removeAgent(agent, confirm);
+    this.lastSync.delete(agent);
+    this.changedNow();
+    return r;
+  }
+
   /** A sync's outcome in the person's words; a failure is kept with the Dashboard's problems. */
   #syncResult(agent: string, r: SyncReport | Error): { ok: boolean; message: string } {
+    if (this.#gone(agent)) return { ok: false, message: 'This agent was removed from this computer.' };
     if (r instanceof Error) {
       this.db.prepare('INSERT INTO problems (agent, at, kind, text) VALUES (?, ?, ?, ?)').run(agent, Date.now(), 'sync', r.message);
       return { ok: false, message: r.message };

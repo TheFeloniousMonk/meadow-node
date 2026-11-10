@@ -9,6 +9,7 @@ import { ALUMNI_WALLET, ALUMNI_WALLET_NAME } from '../core/alumni.ts';
 import { dirname } from 'node:path';
 import { backupChanges, backupDue, describeBackup, makeBackup, readBackup, restoreBackup } from '../core/backup.ts';
 import { tokenBalance } from '../core/balance.ts';
+import { removalPreview } from '../core/remove.ts';
 import { add, bridgeEntry, claudeDesktopConfigPath, claudeDesktopRunning, entryName, remove, status } from '../server/claude-desktop.ts';
 import { CHANNELS, linkAllowed, type AlumniView, type Api, type AppState, type EventModeState, type BridgePlanView, type BridgeStateView, type Channel, type MessageView, type MovePlanView, type MoveStateView, type NoteView } from '../shared/api.ts';
 import type { Services } from './services.ts';
@@ -304,6 +305,12 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
       s.wallets.remove(walletId, confirm);
       return { ok: true };
     },
+
+    removalPreview({ agent }) {
+      return removalPreview(s.db, agent);
+    },
+
+    removeAgent: undefined as any, // async, below
 
     dismissUnlistedNotice({ agent }) {
       s.db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(`unlisted_notice_seen:${agent}`, String(Date.now()));
@@ -714,6 +721,13 @@ export function createHandlers(s: Services, env: HandlerEnv): (channel: Channel,
     syncNow: ({ agent }) => withCause('person', () => s.syncOne(agent)),
     syncAllNow: () => s.syncAll('person'),
     claudeRunning: async () => ({ running: await claudeRunning() }),
+    // Removing an agent (§16.27): the core checks the typed name, then its Claude Desktop entry goes too.
+    removeAgent: async ({ agent, confirm }) => {
+      const entry = entryName(nameOf(agent));
+      await s.removeAgent(String(agent ?? ''), String(confirm ?? ''));
+      const r = remove(claudePath(), entry);
+      return { ok: true, claudeRunning: await claudeRunning(), ...(!r.ok && { claudeError: r.error }) };
+    },
     installUpdate: async () => {
       if (!s.update.available) return { ok: false, error: 'No update is waiting.' };
       if (!env.installUpdate) return { ok: false, error: 'This copy cannot update itself.' };

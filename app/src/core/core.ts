@@ -19,6 +19,7 @@ import { ATTESTATION_BROKEN, NodeWatch } from './watch.ts';
 import { refusalWords } from './refusal.ts';
 import { POST_LEVEL, abilities, createLevels, modeOf, roleOf, waiting, approvedCount, type Mode, type Role, type ShownMode } from './modes.ts';
 import type { Vault } from './vault.ts';
+import { removeAgent } from './remove.ts';
 
 export const SYNC = {
   outbox: 100, // events per call (§7.2)
@@ -269,6 +270,20 @@ export class Core {
   /** Drops what the core holds in memory for an agent, after its database rows were replaced (a restore). */
   forget(agent: string) {
     this.#ctx.delete(agent);
+  }
+
+  /**
+   * Removes an agent from this computer (§16.27), once its display name is typed exactly.
+   * It waits for the agent's sync or write in progress, so nothing is written back after it.
+   */
+  async removeAgent(agent: string, confirm: string): Promise<{ name: string }> {
+    const r = await this.#exclusive(agent, async () => {
+      const out = removeAgent(this.#db, agent, confirm);
+      this.#ctx.delete(agent);
+      this.#stale.delete(agent);
+      return out;
+    });
+    return r;
   }
 
   agents(): { id: string; display_name: string; name: string; handle: string; registered: boolean }[] {

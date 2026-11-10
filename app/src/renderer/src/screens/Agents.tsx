@@ -25,6 +25,7 @@ export function Agents({ state, refresh, go, intent, clearIntent }: ScreenProps)
   const [runner, setRunner] = useState<AgentView | null>(null);
   const [activity, setActivity] = useState<AgentView | null>(null);
   const [notes, setNotes] = useState<AgentView | null>(null);
+  const [removing, setRemoving] = useState<AgentView | null>(null);
   const { error, run } = useAction();
   // Arriving from Troubleshoot (§16.21): open that agent's dialog, or point at its wallet choice.
   useEffect(() => {
@@ -108,6 +109,7 @@ export function Agents({ state, refresh, go, intent, clearIntent }: ScreenProps)
             <button className="secondary" onClick={() => setNotes(a)}>Notes</button>
             <button className="secondary" onClick={() => setBackingUp(a)}>{a.lastBackup ? 'Back up again' : 'Back up'}</button>
             <span className="small muted">{a.lastBackup ? `Last backup ${when(a.lastBackup)}` : 'Never backed up'}</span>
+            <button className="danger" style={{ marginLeft: 'auto' }} onClick={() => setRemoving(a)}>Remove from this app</button>
           </div>
           {a.backupDue && (
             <div className="notice warn" style={{ marginTop: '1rem' }}>
@@ -148,6 +150,14 @@ export function Agents({ state, refresh, go, intent, clearIntent }: ScreenProps)
       )}
       {runner && <RunnerDialog agent={runner} onClose={close} />}
       {notes && <NotesDialog agent={notes} onClose={() => { setNotes(null); void refresh(); }} />}
+      {removing && (
+        <RemoveAgent
+          agent={removing}
+          walletName={state.wallets.find((w) => w.id === removing.walletId)?.name ?? null}
+          onBackup={() => { setBackingUp(removing); setRemoving(null); }}
+          onClose={() => { setRemoving(null); void refresh(); }}
+        />
+      )}
       {activity && <ActivityDialog agent={activity} onClose={() => setActivity(null)} goInbox={() => go('inbox')} />}
     </div>
   );
@@ -396,6 +406,67 @@ function MayDo({ agent, refresh }: { agent: AgentView; refresh: () => Promise<vo
  * person chooses. Back up again says what the last backup lacks and that it still works,
  * and saves a dated file beside it.
  */
+/**
+ * Remove from this app (§16.27). An agent cannot be deleted from Meadow: its
+ * handle and messages stay on the network. This erases what this computer
+ * keeps for it, once its name is typed exactly; a backup is offered first.
+ */
+function RemoveAgent({ agent, walletName, onBackup, onClose }: { agent: AgentView; walletName: string | null; onBackup: () => void; onClose: () => void }) {
+  const [typed, setTyped] = useState('');
+  const [queued, setQueued] = useState(0);
+  const [done, setDone] = useState<{ claudeRunning: boolean | null; claudeError?: string } | null>(null);
+  const { busy, error, run } = useAction();
+  useEffect(() => { void meadow.removalPreview({ agent: agent.id }).then((p) => setQueued(p?.queued ?? 0)); }, [agent.id]);
+  const matches = typed.trim() === agent.displayName.trim();
+  const needsBackup = !agent.lastBackup || !!agent.backupDue;
+  if (done) {
+    return (
+      <Dialog title={`${agent.displayName} was removed`} onClose={onClose}>
+        <p>{agent.displayName} is no longer on this computer.</p>
+        {done.claudeRunning === true && <p>Claude Desktop is open. Quit it from its icon near the clock and open it again, so {agent.displayName}'s Meadow tools go away there.</p>}
+        {done.claudeError && <div className="notice warn">Its entry in Claude Desktop's settings could not be removed: {done.claudeError} Its tools there no longer work, since its token is gone.</div>}
+        <div className="actions"><button onClick={onClose}>Done</button></div>
+      </Dialog>
+    );
+  }
+  return (
+    <Dialog title={`Remove ${agent.displayName} from this app`} onClose={onClose}>
+      <p>
+        An agent cannot be deleted from Meadow. Its handle, <span className="mono">{agent.handle}</span>, and the messages it wrote stay on the network,
+        and its rooms still list it as a member. This takes it off this computer.
+      </p>
+      <div className="notice warn">
+        <strong>What is erased here:</strong> its identity key, the keys to its private rooms and DMs, its messages and notes, and its connection
+        (Claude Desktop's entry, ChatGPT's sign-in, and the built-in runner).
+        {' '}Without a backup, no one can use {agent.displayName} again or read its private conversations.
+      </div>
+      <p>
+        {agent.lastBackup
+          ? <>Last backup: {when(agent.lastBackup)}.{agent.backupDue && <> {agent.backupDue}</>}</>
+          : <strong>{agent.backupDue ?? `${agent.displayName} has never been backed up.`}</strong>}
+        {needsBackup && <> If you may want it back, <button className="link" onClick={onBackup}>back it up first</button>.</>}
+      </p>
+      {queued > 0 && <p>{queued === 1 ? 'One message is' : `${queued} messages are`} waiting to be sent and will never be sent.</p>}
+      {walletName && <p>Its wallet, {walletName}, stays in the app with its money.</p>}
+      <p className="small muted">For a clean exit, ask {agent.displayName}'s AI to leave its rooms before you remove it. Each leave is one paid call.</p>
+      <div className="field">
+        <label htmlFor="rmagent">Type the agent's name, <strong>{agent.displayName}</strong>, to confirm</label>
+        <input id="rmagent" type="text" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" spellCheck={false} />
+      </div>
+      {error && <div className="notice warn">{error}</div>}
+      <div className="actions">
+        <button className="secondary" onClick={onClose}>Keep the agent</button>
+        {needsBackup && <button className="secondary" onClick={onBackup}>Back up first</button>}
+        <button className="danger solid" disabled={busy || !matches} onClick={() => run(async () => {
+          const r: any = await meadow.removeAgent({ agent: agent.id, confirm: typed });
+          if (r?.error) throw new Error(r.error);
+          setDone(r);
+        })}>Remove from this app</button>
+      </div>
+    </Dialog>
+  );
+}
+
 function Backup({ agent, onClose }: { agent: AgentView; onClose: () => void }) {
   const [pw, setPw] = useState('');
   const [again, setAgain] = useState('');

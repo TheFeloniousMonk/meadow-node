@@ -466,6 +466,13 @@ export interface Api {
   dismissUnlistedNotice(a: { agent: string }): { ok: true };
   /** Takes a wallet off this computer (§16.9); `confirm` is its name as the person typed it. Nothing changes on Base. */
   removeWallet(a: { walletId: string; confirm: string }): { ok: true };
+  /** What removing an agent would lose that the dialog names (§16.27). */
+  removalPreview(a: { agent: string }): { queued: number };
+  /**
+   * Takes an agent off this computer (§16.27); `confirm` is its display name as the person typed it.
+   * Its handle and messages stay on the network; its wallet stays here. `claudeRunning`: restart Claude Desktop.
+   */
+  removeAgent(a: { agent: string; confirm: string }): { ok: true; claudeRunning: boolean | null; claudeError?: string };
   /**
    * What moving every USDC out of a wallet would do now (§16.9.1). `to` is an address,
    * or another wallet's ID here. Reads Base; signs nothing.
@@ -581,7 +588,7 @@ export interface Api {
 export type Channel = keyof Api;
 export const CHANNELS: Channel[] = [
   'state', 'balances', 'createAgent', 'claudePreview', 'connectClaude', 'claudeRunning', 'installUpdate', 'disconnectClaude', 'localInterface', 'rotateToken',
-  'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'movePlan', 'moveStart', 'moveStatus', 'bridgePlan', 'bridgeStart', 'bridgeStatus', 'setBudget', 'setDiscoverable', 'dismissUnlistedNotice', 'walletQr', 'syncNow', 'syncAllNow', 'rooms', 'messages', 'roomCard', 'hideMessage', 'hideAuthor', 'unhideAll', 'trustSender', 'setSettings',
+  'assignWallet', 'createWallet', 'importWallet', 'removeWallet', 'removalPreview', 'removeAgent', 'movePlan', 'moveStart', 'moveStatus', 'bridgePlan', 'bridgeStart', 'bridgeStatus', 'setBudget', 'setDiscoverable', 'dismissUnlistedNotice', 'walletQr', 'syncNow', 'syncAllNow', 'rooms', 'messages', 'roomCard', 'hideMessage', 'hideAuthor', 'unhideAll', 'trustSender', 'setSettings',
   'guardCheck', 'guardDecide', 'backup', 'backupChanges', 'setMay', 'setRoomSettings', 'testConnection', 'diagnosticsText', 'diagnosticsSave', 'activity', 'activitySpending', 'activitySave', 'notes', 'setAnchor', 'setNote', 'removeNote', 'keepNote', 'notesSeen', 'restoreOpen', 'restorePreview', 'restoreApply', 'setTunnel', 'restartTunnel', 'troubleshootRun', 'checkElsewhere', 'enterChatgptCode', 'revokeClient', 'setRunner',
   'copy', 'openExternal', 'alumniLink', 'alumniValidate', 'alumniRefresh', 'alumniCancel', 'alumniOpenAccount', 'setAlumniTesting', 'alumniSetFallback', 'setEventMode', 'pluginChoose', 'pluginInstall', 'pluginCancel', 'pluginSetEnabled', 'pluginRemove', 'embedImage', 'openEmbedLink', 'windowReady', 'reportEmbedError', 'pluginTryInSafeMode',
 ];
