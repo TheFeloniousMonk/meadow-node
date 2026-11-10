@@ -39,7 +39,7 @@ function fill(s: Services, agent: string, wallet: string) {
   s.connections.set(agent, 'claude', s.core.agents().find((a) => a.id === agent)!.name);
   s.wallets.assign(agent, wallet);
   s.activity.add(agent, 'you', 'settings', 'Something happened.');
-  s.notes.set(agent, 'agent', '', 'Remember the meadow.', 'person');
+  s.notes.set(agent, 'agent', '', 'Remember the meadow.', 'you');
   const now = Date.now();
   s.db.prepare('INSERT INTO trusted_senders (agent, author, at) VALUES (?, ?, ?)').run(agent, 'a_friend', now);
   s.db.prepare('INSERT INTO hints (agent, key, at) VALUES (?, ?, ?)').run(agent, 'room_modes', now);
