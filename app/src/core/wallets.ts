@@ -13,6 +13,7 @@ import { addressOf, isMnemonic, newMnemonic, normalizeMnemonic, privateKeyFromMn
 import { TransportError } from './transport.ts';
 import type { Vault } from './vault.ts';
 import { currentCause, notePayment } from './cause.ts';
+import { networkClock } from './clock.ts';
 
 export const DAY_MS = 24 * 3600 * 1000;
 /** The longest a signed authorization stays valid, whatever the 402 asks (§16.9). */
@@ -307,7 +308,8 @@ export class Wallets {
       const { mnemonic } = this.#vault.openJson(`wallet:${walletId}:secret`, w.secret_sealed);
       const key = privateKeyFromMnemonic(mnemonic);
       const from = addressOf(key);
-      const nowS = Math.floor(this.#now() / 1000);
+      // The window is checked against the chain's time, so the network's (§16.28).
+      const nowS = Math.floor(networkClock.now() / 1000);
       // As the portal's own payer does: a minute of clock skew before, the seller's timeout after, capped at five minutes.
       const authorization: Authorization = {
         from, to: terms.payTo, value: terms.amount,

@@ -1163,7 +1163,7 @@ export class Core {
       fields.limit_bytes = SYNC.limitBytes;
       let res;
       try {
-        res = await this.#transport.call('/v2/sync', signRequest(this.#signer(ctx.id), fields), ctx.id);
+        res = await this.#transport.call('/v2/sync', signRequest(this.#signer(ctx.id), fields), ctx.id, () => signRequest(this.#signer(ctx.id), fields));
         // A node before 0.3.0 refuses `agents` as unknown: send again without it, and leave it out for an hour.
         const e = res.data?.error;
         if (ask.length && res.status === 400 && e?.code === 'bad_request' && /\bagents\b/.test(e?.message ?? '')) {
@@ -1171,7 +1171,7 @@ export class Core {
           report.calls++;
           delete fields.agents;
           ask.length = 0;
-          res = await this.#transport.call('/v2/sync', signRequest(this.#signer(ctx.id), fields), ctx.id);
+          res = await this.#transport.call('/v2/sync', signRequest(this.#signer(ctx.id), fields), ctx.id, () => signRequest(this.#signer(ctx.id), fields));
         }
       } catch (err) {
         if (report.calls === 0) throw err;
@@ -1230,10 +1230,10 @@ export class Core {
     const served = new Set<string>();
     for (let page = 0; page < SYNC.maxPages && active.length; page++) {
       const pages = new Map(active.map((c) => [c.id, this.#page(c)]));
-      const body = { syncs: active.map((c) => signRequest(this.#signer(c.id), pages.get(c.id)!.fields)), limit_bytes: SYNC.limitBytes };
+      const build = () => ({ syncs: active.map((c) => signRequest(this.#signer(c.id), pages.get(c.id)!.fields)), limit_bytes: SYNC.limitBytes });
       let res;
       try {
-        res = await this.#transport.call('/v2/sync-batch', body, payer);
+        res = await this.#transport.call('/v2/sync-batch', build(), payer, build);
       } catch (err) {
         // Nothing was answered: an agent that had no page yet fails; one that had stops where it got to.
         for (const c of active) {
@@ -1885,7 +1885,7 @@ export class Core {
   /** Reports a message to node operators (§7.8). Every operator sees its body. */
   async reportToOperators(agent: string, messageId: string, reason: string, note?: string) {
     const { report } = this.#buildReport(agent, messageId, reason, note);
-    const res = await this.#transport.call('/v2/report', signRequest(this.#signer(agent), { report }), agent);
+    const res = await this.#transport.call('/v2/report', signRequest(this.#signer(agent), { report }), agent, () => signRequest(this.#signer(agent), { report }));
     if (res.status !== 200) {
       const e = res.data?.error;
       if (e?.code === 'rate_limited') throw new ActionError('rate_limited', `One report a minute: try again in ${Math.ceil((e.retry_after_ms ?? 60000) / 1000)} seconds.`);

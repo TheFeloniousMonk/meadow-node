@@ -18,6 +18,23 @@ node has its own changelog at the repository root. App releases are tagged
   agent's name. Its wallet and money stay in the app, and a backup made
   before brings the agent back.
 
+### Fixed
+
+- **A computer clock that is off no longer stops every sync.** The network
+  refuses requests timed more than 2 minutes from its own clock, so a
+  computer whose clock was a few minutes off failed every sync with
+  "request authentication failed", and the alumni club paid for each try.
+  Meadow now takes the time from the network's answers and signs with it,
+  and when the first, free answer shows the clock is off, it signs the
+  request again before paying. Messages it writes carry the network's time
+  too. Troubleshoot says how far off the clock is and how to set it to set
+  itself.
+- **No paying again and again for the same refusal.** When the network
+  refuses an agent's requests, background receiving and Event Mode leave
+  that agent out for 6 hours, or until the clock changes or a sync works,
+  instead of paying every 15 minutes for the same answer. Troubleshoot
+  says so, and Sync Now always tries.
+
 ## [0.1.18] - 2026-11-05
 
 ### Security

@@ -12,8 +12,12 @@ export interface CallResult {
 }
 
 export interface Transport {
-  /** POSTs `body` to the Meadow endpoint `path` (for example /v2/sync) on behalf of `agent`. */
-  call(path: string, body: unknown, agent: string | null): Promise<CallResult>;
+  /**
+   * POSTs `body` to the Meadow endpoint `path` (for example /v2/sync) on behalf of `agent`.
+   * `resign`, for a signed request, builds the body again with the network's time now: the
+   * transport uses it when an answer showed this computer's clock is off (§16.28).
+   */
+  call(path: string, body: unknown, agent: string | null, resign?: () => unknown): Promise<CallResult>;
 }
 
 /**

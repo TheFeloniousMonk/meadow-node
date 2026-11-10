@@ -37,6 +37,7 @@ import type { Received } from '../core/core.ts';
 import { MODE_NAMES } from '../core/modes.ts';
 import { UpdateCheck, type InstallKind } from '../core/update.ts';
 import type { Settings } from '../shared/api.ts';
+import { networkClock } from '../core/clock.ts';
 
 export const DEFAULT_SETTINGS: Omit<Settings, 'perCallMaxUsd'> = {
   theme: 'light', textScale: 1, syncEnabled: true, syncMinutes: 15, localPort: 47733,
@@ -71,6 +72,8 @@ export const MENTION_ROOMS_PER_SYNC = 5;
 export const BACKGROUND_TICK_MS = 60_000;
 /** While Event Mode runs (§16.25): often enough that a 1-minute frequency means about a minute, not two. */
 export const EVENT_TICK_MS = 15_000;
+/** How long background receiving leaves out an agent whose request authentication was refused (§16.28). */
+export const AUTH_WAIT_MS = 6 * 60 * 60 * 1000;
 
 const minutes = (n: number) => (n === 1 ? 'minute' : `${n} minutes`);
 const hours = (min: number) => {
@@ -618,6 +621,20 @@ export class Services {
   #attempted = new Map<string, number>();
 
   /**
+   * Agents whose request authentication a node refused (§16.28), with when and the clock offset then.
+   * Background receiving and Event Mode leave them out for AUTH_WAIT_MS, until the offset changes, or
+   * until a sync succeeds: a refusal that does not fix itself would otherwise be paid for every interval.
+   */
+  #authRefused = new Map<string, { at: number; offset: number; code: string; message: string }>();
+
+  /** The refusal background receiving is waiting out for this agent, or null (§16.28). */
+  authRefusal(agent: string, now = Date.now()): { at: number; code: string; message: string } | null {
+    const r = this.#authRefused.get(agent);
+    if (!r || r.offset !== networkClock.offset() || now - r.at >= AUTH_WAIT_MS) return null;
+    return { at: r.at, code: r.code, message: r.message };
+  }
+
+  /**
    * The agents that sync together (§7.9), up to 8 a call: the club pays for every agent; otherwise
    * each wallet pays for its own agents, so no wallet pays for another's. With the fallback on, a
    * club refusal makes the first agent's own wallet pay for the call, so then the agents are grouped
@@ -671,7 +688,10 @@ export class Services {
     // At the club's cap, with the agents' own wallets not allowed past it, background receiving
     // waits until the allowance frees up (§18.8): every call until then would be refused.
     if (cause !== 'person' && club && !this.alumni.fallback() && this.alumni.held()?.code === 'cap') return [];
-    const groups = this.#syncGroups().filter((g) => !due || this.#dueAt(g) <= now);
+    const groups = this.#syncGroups()
+      // Not for a refusal that would only be paid for again (§16.28); Sync Now always tries.
+      .map((g) => (cause === 'person' ? g : g.filter((a) => !this.authRefusal(a, now))))
+      .filter((g) => g.length && (!due || this.#dueAt(g) <= now));
     if (due) for (const g of groups) for (const a of g) this.#attempted.set(a, now);
     const out: { agent: string; ok: boolean; message: string }[] = [];
     if (this.core.batchOff()) {
@@ -715,10 +735,13 @@ export class Services {
   #syncResult(agent: string, r: SyncReport | Error): { ok: boolean; message: string } {
     if (this.#gone(agent)) return { ok: false, message: 'This agent was removed from this computer.' };
     if (r instanceof Error) {
+      const code = (r as { code?: unknown }).code;
+      if (typeof code === 'string' && code.startsWith('auth_')) this.#authRefused.set(agent, { at: Date.now(), offset: networkClock.offset(), code, message: r.message });
       this.db.prepare('INSERT INTO problems (agent, at, kind, text) VALUES (?, ?, ?, ?)').run(agent, Date.now(), 'sync', r.message);
       return { ok: false, message: r.message };
     }
     this.lastSync.set(agent, Date.now());
+    this.#authRefused.delete(agent);
     return { ok: true, message: r.messages ? `${r.messages} new message${r.messages === 1 ? '' : 's'}.` : 'Nothing new.' };
   }
 

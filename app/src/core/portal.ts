@@ -11,6 +11,7 @@ import { formatUsd } from './catalog.ts';
 import { TransportError, type CallResult, type Transport } from './transport.ts';
 import type { Authorized, Wallets } from './wallets.ts';
 import { REPLY_LIMITS, ReplyTooLarge, readJson } from './deps.ts';
+import { CLOCK_NOISE_MS, networkClock, type NetworkClock } from './clock.ts';
 
 export const MEADOW_SERVICE = 'meadow';
 /** No portal request waits longer than this (§16.8); relays time out at 10 to 30 s. */
@@ -33,19 +34,21 @@ export class PortalTransport implements Transport {
   #wallets: Wallets;
   #fetch: typeof fetch;
   #payer: Payer;
+  #clock: NetworkClock;
 
-  constructor({ catalog, wallets, fetchImpl = fetch, payer }: { catalog: Catalog; wallets: Wallets; fetchImpl?: typeof fetch; payer?: Payer }) {
+  constructor({ catalog, wallets, fetchImpl = fetch, payer, clock = networkClock }: { catalog: Catalog; wallets: Wallets; fetchImpl?: typeof fetch; payer?: Payer; clock?: NetworkClock }) {
+    this.#clock = clock;
     this.#catalog = catalog;
     this.#wallets = wallets;
     this.#fetch = fetchImpl;
     this.#payer = payer ?? ((req) => wallets.authorize(req));
   }
 
-  call(path: string, body: unknown, agent: string | null): Promise<CallResult> {
-    return this.callService(MEADOW_SERVICE, path, body, agent);
+  call(path: string, body: unknown, agent: string | null, resign?: () => unknown): Promise<CallResult> {
+    return this.callService(MEADOW_SERVICE, path, body, agent, resign);
   }
 
-  async callService(serviceId: string, path: string, body: unknown, agent: string | null): Promise<CallResult> {
+  async callService(serviceId: string, path: string, body: unknown, agent: string | null, resign?: () => unknown): Promise<CallResult> {
     try {
       await this.#catalog.ensureFresh();
     } catch {
@@ -54,11 +57,15 @@ export class PortalTransport implements Transport {
     const service = this.#catalog.service(serviceId);
     if (!service) throw new TransportError('refused', `${serviceId} is not in the portal's price list, so the app will not call it.`, { code: 'not_in_price_list' });
     const url = service.resourceUrl + path;
-    const json = JSON.stringify(body);
+    let json = JSON.stringify(body);
+    // The offset the request was signed with, near enough: it was signed just before this call.
+    const signedWith = this.#clock.offset();
 
     let res = await this.#post(url, json);
     let cost: CallResult['cost'];
     if (res.status === 402) {
+      // The free 402 told the time: a request signed with a clock found off now is signed again, before anything is paid (§16.28).
+      if (resign && Math.abs(this.#clock.offset() - signedWith) >= CLOCK_NOISE_MS) json = JSON.stringify(resign());
       const offer = decode(res.headers.get('payment-required')) ?? (await readJson(res, REPLY_LIMITS.portal).catch(() => undefined));
       let paid;
       try {
@@ -94,6 +101,13 @@ export class PortalTransport implements Transport {
   }
 
   async #post(url: string, json: string, headers: Record<string, string> = {}): Promise<Response> {
+    const sentAt = this.#clock.local();
+    const res = await this.#send(url, json, headers);
+    this.#clock.observe(res.headers?.get?.('date'), sentAt, this.#clock.local());
+    return res;
+  }
+
+  async #send(url: string, json: string, headers: Record<string, string>): Promise<Response> {
     try {
       // A stalled connection (a laptop waking, a dropped network) must not hold the agent's
       // network work for minutes: a write waiting behind it would go out long after it was

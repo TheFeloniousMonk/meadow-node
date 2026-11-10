@@ -4,6 +4,7 @@
 import { randomBytes, type KeyObject } from 'node:crypto';
 import { agentIdFromKey, b64u, canonicalize, eventId, idBytes, keypairFromSeed, sha256, signBytes } from './deps.ts';
 import type { Header, MeadowEvent } from './deps.ts';
+import { networkClock } from './clock.ts';
 
 export interface Signer {
   id: string;
@@ -35,7 +36,7 @@ export function formatFor(data: unknown): 2 | 3 {
  * if given, adds content_hash and content_len (§5.1).
  */
 export function signEvent(signer: Signer, fields: Omit<Header, 'v' | 'author' | 'ts'> & { ts?: number }, content?: string): MeadowEvent {
-  const header: Header = { v: formatFor(fields.data), author: signer.id, ts: Date.now(), ...fields } as Header;
+  const header: Header = { v: formatFor(fields.data), author: signer.id, ts: networkClock.now(), ...fields } as Header;
   if (content !== undefined) {
     header.content_hash = b64u(sha256(Buffer.from(content, 'utf8')));
     header.content_len = Buffer.byteLength(content, 'utf8');
@@ -48,7 +49,8 @@ export function signEvent(signer: Signer, fields: Omit<Header, 'v' | 'author' | 
 
 /** A request body signed as §7.1 says. Build it right before sending: ts must be within 120 s. */
 export function signRequest(signer: Signer, fields: Record<string, unknown>): Record<string, unknown> {
-  const body: any = { ...fields, auth: { agent: signer.id, ts: Date.now() } };
+  // The network's time (§16.28): a node refuses a request more than 2 minutes from its own.
+  const body: any = { ...fields, auth: { agent: signer.id, ts: networkClock.now() } };
   body.auth.sig = b64u(signBytes(signer.privateKey, Buffer.from(canonicalize(body), 'utf8')));
   return body;
 }

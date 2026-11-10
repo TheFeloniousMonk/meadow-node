@@ -13,7 +13,8 @@ import { GUARD_SERVICE } from '../core/guard.ts';
 import type { CheckStep, TroubleAction, TroubleGroup, TroubleItem, TroubleState, TroubleshootView } from '../shared/api.ts';
 import { connectionCheck, protectionCheck, type ClaudeState } from './check.ts';
 import { describeFailure } from './tunnel.ts';
-import type { Services } from './services.ts';
+import { AUTH_WAIT_MS, type Services } from './services.ts';
+import { clockWords, networkClock } from '../core/clock.ts';
 
 const HOST: Record<string, string> = { chatgpt: 'ChatGPT', claude: 'Claude', other: 'your AI' };
 /** A balance that covers fewer days of background syncing than this is amber. */
@@ -76,6 +77,14 @@ export function troubleshoot(s: Services, claude: (agent: string) => ClaudeState
       { fix: s.publicError && /taken/.test(s.publicError) ? 'Open Settings, then Connections, and choose another port for ChatGPT.' : 'Quit Meadow from its icon near the clock and open it again.' }));
   } else {
     computer.push(item('interfaces', 'The app\'s interfaces', 'ok', `Listening for your AI on this computer (port ${settings.localPort}${chatgptUsed ? `, and ${settings.publicPort} for ChatGPT` : ''}).`));
+  }
+  // The computer's clock (§16.28): the network refuses requests more than 2 minutes off.
+  const off = clockWords(networkClock.offset());
+  if (off) {
+    computer.push(item('clock', 'Clock', 'warn', `${off} Meadow corrects for it when it signs, so the network accepts its requests, but other programs may not.`,
+      { at: networkClock.seenAt(), fix: 'On Windows: Settings, Time & language, Date & time: turn on Set time automatically, then press Sync now. On a Mac: System Settings, General, Date & Time: turn on Set time and date automatically.' }));
+  } else if (networkClock.seenAt() !== null) {
+    computer.push(item('clock', 'Clock', 'ok', "Right, by the network's time."));
   }
   const u = s.update.available;
   computer.push(u
@@ -176,6 +185,13 @@ export function troubleshoot(s: Services, claude: (agent: string) => ClaudeState
     items.push(a.registered
       ? item('registered', 'Registered', 'ok', `On the network as ${a.handle}.`)
       : item('registered', 'Registered', 'bad', 'Not registered on the network yet.', { fix: conn ? `Ask ${host} to register it on Meadow (one paid call).` : 'Give it a connection first, on the Agents screen.' }));
+    // A refusal background receiving is waiting out (§16.28), so it is not paid for again every interval.
+    const refused = s.authRefusal(a.id);
+    if (refused) {
+      items.push(item('authwait', 'Background receiving', 'warn',
+        `The network refused ${a.display_name}'s requests at ${clock(refused.at)} (${refused.code}). To save paying for the same refusal, background receiving leaves it out until ${clock(refused.at + AUTH_WAIT_MS)}.${off ? ` ${off}` : ''}`,
+        { at: refused.at, fix: off ? "Set this computer's clock to set itself (the Clock line above), then press Sync now." : 'Press Sync now to try again.', action: { label: `Sync now${price ? ` (${formatUsd(price.atomic)})` : ''}`, run: 'syncNow', agent: a.id } }));
+    }
     const check = connectionCheck(s, a.id, claude(a.id));
     if (!check) {
       items.push(item('way', 'The way in', 'bad', 'It has no connection to an AI.', { fix: 'Remove it and add it again with the AI that will use it.', action: { label: 'Open Agents', go: 'agents' } }));
