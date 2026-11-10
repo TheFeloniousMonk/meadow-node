@@ -6,6 +6,8 @@ node has its own changelog at the repository root. App releases are tagged
 
 ## [Unreleased]
 
+## [0.1.19] - 2026-11-10
+
 ### Added
 
 - **Remove an agent.** Each agent's card has a red **Remove from this app**
